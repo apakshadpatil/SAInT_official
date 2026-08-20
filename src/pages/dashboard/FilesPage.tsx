@@ -1,0 +1,728 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  uploadDocument,
+  updateDocument,
+  subscribeDocuments,
+  deleteDocument,
+  downloadDocumentFile,
+} from '../../services/documentService';
+import { subscribeEvents } from '../../services/eventService';
+import type { DocumentFile, EventRecord } from '../../types';
+import {
+  Upload,
+  File,
+  Trash2,
+  Plus,
+  Calendar,
+  Tag,
+  Download,
+  Pencil,
+  Ticket,
+  Search,
+  FileText,
+  FileSpreadsheet,
+  FileImage,
+  FolderOpen,
+  HardDrive,
+} from 'lucide-react';
+import RightPanel from '../../components/ui/RightPanel';
+import { useToast } from '../../contexts/ToastContext';
+
+const ACADEMIC_YEARS = ['2026-2027', '2025-2026', '2024-2025', '2023-2024', '2022-2023'];
+const CATEGORIES = [
+  'Guidebook & SOPs',
+  'Activity & Event Reports',
+  'Document Templates',
+  'Official Circulars & Notices',
+  'Meeting Minutes & Agendas',
+  'General / Other',
+];
+
+export default function FilesPage() {
+  const { profile } = useAuth();
+  const { showToast } = useToast();
+  const [documents, setDocuments] = useState<DocumentFile[]>([]);
+  const [events, setEvents] = useState<EventRecord[]>([]);
+
+  // Search & Filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedYear, setSelectedYear] = useState('all');
+  const [selectedCat, setSelectedCat] = useState('all');
+
+  // Upload drawer state
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [academicYear, setAcademicYear] = useState('2025-2026');
+  const [category, setCategory] = useState('Guidebook & SOPs');
+  const [customCategory, setCustomCategory] = useState('');
+  const [eventId, setEventId] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Edit drawer state
+  const [editingDoc, setEditingDoc] = useState<DocumentFile | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editAcademicYear, setEditAcademicYear] = useState('2025-2026');
+  const [editCategory, setEditCategory] = useState('Guidebook & SOPs');
+  const [editCustomCategory, setEditCustomCategory] = useState('');
+  const [editEventId, setEditEventId] = useState('');
+  const [updating, setUpdating] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubDocs = subscribeDocuments(setDocuments);
+    const unsubEvents = subscribeEvents(setEvents);
+    return () => {
+      unsubDocs();
+      unsubEvents();
+    };
+  }, []);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (selected) {
+      setFile(selected);
+      setError('');
+    }
+  };
+
+  const handleUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile || !file || !title.trim()) return;
+
+    setUploading(true);
+    setError('');
+
+    const finalCategory = category === '__CUSTOM__' ? customCategory.trim() || 'General / Other' : category;
+    const selectedEvent = events.find((ev) => ev.id === eventId);
+
+    try {
+      await uploadDocument(
+        {
+          title: title.trim(),
+          description: description.trim() || undefined,
+          academicYear,
+          category: finalCategory,
+          eventId: eventId || undefined,
+          eventName: selectedEvent?.title || undefined,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+          uploadedBy: profile.uid,
+          uploadedByName: profile.displayName,
+        },
+        file
+      );
+
+      setTitle('');
+      setDescription('');
+      setCategory('Guidebook & SOPs');
+      setCustomCategory('');
+      setEventId('');
+      setFile(null);
+
+      const fileInput = document.getElementById('file-upload-input-modal') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+
+      showToast('Document uploaded to storage successfully!', 'success');
+      setIsUploading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+      showToast('Document upload failed.', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const openEditModal = (doc: DocumentFile) => {
+    setEditingDoc(doc);
+    setEditTitle(doc.title);
+    setEditDescription(doc.description || '');
+    setEditAcademicYear(doc.academicYear || '2025-2026');
+
+    if (doc.category && CATEGORIES.includes(doc.category)) {
+      setEditCategory(doc.category);
+      setEditCustomCategory('');
+    } else if (doc.category) {
+      setEditCategory('__CUSTOM__');
+      setEditCustomCategory(doc.category);
+    } else {
+      setEditCategory('General / Other');
+      setEditCustomCategory('');
+    }
+
+    setEditEventId(doc.eventId || '');
+    setEditError('');
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDoc || !editTitle.trim()) return;
+
+    setUpdating(true);
+    setEditError('');
+
+    const finalCategory = editCategory === '__CUSTOM__' ? editCustomCategory.trim() || 'General / Other' : editCategory;
+    const selectedEvent = events.find((ev) => ev.id === editEventId);
+
+    try {
+      await updateDocument(editingDoc.id, {
+        title: editTitle.trim(),
+        description: editDescription.trim() || undefined,
+        academicYear: editAcademicYear,
+        category: finalCategory,
+        eventId: editEventId || undefined,
+        eventName: selectedEvent ? selectedEvent.title : editEventId ? editingDoc.eventName : undefined,
+      });
+
+      showToast('Document details updated.', 'success');
+      setEditingDoc(null);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Failed to update file');
+      showToast('Update failed.', 'error');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this file? This action is permanent.')) return;
+    try {
+      await deleteDocument(id);
+      showToast('Document deleted.', 'info');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to delete file', 'error');
+    }
+  };
+
+  const handleDownload = async (docFile: DocumentFile) => {
+    setDownloadingId(docFile.id);
+    try {
+      await downloadDocumentFile(docFile);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Download failed', 'error');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const myDocs = documents.filter((d) => d.uploadedBy === profile?.uid);
+
+  const filteredDocs = useMemo(() => {
+    return myDocs.filter((d) => {
+      if (selectedYear !== 'all' && d.academicYear !== selectedYear) return false;
+      if (selectedCat !== 'all' && d.category !== selectedCat) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = d.title?.toLowerCase().includes(q);
+        const matchDesc = d.description?.toLowerCase().includes(q);
+        const matchFile = d.fileName?.toLowerCase().includes(q);
+        const matchEvent = d.eventName?.toLowerCase().includes(q);
+        if (!matchTitle && !matchDesc && !matchFile && !matchEvent) return false;
+      }
+      return true;
+    });
+  }, [myDocs, selectedYear, selectedCat, searchQuery]);
+
+  const totalBytes = myDocs.reduce((acc, d) => acc + (d.fileSize || 0), 0);
+  const formattedTotalSize = totalBytes > 1048576 
+    ? `${(totalBytes / 1048576).toFixed(1)} MB` 
+    : `${Math.round(totalBytes / 1024)} KB`;
+
+  const getFileIcon = (fileType?: string) => {
+    if (fileType?.includes('image')) return <FileImage className="w-5 h-5 text-purple-400" />;
+    if (fileType?.includes('sheet') || fileType?.includes('csv') || fileType?.includes('excel'))
+      return <FileSpreadsheet className="w-5 h-5 text-emerald-400" />;
+    return <FileText className="w-5 h-5 text-blue-400" />;
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in-up">
+      {/* ── Page Header ── */}
+      <div className="page-header">
+        <div>
+          <h1 className="page-header-title">Files & Storage</h1>
+          <p className="page-header-sub">
+            Secure cloud repository for association assets, reports, SOPs, and event documentations
+          </p>
+        </div>
+        <button onClick={() => setIsUploading(true)} className="btn-primary">
+          <Plus className="w-4 h-4" />
+          <span>Upload Document</span>
+        </button>
+      </div>
+
+      {/* ── Metric KPI Row ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="stat-card">
+          <div className="stat-card-accent-bar" style={{ background: 'var(--dash-accent)' }} />
+          <div className="flex items-start justify-between mt-1">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
+                Your Files
+              </p>
+              <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: 'var(--dash-text)' }}>
+                {myDocs.length}
+              </p>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
+                Uploaded by you
+              </p>
+            </div>
+            <div
+              className="w-9 h-9 flex items-center justify-center shrink-0"
+              style={{ background: 'var(--dash-accent-soft)', borderRadius: '6px' }}
+            >
+              <File className="w-4 h-4" style={{ color: 'var(--dash-accent)' }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-card-accent-bar" style={{ background: '#10b981' }} />
+          <div className="flex items-start justify-between mt-1">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
+                Storage In Use
+              </p>
+              <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: '#10b981' }}>
+                {formattedTotalSize}
+              </p>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
+                Supabase bucket volume
+              </p>
+            </div>
+            <div
+              className="w-9 h-9 flex items-center justify-center shrink-0"
+              style={{ background: 'rgba(16, 185, 129, 0.1)', borderRadius: '6px' }}
+            >
+              <HardDrive className="w-4 h-4 text-emerald-500" />
+            </div>
+          </div>
+        </div>
+
+        <div className="stat-card col-span-2 lg:col-span-1">
+          <div className="stat-card-accent-bar" style={{ background: '#8b5cf6' }} />
+          <div className="flex items-start justify-between mt-1">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
+                All Association Docs
+              </p>
+              <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: '#8b5cf6' }}>
+                {documents.length}
+              </p>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
+                Across all team members
+              </p>
+            </div>
+            <div
+              className="w-9 h-9 flex items-center justify-center shrink-0"
+              style={{ background: 'rgba(139, 92, 246, 0.1)', borderRadius: '6px' }}
+            >
+              <FolderOpen className="w-4 h-4 text-purple-500" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Search & Filter Controls ── */}
+      <div className="dash-card !p-3 flex flex-col md:flex-row md:items-center justify-between gap-3" style={{ borderRadius: '6px' }}>
+        <div className="relative flex-1">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--dash-muted)' }} />
+          <input
+            type="text"
+            placeholder="Search documents, file names, events..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="dash-input !pl-8 !py-1.5 !text-xs !w-full"
+            style={{ borderRadius: '4px' }}
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            className="dash-input !py-1.5 !px-2.5 !text-xs"
+            style={{ borderRadius: '4px' }}
+          >
+            <option value="all">All Academic Years</option>
+            {ACADEMIC_YEARS.map((yr) => (
+              <option key={yr} value={yr}>{yr}</option>
+            ))}
+          </select>
+
+          <select
+            value={selectedCat}
+            onChange={(e) => setSelectedCat(e.target.value)}
+            className="dash-input !py-1.5 !px-2.5 !text-xs"
+            style={{ borderRadius: '4px' }}
+          >
+            <option value="all">All Categories</option>
+            {CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* ── File Records Grid ── */}
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+        {filteredDocs.map((docFile) => (
+          <div
+            key={docFile.id}
+            className="dash-card flex flex-col justify-between group transition-all duration-150"
+            style={{ borderRadius: '6px', borderColor: 'var(--dash-card-border)' }}
+          >
+            <div>
+              {/* Header tags */}
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-1.5">
+                  <div
+                    className="w-7 h-7 flex items-center justify-center shrink-0"
+                    style={{ background: 'var(--dash-hover)', borderRadius: '4px', border: '1px solid var(--dash-border)' }}
+                  >
+                    {getFileIcon(docFile.fileType)}
+                  </div>
+
+                  {docFile.academicYear && (
+                    <span
+                      className="text-[10px] font-bold px-1.5 py-0.5"
+                      style={{
+                        background: 'rgba(16, 185, 129, 0.08)',
+                        color: '#10b981',
+                        border: '1px solid rgba(16, 185, 129, 0.2)',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      {docFile.academicYear}
+                    </span>
+                  )}
+                </div>
+
+                {docFile.category && (
+                  <span
+                    className="text-[10px] font-medium px-1.5 py-0.5 truncate max-w-[130px]"
+                    style={{
+                      background: 'var(--dash-hover)',
+                      color: 'var(--dash-muted)',
+                      border: '1px solid var(--dash-border)',
+                      borderRadius: '4px',
+                    }}
+                  >
+                    {docFile.category}
+                  </span>
+                )}
+              </div>
+
+              {/* Title & Description */}
+              <h3 className="font-bold text-sm leading-snug line-clamp-1" style={{ color: 'var(--dash-text)' }}>
+                {docFile.title}
+              </h3>
+              <p className="text-xs font-mono truncate mt-1" style={{ color: 'var(--dash-muted)' }}>
+                {docFile.fileName}
+              </p>
+              {docFile.description && (
+                <p className="text-xs line-clamp-2 mt-1.5 leading-relaxed" style={{ color: 'var(--dash-muted)' }}>
+                  {docFile.description}
+                </p>
+              )}
+
+              {docFile.eventName && (
+                <div className="mt-2.5 flex items-center gap-1 text-[11px]" style={{ color: '#f59e0b' }}>
+                  <Ticket className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{docFile.eventName}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div
+              className="flex items-center justify-between pt-3 mt-4 border-t text-xs"
+              style={{ borderColor: 'var(--dash-border)' }}
+            >
+              <span className="text-[10px]" style={{ color: 'var(--dash-muted)' }}>
+                {new Date(docFile.createdAt).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              </span>
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => handleDownload(docFile)}
+                  disabled={downloadingId === docFile.id}
+                  className="btn-outline !py-1 !px-2 !text-xs font-semibold"
+                  style={{ borderRadius: '4px' }}
+                >
+                  <Download className="w-3 h-3" />
+                  <span>{downloadingId === docFile.id ? 'Fetching...' : 'Download'}</span>
+                </button>
+
+                <button
+                  onClick={() => openEditModal(docFile)}
+                  className="p-1.5 rounded text-slate-400 hover:text-blue-500 hover:bg-blue-500/10 transition-colors"
+                  title="Edit details"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  onClick={() => handleDelete(docFile.id)}
+                  className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                  title="Delete file"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {filteredDocs.length === 0 && (
+          <div
+            className="col-span-full py-16 text-center dash-card border-dashed flex flex-col items-center justify-center"
+            style={{ borderRadius: '6px' }}
+          >
+            <FolderOpen className="w-8 h-8 mb-2 opacity-30" style={{ color: 'var(--dash-text)' }} />
+            <p className="text-sm font-semibold" style={{ color: 'var(--dash-text)' }}>
+              No files match your selection
+            </p>
+            <p className="text-xs mt-1" style={{ color: 'var(--dash-muted)' }}>
+              Upload your first document or change the active filters.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ── Upload Drawer ── */}
+      {isUploading && (
+        <RightPanel open={isUploading} onClose={() => setIsUploading(false)} title="Upload Document" width="480px">
+          {error && (
+            <div
+              className="p-2.5 text-xs text-red-400 border border-red-500/20 mb-4"
+              style={{ background: 'rgba(239, 68, 68, 0.08)', borderRadius: '4px' }}
+            >
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleUpload} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-muted)' }}>
+                Document Title *
+              </label>
+              <input
+                className="dash-input"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Activity Report Template 2025"
+                required
+                autoFocus
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1 flex items-center gap-1" style={{ color: 'var(--dash-muted)' }}>
+                  <Calendar className="w-3 h-3 text-blue-500" /> Academic Year *
+                </label>
+                <select className="dash-input" value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} required>
+                  {ACADEMIC_YEARS.map((yr) => (
+                    <option key={yr} value={yr}>{yr}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold mb-1 flex items-center gap-1" style={{ color: 'var(--dash-muted)' }}>
+                  <Tag className="w-3 h-3 text-purple-500" /> Category *
+                </label>
+                <select className="dash-input" value={category} onChange={(e) => setCategory(e.target.value)} required>
+                  {CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                  <option value="__CUSTOM__">+ Custom Category...</option>
+                </select>
+              </div>
+            </div>
+
+            {category === '__CUSTOM__' && (
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-muted)' }}>
+                  Custom Category Name *
+                </label>
+                <input
+                  className="dash-input"
+                  placeholder="e.g. Sponsorship Pitch Deck"
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold mb-1 flex items-center gap-1" style={{ color: 'var(--dash-muted)' }}>
+                <Ticket className="w-3 h-3 text-amber-500" /> Event Link (Optional)
+              </label>
+              <select className="dash-input" value={eventId} onChange={(e) => setEventId(e.target.value)}>
+                <option value="">No Linked Event (General)</option>
+                {events.map((ev) => (
+                  <option key={ev.id} value={ev.id}>{ev.title} ({ev.date})</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-muted)' }}>
+                Description (Optional)
+              </label>
+              <textarea
+                className="dash-input min-h-[75px] resize-none"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Brief summary or usage instructions..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-muted)' }}>
+                Choose File *
+              </label>
+              <label
+                className="flex flex-col items-center gap-2 cursor-pointer text-center border border-dashed p-5 transition hover:border-blue-500"
+                style={{ borderColor: 'var(--dash-border)', borderRadius: '6px', background: 'var(--dash-hover)' }}
+              >
+                <Upload className="w-6 h-6 text-blue-500" />
+                <span className="text-xs font-semibold" style={{ color: 'var(--dash-text)' }}>
+                  {file ? file.name : 'Click to select document'}
+                </span>
+                <span className="text-[10px]" style={{ color: 'var(--dash-muted)' }}>
+                  Supports PDF, DOCX, XLSX, PNG, JPG, ZIP
+                </span>
+                <input type="file" id="file-upload-input-modal" className="hidden" onChange={handleFileChange} required />
+              </label>
+            </div>
+
+            <div className="pt-2">
+              <button type="submit" className="btn-primary w-full !py-2.5 !text-xs font-bold" disabled={uploading || !file}>
+                {uploading ? 'Uploading to Storage...' : 'Upload Document'}
+              </button>
+            </div>
+          </form>
+        </RightPanel>
+      )}
+
+      {/* ── Edit Drawer ── */}
+      {editingDoc && (
+        <RightPanel open={!!editingDoc} onClose={() => setEditingDoc(null)} title="Edit Document Details" width="480px">
+          {editError && (
+            <div
+              className="p-2.5 text-xs text-red-400 border border-red-500/20 mb-4"
+              style={{ background: 'rgba(239, 68, 68, 0.08)', borderRadius: '4px' }}
+            >
+              {editError}
+            </div>
+          )}
+
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-muted)' }}>
+                Document Title *
+              </label>
+              <input
+                className="dash-input"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1 flex items-center gap-1" style={{ color: 'var(--dash-muted)' }}>
+                  <Calendar className="w-3 h-3 text-blue-500" /> Academic Year *
+                </label>
+                <select className="dash-input" value={editAcademicYear} onChange={(e) => setEditAcademicYear(e.target.value)} required>
+                  {ACADEMIC_YEARS.map((yr) => (
+                    <option key={yr} value={yr}>{yr}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold mb-1 flex items-center gap-1" style={{ color: 'var(--dash-muted)' }}>
+                  <Tag className="w-3 h-3 text-purple-500" /> Category *
+                </label>
+                <select className="dash-input" value={editCategory} onChange={(e) => setEditCategory(e.target.value)} required>
+                  {CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                  <option value="__CUSTOM__">+ Custom Category...</option>
+                </select>
+              </div>
+            </div>
+
+            {editCategory === '__CUSTOM__' && (
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-muted)' }}>
+                  Custom Category Name *
+                </label>
+                <input
+                  className="dash-input"
+                  value={editCustomCategory}
+                  onChange={(e) => setEditCustomCategory(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold mb-1 flex items-center gap-1" style={{ color: 'var(--dash-muted)' }}>
+                <Ticket className="w-3 h-3 text-amber-500" /> Event Link
+              </label>
+              <select className="dash-input" value={editEventId} onChange={(e) => setEditEventId(e.target.value)}>
+                <option value="">No Linked Event (General)</option>
+                {events.map((ev) => (
+                  <option key={ev.id} value={ev.id}>{ev.title} ({ev.date})</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-muted)' }}>
+                Description
+              </label>
+              <textarea
+                className="dash-input min-h-[75px] resize-none"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+              />
+            </div>
+
+            <div className="pt-3 flex items-center gap-2">
+              <button type="submit" className="btn-primary flex-1 !py-2.5 !text-xs font-bold" disabled={updating}>
+                {updating ? 'Saving...' : 'Save Changes'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingDoc(null)}
+                className="btn-secondary !py-2.5 !text-xs"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </RightPanel>
+      )}
+    </div>
+  );
+}
