@@ -5,7 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { subscribeEventById, updateEvent, deleteEvent } from '../../services/eventService';
 import type { EventRecord } from '../../types';
 import { isSuperAdmin, isCoreMember } from '../../utils/permissions';
-import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput } from 'lucide-react';
+import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award } from 'lucide-react';
 import TicketingTab from '../../components/ui/TicketingTab';
 import ScanTicketTab from '../../components/ui/ScanTicketTab';
 import TicketDesignTab from '../../components/ui/TicketDesignTab';
@@ -15,8 +15,9 @@ import SpaceAllocationTab from '../../components/ui/SpaceAllocationTab';
 import SettingsTab from '../../components/ui/SettingsTab';
 import DomainsTab from '../../components/ui/DomainsTab';
 import EventAnalyticsTab from '../../components/ui/EventAnalyticsTab';
+import CertificateTab from '../../components/ui/CertificateTab';
 
-type TabType = 'overview' | 'ticketing' | 'scan' | 'design' | 'form' | 'participants' | 'allocation' | 'domains' | 'analytics' | 'settings';
+type TabType = 'overview' | 'ticketing' | 'scan' | 'design' | 'form' | 'certificates' | 'participants' | 'allocation' | 'domains' | 'analytics' | 'settings';
 
 export default function EventDetailsPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -123,6 +124,7 @@ export default function EventDetailsPage() {
     { id: 'scan', label: 'Scan Ticket', icon: QrCode },
     { id: 'design', label: 'Ticket Design', icon: ImageIcon },
     { id: 'form', label: 'Form Builder', icon: FormInput },
+    { id: 'certificates', label: 'Certificates', icon: Award },
     { id: 'participants', label: 'Participants', icon: Users },
     { id: 'allocation', label: 'Space Allocation', icon: MapPin },
     ...(event.enableDomainSelection ? [{ id: 'domains' as TabType, label: 'Domains', icon: Layers }] : []),
@@ -314,6 +316,14 @@ export default function EventDetailsPage() {
 
         {activeTab === 'form' && (
           <CustomFormTab
+            event={event}
+            onUpdate={handleEventUpdate}
+            canEdit={canEdit}
+          />
+        )}
+
+        {activeTab === 'certificates' && (
+          <CertificateTab
             event={event}
             onUpdate={handleEventUpdate}
             canEdit={canEdit}

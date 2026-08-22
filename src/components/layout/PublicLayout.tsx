@@ -1,12 +1,49 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { subscribeSiteSettings } from '../../services/applicationService';
 
 export default function PublicLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [logoUnavailable, setLogoUnavailable] = useState(false);
+  
+  // Instantaneous synchronous read from localStorage for 0ms initial load
+  const [doomsdayMode, setDoomsdayMode] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('saint_doomsday_mode');
+      if (stored === 'true') {
+        document.documentElement.setAttribute('data-doomsday', 'true');
+        return true;
+      }
+    } catch {}
+    return false;
+  });
   const location = useLocation();
+
+  useEffect(() => {
+    const unsub = subscribeSiteSettings((settings) => {
+      const active = Boolean(settings?.doomsdayMode);
+      setDoomsdayMode(active);
+      try {
+        localStorage.setItem('saint_doomsday_mode', String(active));
+      } catch {}
+      if (active) {
+        document.documentElement.setAttribute('data-doomsday', 'true');
+      } else {
+        document.documentElement.removeAttribute('data-doomsday');
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (doomsdayMode) {
+      document.documentElement.setAttribute('data-doomsday', 'true');
+    } else {
+      document.documentElement.removeAttribute('data-doomsday');
+    }
+  }, [doomsdayMode]);
 
   useEffect(() => {
     setMobileOpen(false);

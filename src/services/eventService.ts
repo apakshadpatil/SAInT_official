@@ -175,6 +175,10 @@ export async function createTicket(
     registrationSource?: 'public' | 'manual';
     college?: string;
     department?: string;
+    tierId?: string;
+    tierName?: string;
+    teamSize?: number;
+    teamMembers?: Array<{ name: string; email?: string; phone?: string; college?: string; department?: string }>;
     transactionId?: string;
     customResponses?: Record<string, string>;
   } = {}
@@ -196,6 +200,10 @@ export async function createTicket(
     guestPhone: options.guestPhone || null,
     college: options.college || null,
     department: options.department || null,
+    tierId: options.tierId || null,
+    tierName: options.tierName || null,
+    teamSize: options.teamSize || null,
+    teamMembers: options.teamMembers || null,
     transactionId: options.transactionId || null,
     customResponses: options.customResponses || null,
     ticketNumber,
@@ -216,6 +224,10 @@ export async function createTicket(
     guestPhone: options.guestPhone,
     college: options.college,
     department: options.department,
+    tierId: options.tierId,
+    tierName: options.tierName,
+    teamSize: options.teamSize,
+    teamMembers: options.teamMembers,
     transactionId: options.transactionId,
     customResponses: options.customResponses,
     qrPayload,
@@ -235,6 +247,10 @@ export async function registerParticipantForEvent(
     department?: string;
     domain?: string;
     domainId?: string;
+    tierId?: string;
+    tierName?: string;
+    teamSize?: number;
+    teamMembers?: Array<{ name: string; email?: string; phone?: string; college?: string; department?: string }>;
     transactionId?: string;
     customResponses?: Record<string, string>;
     registrationSource?: 'public' | 'manual';
@@ -248,6 +264,10 @@ export async function registerParticipantForEvent(
     registrationSource: participantData.registrationSource || 'public',
     college: participantData.college,
     department: participantData.department,
+    tierId: participantData.tierId,
+    tierName: participantData.tierName,
+    teamSize: participantData.teamSize,
+    teamMembers: participantData.teamMembers,
     transactionId: participantData.transactionId,
     customResponses: participantData.customResponses,
   });
@@ -270,6 +290,10 @@ export async function registerParticipantForEvent(
     department: participantData.department || undefined,
     domain: participantData.domain || undefined,
     domainId: participantData.domainId || undefined,
+    tierId: participantData.tierId || undefined,
+    tierName: participantData.tierName || undefined,
+    teamSize: participantData.teamSize || undefined,
+    teamMembers: participantData.teamMembers || undefined,
     transactionId: participantData.transactionId || undefined,
     customResponses: participantData.customResponses || undefined,
     arrived: false,

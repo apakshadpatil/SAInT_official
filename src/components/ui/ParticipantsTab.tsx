@@ -254,6 +254,16 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
                       <p className="font-medium" style={{ color: 'var(--dash-text)' }}>
                         {participant.name}
                       </p>
+                      {participant.tierName && (
+                        <span className="inline-block mt-0.5 text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-400">
+                          {participant.tierName}
+                        </span>
+                      )}
+                      {participant.teamMembers && participant.teamMembers.length > 0 && (
+                        <p className="text-[11px] mt-0.5 text-slate-400">
+                          +{participant.teamMembers.length} teammates: {participant.teamMembers.map((m) => m.name).join(', ')}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-sm" style={{ color: 'var(--dash-muted)' }}>

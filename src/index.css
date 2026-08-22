@@ -46,6 +46,208 @@
   --site-input-placeholder: #94a3b8;
 }
 
+/* ═══════════════════════════════════════
+   DOOMSDAY — DARK BACKGROUNDS + FORCE WHITE TEXT
+   Blue accent text & buttons untouched.
+   ═══════════════════════════════════════ */
+
+/* ── Global: body background black, text white ── */
+[data-doomsday="true"] body {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+[data-doomsday="true"] #root {
+  background-color: #000000 !important;
+}
+
+/* ── All section backgrounds go dark ── */
+[data-doomsday="true"] section {
+  background-color: #000000 !important;
+  background-image: none !important;
+}
+
+/* ── Header & footer ── */
+[data-doomsday="true"] header.public-header {
+  background: rgba(0, 0, 0, 0.96) !important;
+  border-bottom-color: rgba(34, 197, 94, 0.18) !important;
+}
+[data-doomsday="true"] footer {
+  background: #000000 !important;
+  border-top-color: rgba(34, 197, 94, 0.15) !important;
+}
+
+/* ── NAV LINKS & HEADER ELEMENTS — force white ── */
+[data-doomsday="true"] header a,
+[data-doomsday="true"] header button,
+[data-doomsday="true"] header span,
+[data-doomsday="true"] nav a,
+[data-doomsday="true"] nav span,
+[data-doomsday="true"] nav li {
+  color: #ffffff !important;
+}
+
+/* ── ALL headings — force white ── */
+[data-doomsday="true"] h1:not(.doomsday-hero-text),
+[data-doomsday="true"] h2,
+[data-doomsday="true"] h3,
+[data-doomsday="true"] h4,
+[data-doomsday="true"] h5,
+[data-doomsday="true"] h6 {
+  color: #ffffff !important;
+}
+
+/* ── ALL paragraph and span text — white ── */
+[data-doomsday="true"] p,
+[data-doomsday="true"] span:not([class*="bg-"]),
+[data-doomsday="true"] li,
+[data-doomsday="true"] label,
+[data-doomsday="true"] td,
+[data-doomsday="true"] th {
+  color: #ffffff !important;
+}
+
+/* ── Wildcard: every slate/gray/zinc/neutral/stone shade → white ── */
+[data-doomsday="true"] [class*="text-slate-"],
+[data-doomsday="true"] [class*="text-gray-"],
+[data-doomsday="true"] [class*="text-zinc-"],
+[data-doomsday="true"] [class*="text-neutral-"],
+[data-doomsday="true"] [class*="text-stone-"],
+[data-doomsday="true"] .text-black {
+  color: #ffffff !important;
+}
+
+/* ── Blue accent text stays blue ── */
+[data-doomsday="true"] [class*="text-blue-"] {
+  /* intentionally NOT overridden — keep original blue */
+}
+
+/* ── White / light backgrounds → obsidian ── */
+[data-doomsday="true"] .bg-white,
+[data-doomsday="true"] .bg-white\/90,
+[data-doomsday="true"] .bg-white\/80,
+[data-doomsday="true"] .bg-white\/70,
+[data-doomsday="true"] .bg-white\/50,
+[data-doomsday="true"] .bg-white\/40,
+[data-doomsday="true"] .bg-slate-50,
+[data-doomsday="true"] .bg-slate-100 {
+  background-color: #0a0a0a !important;
+}
+
+/* ── Cards get dark obsidian treatment ── */
+[data-doomsday="true"] .card {
+  background: rgba(8, 10, 8, 0.92) !important;
+  border-color: rgba(34, 197, 94, 0.18) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.85) !important;
+  color: #ffffff !important;
+}
+
+/* ── public-bg-blobs hue shift ── */
+[data-doomsday="true"] .public-bg-blobs {
+  opacity: 0.12 !important;
+  filter: hue-rotate(90deg) !important;
+}
+
+/* ── Faculty Coordinator card — deep forest green in doomsday ── */
+[data-doomsday="true"] .card.doomsday-card-faculty {
+  background: linear-gradient(135deg, #064e28 0%, #022c16 100%) !important;
+  border: 1px solid rgba(34, 197, 94, 0.3) !important;
+  box-shadow: 0 0 28px rgba(34, 197, 94, 0.2) !important;
+  color: #ffffff !important;
+}
+[data-doomsday="true"] .card.doomsday-card-faculty h3,
+[data-doomsday="true"] .card.doomsday-card-faculty p,
+[data-doomsday="true"] .card.doomsday-card-faculty span {
+  color: #ffffff !important;
+  text-shadow: none !important;
+}
+[data-doomsday="true"] .card.doomsday-card-faculty .label-muted {
+  color: rgba(134, 239, 172, 0.85) !important;
+}
+
+/* ── Chairman card — dark slate look ── */
+[data-doomsday="true"] .card.doomsday-card-chairman {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+[data-doomsday="true"] .card.doomsday-card-chairman h3,
+[data-doomsday="true"] .card.doomsday-card-chairman p,
+[data-doomsday="true"] .card.doomsday-card-chairman span {
+  color: #ffffff !important;
+  text-shadow: none !important;
+}
+[data-doomsday="true"] .card.doomsday-card-chairman .label-muted {
+  color: rgba(148, 163, 184, 0.9) !important;
+}
+
+/* Green Smoke Particle Keyframes */
+@keyframes doomsdaySmokeDrift {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translate(30px, -20px) scale(1.15) rotate(180deg);
+    opacity: 0.75;
+  }
+  100% {
+    transform: translate(0, 0) scale(1) rotate(360deg);
+    opacity: 0.45;
+  }
+}
+
+@keyframes doomsdaySmokePulse {
+  0%, 100% {
+    opacity: 0.5;
+    filter: blur(40px) brightness(1);
+  }
+  50% {
+    opacity: 0.85;
+    filter: blur(55px) brightness(1.35);
+  }
+}
+
+.doomsday-green-smoke {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.smoke-cloud-1 {
+  position: absolute;
+  top: -10%;
+  left: 10%;
+  width: 550px;
+  height: 550px;
+  background: radial-gradient(circle, rgba(34, 197, 94, 0.45) 0%, rgba(16, 185, 129, 0.2) 50%, transparent 70%);
+  filter: blur(50px);
+  animation: doomsdaySmokeDrift 18s ease-in-out infinite alternate;
+}
+
+.smoke-cloud-2 {
+  position: absolute;
+  top: 15%;
+  right: 5%;
+  width: 650px;
+  height: 650px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.4) 0%, rgba(5, 150, 105, 0.25) 50%, transparent 70%);
+  filter: blur(60px);
+  animation: doomsdaySmokePulse 12s ease-in-out infinite alternate;
+}
+
+.smoke-cloud-3 {
+  position: absolute;
+  bottom: -15%;
+  left: 30%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(74, 222, 128, 0.35) 0%, rgba(20, 83, 45, 0.2) 60%, transparent 75%);
+  filter: blur(45px);
+  animation: doomsdaySmokeDrift 22s ease-in-out infinite alternate-reverse;
+}
+
 /* ─── DASHBOARD THEMES ─── */
 [data-dashboard-theme="light"] {
   --dash-bg: #f4f6f9;

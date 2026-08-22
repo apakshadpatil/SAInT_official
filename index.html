@@ -14,6 +14,8 @@
           if (t) document.documentElement.setAttribute('data-theme', t);
           var dt = localStorage.getItem('saint-dashboard-theme');
           if (dt) document.documentElement.setAttribute('data-dashboard-theme', dt);
+          var dd = localStorage.getItem('saint_doomsday_mode');
+          if (dd === 'true') document.documentElement.setAttribute('data-doomsday', 'true');
         } catch(e) {}
       })();
     </script>

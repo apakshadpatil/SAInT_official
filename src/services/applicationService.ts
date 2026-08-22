@@ -82,13 +82,34 @@ export async function deleteApplication(id: string) {
 export async function getSiteSettings() {
   const snap = await getDoc(doc(db, 'settings', 'site'));
   if (!snap.exists()) {
-    return { applicationsOpen: true, clubDescription: '', aboutText: '', whatsappGroupLink: '' };
+    return { applicationsOpen: true, clubDescription: '', aboutText: '', whatsappGroupLink: '', doomsdayMode: false };
   }
   return snap.data();
 }
 
+export function subscribeSiteSettings(callback: (settings: { applicationsOpen?: boolean; clubDescription?: string; aboutText?: string; whatsappGroupLink?: string; doomsdayMode?: boolean }) => void) {
+  return onSnapshot(doc(db, 'settings', 'site'), (snap) => {
+    if (snap.exists()) {
+      const data = snap.data() as any;
+      try {
+        localStorage.setItem('saint_doomsday_mode', String(Boolean(data?.doomsdayMode)));
+      } catch {}
+      callback(data);
+    } else {
+      callback({ applicationsOpen: true, clubDescription: '', aboutText: '', whatsappGroupLink: '', doomsdayMode: false });
+    }
+  });
+}
+
 export async function updateSiteSettings(data: Record<string, unknown>) {
   await setDoc(doc(db, 'settings', 'site'), data, { merge: true });
+}
+
+export async function setDoomsdayMode(enabled: boolean) {
+  try {
+    localStorage.setItem('saint_doomsday_mode', String(enabled));
+  } catch {}
+  await updateSiteSettings({ doomsdayMode: enabled });
 }
 
 export async function getPublicEvents() {
@@ -111,13 +132,25 @@ export async function getFacultyCoordinator() {
   return snap.exists() ? snap.data() : null;
 }
 
-export async function getHomeImages() {
+export async function getHomeImagesConfig(): Promise<{ images: string[]; showHomeImages: boolean }> {
   const snap = await getDoc(doc(db, 'settings', 'homeImages'));
-  if (!snap.exists()) return [];
+  if (!snap.exists()) return { images: [], showHomeImages: true };
   const data = snap.data();
-  return Array.isArray(data.images) ? data.images as string[] : [];
+  return {
+    images: Array.isArray(data.images) ? (data.images as string[]) : [],
+    showHomeImages: data.showHomeImages !== false,
+  };
+}
+
+export async function getHomeImages() {
+  const config = await getHomeImagesConfig();
+  return config.images;
+}
+
+export async function updateHomeImagesConfig(images: string[], showHomeImages: boolean) {
+  await setDoc(doc(db, 'settings', 'homeImages'), { images, showHomeImages }, { merge: true });
 }
 
 export async function updateHomeImages(images: string[]) {
-  await setDoc(doc(db, 'settings', 'homeImages'), { images }, { merge: true });
+  await updateHomeImagesConfig(images, true);
 }

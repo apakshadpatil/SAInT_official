@@ -4,13 +4,14 @@ import {
   User, LogOut, Moon, Sun, BarChart3, FileText, Wallet, PieChart,
   Settings, Shield, UserCheck, KeyRound, Menu, X, ClipboardList,
   Upload, Activity, FileCheck, Briefcase, Trophy, Archive, ImagePlus,
-  ChevronRight,
+  ChevronRight, Zap,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useToast } from '../../contexts/ToastContext';
 import { logoutUser } from '../../services/authService';
-import { getApplications } from '../../services/applicationService';
+import { getApplications, subscribeSiteSettings, setDoomsdayMode } from '../../services/applicationService';
 import { getPublishedUpcomingEvents } from '../../services/eventService';
 import { getTasksForUser } from '../../services/taskService';
 import { getPendingUsers } from '../../services/authService';
@@ -80,6 +81,8 @@ interface SidebarNavProps {
   theme: string;
   profile: ReturnType<typeof useAuth>['profile'];
   isSuperAdminUser?: boolean;
+  doomsdayMode?: boolean;
+  onToggleDoomsday?: () => void;
   badges?: Record<string, number>;
   onLinkClick?: () => void;
   onLogout: () => void;
@@ -92,6 +95,8 @@ function SidebarNav({
   theme,
   profile,
   isSuperAdminUser = false,
+  doomsdayMode = false,
+  onToggleDoomsday,
   badges = {},
   onLinkClick,
   onLogout,
@@ -212,6 +217,41 @@ function SidebarNav({
         className="shrink-0 px-2 py-3 space-y-1"
         style={{ borderTop: '1px solid var(--dash-sidebar-border)' }}
       >
+        {/* Superadmin Doomsday Mode Toggle */}
+        {isSuperAdminUser && (
+          <button
+            onClick={onToggleDoomsday}
+            className="sidebar-nav-item w-full flex items-center justify-between transition-all"
+            style={{
+              background: doomsdayMode ? 'rgba(16,185,129,0.15)' : 'transparent',
+              border: doomsdayMode ? '1px solid rgba(16,185,129,0.3)' : '1px solid transparent',
+              borderRadius: '8px',
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <Zap
+                className={`w-4 h-4 shrink-0 ${doomsdayMode ? 'text-emerald-400 animate-pulse' : ''}`}
+                style={{ color: doomsdayMode ? '#34d399' : 'var(--dash-muted)' }}
+              />
+              <span
+                className="text-[13px] font-semibold"
+                style={{ color: doomsdayMode ? '#34d399' : 'var(--dash-text)' }}
+              >
+                Doomsday Mode
+              </span>
+            </div>
+            <span
+              className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                doomsdayMode
+                  ? 'bg-emerald-500 text-black shadow-[0_0_10px_rgba(16,185,129,0.5)]'
+                  : 'bg-slate-700/50 text-slate-400'
+              }`}
+            >
+              {doomsdayMode ? 'ON' : 'OFF'}
+            </span>
+          </button>
+        )}
+
         {/* Theme Toggle */}
         <button
           onClick={onToggleTheme}
@@ -286,11 +326,35 @@ function SidebarNav({
 export default function DashboardLayout() {
   const { profile } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { showToast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
   const isSuperAdminUser = isSuperAdmin(profile);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [navBadges, setNavBadges] = useState<Record<string, number>>({});
+  const [doomsdayMode, setDoomsdayModeState] = useState(false);
+
+  // Subscribe to site settings for real-time Doomsday mode
+  useEffect(() => {
+    const unsub = subscribeSiteSettings((settings) => {
+      setDoomsdayModeState(Boolean(settings?.doomsdayMode));
+    });
+    return () => unsub();
+  }, []);
+
+  const handleToggleDoomsday = async () => {
+    try {
+      const nextState = !doomsdayMode;
+      await setDoomsdayMode(nextState);
+      setDoomsdayModeState(nextState);
+      showToast(
+        nextState ? '⚡ DOOMSDAY MODE ACTIVATED across SAInT site' : 'Doomsday Mode deactivated',
+        nextState ? 'info' : 'info'
+      );
+    } catch (err) {
+      showToast('Failed to toggle Doomsday Mode', 'error');
+    }
+  };
 
   // Sync super-admin attribute on <html> so CSS variable overrides apply correctly
   useEffect(() => {
@@ -368,6 +432,8 @@ export default function DashboardLayout() {
     theme,
     profile,
     isSuperAdminUser,
+    doomsdayMode,
+    onToggleDoomsday: handleToggleDoomsday,
     badges: navBadges,
     onLogout: handleLogout,
     onToggleTheme: toggleTheme,

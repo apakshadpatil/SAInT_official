@@ -124,6 +124,43 @@ export interface PublicEvent {
   featured: boolean;
 }
 
+export type TicketSize = 'standard' | 'badge' | 'compact' | 'wide' | 'custom';
+
+export interface TicketSizeConfig {
+  type: TicketSize;
+  width: number;
+  height: number;
+  label: string;
+}
+
+export interface TicketTier {
+  id: string;
+  name: string; // e.g. "Solo (1 Member)", "Duo (2 Members)", "Squad (4 Members)"
+  teamSize: number; // number of team members (1, 2, 3, 4, etc.)
+  price?: number; // e.g. 150
+  paymentQRUrl?: string; // specific QR for this team size/tier
+  description?: string;
+  customFields?: CustomFormField[]; // tier-specific form fields
+}
+
+export interface CertificateConfig {
+  templateUrl?: string;
+  presetStyle?: 'navy_gold' | 'cyber_green' | 'royal_crimson' | 'clean_white';
+  fontFamily?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  nameFontSize?: number;
+  nameOffsetY?: number; // relative vertical offset % or px
+  eventFontSize?: number;
+  eventOffsetY?: number;
+  bodyText?: string;
+  signatoryName?: string;
+  signatoryTitle?: string;
+  organizationName?: string;
+  showDate?: boolean;
+  showCertificateId?: boolean;
+}
+
 export interface CustomFormField {
   id: string;
   label: string;
@@ -131,6 +168,7 @@ export interface CustomFormField {
   required: boolean;
   options?: string[];
   placeholder?: string;
+  tierId?: string; // optional: assign field to a specific ticket tier
 }
 
 export interface ParticipantBatch {
@@ -162,6 +200,13 @@ export interface EventRecord {
   ticketingEnabled?: boolean;
   paymentQRUrl?: string;
   ticketDesignImageUrl?: string;
+  ticketSize?: TicketSize;
+  customTicketWidth?: number;
+  customTicketHeight?: number;
+  enableTieredTicketing?: boolean;
+  ticketTiers?: TicketTier[];
+  // Certificate Studio fields
+  certificateConfig?: CertificateConfig;
   // Custom registration form builder fields
   customFields?: CustomFormField[];
   // Domain and allocation fields
@@ -191,6 +236,14 @@ export interface EventWinner {
   updatedAt: string;
 }
 
+export interface TeamMemberDetail {
+  name: string;
+  email?: string;
+  phone?: string;
+  college?: string;
+  department?: string;
+}
+
 export interface EventTicket {
   id: string;
   eventId: string;
@@ -200,6 +253,10 @@ export interface EventTicket {
   guestPhone?: string;
   college?: string;
   department?: string;
+  tierId?: string;
+  tierName?: string;
+  teamSize?: number;
+  teamMembers?: TeamMemberDetail[];
   transactionId?: string;
   customResponses?: Record<string, string>;
   qrPayload: string;
@@ -221,6 +278,10 @@ export interface EventParticipant {
   department?: string;
   domain?: string;
   domainId?: string;
+  tierId?: string;
+  tierName?: string;
+  teamSize?: number;
+  teamMembers?: TeamMemberDetail[];
   transactionId?: string;
   customResponses?: Record<string, string>;
   arrived: boolean;
@@ -230,6 +291,8 @@ export interface EventParticipant {
   ticketId?: string;
   batchId?: string;
   batchName?: string;
+  certificateUrl?: string;
+  certificateSent?: boolean;
   createdAt: string;
 }
 
@@ -367,6 +430,7 @@ export interface SiteSettings {
   clubDescription: string;
   aboutText: string;
   whatsappGroupLink?: string;
+  doomsdayMode?: boolean;
 }
 
 export const APPLY_SECTIONS: { value: ApplySection; label: string }[] = [

@@ -1,48 +1,126 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Users, Sparkles, ArrowRight, ChevronRight, MapPin, Ticket } from 'lucide-react';
-import { getSiteMembers, getFacultyCoordinator, getHomeImages } from '../../services/applicationService';
+import { Calendar, Users, Sparkles, ArrowRight, ChevronRight, MapPin, Ticket, Zap } from 'lucide-react';
+import { getSiteMembers, getFacultyCoordinator, getHomeImagesConfig, subscribeSiteSettings } from '../../services/applicationService';
 import { getPositionHolders } from '../../services/positionService';
 import { getPublishedUpcomingEvents } from '../../services/eventService';
 import type { EventRecord } from '../../types';
+import Lightning from '../../components/animation/Lightning';
 
 export default function HomePage() {
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [members, setMembers] = useState<{ id: string; name: string; role: string; photoURL?: string }[]>([]);
   const [faculty, setFaculty] = useState<{ name: string; designation: string; email?: string; photoURL?: string } | null>(null);
   const [images, setImages] = useState<string[]>([]);
+  const [showHomeImages, setShowHomeImages] = useState<boolean>(true);
   const [positions, setPositions] = useState<{ position: { title: string }; users: { displayName: string; photoURL?: string }[] }[]>([]);
+  
+  // Instantaneous read from localStorage
+  const [doomsdayMode, setDoomsdayMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('saint_doomsday_mode') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    const unsub = subscribeSiteSettings((settings) => {
+      setDoomsdayMode(Boolean(settings?.doomsdayMode));
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     getPublishedUpcomingEvents().then(setEvents).catch(() => {});
     getSiteMembers().then((m: unknown[]) => m.length && setMembers(m as typeof members)).catch(() => {});
     getFacultyCoordinator().then((f: unknown) => f && setFaculty(f as typeof faculty)).catch(() => {});
-    getHomeImages().then(setImages).catch(() => {});
+    getHomeImagesConfig().then((config) => {
+      setImages(config.images || []);
+      setShowHomeImages(config.showHomeImages !== false);
+    }).catch(() => {});
     getPositionHolders().then((p) => setPositions(p as typeof positions)).catch(() => {});
   }, []);
+
+  const hasImagesToDisplay = showHomeImages && images.length > 0;
 
   return (
     <div>
       {/* Hero */}
       <section id="home" className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-50/80 via-white/90 to-blue-100/60" />
+        {doomsdayMode ? (
+          <>
+            {/* Deep Pitch Black Background */}
+            <div className="absolute inset-0 bg-gradient-to-br from-[#000000] via-[#030804] to-[#000000]" />
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div className="animate-fade-in-up">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-100 text-blue-700 text-sm font-semibold mb-6">
-                <Sparkles className="w-4 h-4" />
-                JSPM&apos;s RSCOE — IT Department
+            {/* Green Smoke / Eerie Atmospheric Mist Fog Layers */}
+            <div className="doomsday-green-smoke">
+              <div className="smoke-cloud-1" />
+              <div className="smoke-cloud-2" />
+              <div className="smoke-cloud-3" />
+            </div>
+
+            {/* Multiple Small Green Lightning Canvas Bolts in Background */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-70 z-0">
+              <div className="absolute -top-12 left-[15%] w-72 h-[420px] opacity-80">
+                <Lightning hue={125} xOffset={-0.35} speed={1.3} intensity={1.4} size={0.7} />
               </div>
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-slate-900 leading-tight mb-6">
-                Welcome to{' '}
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-blue-900">SAInT</span>
-              </h1>
-              <p className="text-lg text-slate-600 leading-relaxed mb-8 max-w-xl">
-                The Student Association of Information Technology — a student-led association fostering innovation,
-                collaboration, and excellence in the IT department at JSPM&apos;s Rajarshi Shahu College of Engineering.
+              <div className="absolute top-8 right-[20%] w-80 h-[480px] opacity-75">
+                <Lightning hue={122} xOffset={0.25} speed={1.1} intensity={1.5} size={0.85} />
+              </div>
+              <div className="absolute bottom-0 left-[45%] w-96 h-[400px] opacity-55">
+                <Lightning hue={128} xOffset={0.0} speed={0.95} intensity={1.2} size={0.65} />
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-50/80 via-white/90 to-blue-100/60" />
+        )}
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32 z-10">
+          <div className={`grid ${hasImagesToDisplay ? 'lg:grid-cols-2' : 'max-w-4xl mx-auto text-center'} gap-12 items-center`}>
+            <div className="animate-fade-in-up">
+              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold mb-6 ${
+                doomsdayMode
+                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
+                  : 'bg-blue-100 text-blue-700'
+              } ${!hasImagesToDisplay ? 'mx-auto' : ''}`}>
+                {doomsdayMode ? <Zap className="w-4 h-4 text-emerald-400 animate-pulse" /> : <Sparkles className="w-4 h-4" />}
+                {doomsdayMode ? 'DOOMSDAY PROTOCOL ACTIVE — RSCOE IT' : "JSPM's RSCOE — IT Department"}
+              </div>
+
+              {doomsdayMode ? (
+                /* DIRECT IMPACT x DOOMSDAY TITLE */
+                <h1
+                  className="text-4xl sm:text-6xl lg:text-7xl font-black uppercase leading-none py-2 tracking-wider text-transparent bg-clip-text mb-6"
+                  style={{
+                    fontFamily: "'Orbitron', 'Montserrat', 'Syne', sans-serif",
+                    backgroundImage: 'linear-gradient(135deg, #ffffff 0%, #a7f3d0 35%, #22c55e 75%, #15803d 100%)',
+                    textShadow: '0 0 35px rgba(34, 197, 94, 0.6), 0 0 75px rgba(34, 197, 94, 0.3)',
+                    letterSpacing: '0.12em',
+                  }}
+                >
+                  IMPACT <span className="text-emerald-400 font-light mx-2">x</span> DOOMSDAY
+                </h1>
+              ) : (
+                /* DEFAULT WELCOME TO SAINT TITLE */
+                <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-slate-900 leading-tight mb-6">
+                  Welcome to{' '}
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-blue-900">
+                    SAInT
+                  </span>
+                </h1>
+              )}
+
+              <p className={`text-lg leading-relaxed mb-8 ${hasImagesToDisplay ? 'max-w-xl' : 'max-w-2xl mx-auto'} ${
+                doomsdayMode ? 'text-emerald-100/90' : 'text-slate-600'
+              }`}>
+                {doomsdayMode
+                  ? 'The high-voltage cyber protocol is active across all department networks, registrations, and quantum channels.'
+                  : 'The Student Association of Information Technology — a student-led association fostering innovation, collaboration, and excellence in the IT department at JSPM\'s Rajarshi Shahu College of Engineering.'}
               </p>
-              <div className="flex flex-wrap gap-4">
+
+              <div className={`flex flex-wrap gap-4 ${!hasImagesToDisplay ? 'justify-center' : ''}`}>
                 <Link to="/apply" className="btn-primary">
                   Join SAInT <ArrowRight className="w-4 h-4" />
                 </Link>
@@ -50,16 +128,40 @@ export default function HomePage() {
               </div>
             </div>
 
-            {images.length > 0 && (
-              <div className="grid grid-cols-2 gap-4 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-                {images.slice(0, 4).map((img, i) => (
-                  <div
-                    key={i}
-                    className={`rounded-2xl overflow-hidden shadow-xl border border-white/50 ${i === 0 ? 'col-span-2 h-48' : 'h-36'}`}
-                  >
-                    <img src={img} alt={`SAInT activity ${i + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
-                  </div>
-                ))}
+            {/* Landing Images Showcase Gallery (Multiple Images Support) */}
+            {hasImagesToDisplay && (
+              <div className="animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+                <div className={`grid gap-4 ${
+                  images.length === 1
+                    ? 'grid-cols-1'
+                    : images.length === 2
+                    ? 'grid-cols-2'
+                    : 'grid-cols-2 sm:grid-cols-2'
+                }`}>
+                  {images.map((img, i) => (
+                    <div
+                      key={i}
+                      className={`group relative rounded-2xl overflow-hidden shadow-xl border transition-all duration-500 hover:scale-[1.02] ${
+                        doomsdayMode
+                          ? 'border-emerald-500/40 shadow-[0_0_25px_rgba(16,185,129,0.2)] bg-black/60'
+                          : 'border-white/50 bg-white/10'
+                      } ${
+                        images.length > 2 && i === 0
+                          ? 'col-span-2 h-52'
+                          : images.length === 1
+                          ? 'h-80'
+                          : 'h-40'
+                      }`}
+                    >
+                      <img
+                        src={img}
+                        alt={`SAInT showcase ${i + 1}`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -179,29 +281,31 @@ export default function HomePage() {
 
           {/* Faculty Coordinator & Chairman */}
           <div className="grid gap-6 md:grid-cols-2 max-w-4xl mx-auto">
-            <div className="card bg-gradient-to-br from-blue-600 to-blue-900 !border-0 text-white overflow-hidden">
+            {/* Faculty Coordinator card */}
+            <div className="card doomsday-card-faculty bg-gradient-to-br from-blue-600 to-blue-900 !border-0 text-white overflow-hidden">
               <div className="flex items-center gap-6">
                 <div className="w-32 h-32 shrink-0 rounded-full overflow-hidden ring-4 ring-white/20">
                   <img src="/images/faculty-coordinator.jpg" alt="Faculty Coordinator" className="w-full h-full object-cover" />
                 </div>
                 <div>
-                  <p className="text-blue-200 text-sm font-semibold uppercase tracking-wider mb-2">Faculty Coordinator</p>
+                  <p className="label-muted text-blue-200 text-sm font-semibold uppercase tracking-wider mb-2">Faculty Coordinator</p>
                   <h3 className="text-2xl font-bold mb-1">{faculty?.name || 'Dr. Pallavi Tekade'}</h3>
-                  <p className="text-blue-200">{faculty?.designation || 'Faculty Coordinator — IT Department'}</p>
+                  <p className="label-muted text-blue-200">{faculty?.designation || 'Faculty Coordinator — IT Department'}</p>
                   {faculty?.email && <p className="text-sm text-blue-100 mt-2">{faculty.email}</p>}
                 </div>
               </div>
             </div>
 
-            <div className="card bg-gradient-to-br from-slate-800 to-slate-900 !border-0 text-white overflow-hidden">
+            {/* Chairman card */}
+            <div className="card doomsday-card-chairman bg-gradient-to-br from-slate-800 to-slate-900 !border-0 text-white overflow-hidden">
               <div className="flex items-center gap-6">
                 <div className="w-32 h-32 shrink-0 rounded-full overflow-hidden ring-4 ring-white/20">
                   <img src="/images/hod-it.jpg" alt="Chairman of the Club" className="w-full h-full object-cover" />
                 </div>
                 <div>
-                  <p className="text-slate-300 text-sm font-semibold uppercase tracking-wider mb-2">Chairman</p>
+                  <p className="label-muted text-slate-300 text-sm font-semibold uppercase tracking-wider mb-2">Chairman</p>
                   <h3 className="text-2xl font-bold mb-1">Dr. Nihar Ranjan</h3>
-                  <p className="text-slate-300">Head of Department — Information Technology</p>
+                  <p className="label-muted text-slate-300">Head of Department — Information Technology</p>
                 </div>
               </div>
             </div>
