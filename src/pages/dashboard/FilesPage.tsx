@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { DataStateWrapper, TableSkeleton } from '../../components/ui/skeleton';
 import {
   uploadDocument,
   updateDocument,
@@ -76,8 +77,14 @@ export default function FilesPage() {
 
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    const unsubDocs = subscribeDocuments(setDocuments);
+    const unsubDocs = subscribeDocuments((docs) => {
+      setDocuments(docs);
+      // First load completed when both docs and events have data
+      if (loading) setLoading(false);
+    });
     const unsubEvents = subscribeEvents(setEvents);
     return () => {
       unsubDocs();
@@ -373,134 +380,135 @@ export default function FilesPage() {
       </div>
 
       {/* ── File Records Grid ── */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-        {filteredDocs.map((docFile) => (
-          <div
-            key={docFile.id}
-            className="dash-card flex flex-col justify-between group transition-all duration-150"
-            style={{ borderRadius: '6px', borderColor: 'var(--dash-card-border)' }}
-          >
-            <div>
-              {/* Header tags */}
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <div className="flex items-center gap-1.5">
-                  <div
-                    className="w-7 h-7 flex items-center justify-center shrink-0"
-                    style={{ background: 'var(--dash-hover)', borderRadius: '4px', border: '1px solid var(--dash-border)' }}
-                  >
-                    {getFileIcon(docFile.fileType)}
+      <DataStateWrapper
+        loading={loading}
+        skeleton={<TableSkeleton rows={6} columns={4} />}
+      >
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          {filteredDocs.length === 0 ? (
+            <div
+              className="col-span-full py-16 text-center dash-card border-dashed flex flex-col items-center justify-center"
+              style={{ borderRadius: '6px' }}
+            >
+              <FolderOpen className="w-8 h-8 mb-2 opacity-30" style={{ color: 'var(--dash-text)' }} />
+              <p className="text-sm font-semibold" style={{ color: 'var(--dash-text)' }}>
+                No files match your selection
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--dash-muted)' }}>
+                Upload your first document or change the active filters.
+              </p>
+            </div>
+          ) : (
+            filteredDocs.map((docFile) => (
+              <div
+                key={docFile.id}
+                className="dash-card flex flex-col justify-between group transition-all duration-150"
+                style={{ borderRadius: '6px', borderColor: 'var(--dash-card-border)' }}
+              >
+                <div>
+                  {/* Header tags */}
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-1.5">
+                      <div
+                        className="w-7 h-7 flex items-center justify-center shrink-0"
+                        style={{ background: 'var(--dash-hover)', borderRadius: '4px', border: '1px solid var(--dash-border)' }}
+                      >
+                        {getFileIcon(docFile.fileType)}
+                      </div>
+
+                      {docFile.academicYear && (
+                        <span
+                          className="text-[10px] font-bold px-1.5 py-0.5"
+                          style={{
+                            background: 'rgba(16, 185, 129, 0.08)',
+                            color: '#10b981',
+                            border: '1px solid rgba(16, 185, 129, 0.2)',
+                            borderRadius: '4px',
+                          }}
+                        >
+                          {docFile.academicYear}
+                        </span>
+                      )}
+                    </div>
+
+                    {docFile.category && (
+                      <span
+                        className="text-[10px] font-medium px-1.5 py-0.5 truncate max-w-[130px]"
+                        style={{
+                          background: 'var(--dash-hover)',
+                          color: 'var(--dash-muted)',
+                          border: '1px solid var(--dash-border)',
+                          borderRadius: '4px',
+                        }}
+                      >
+                        {docFile.category}
+                      </span>
+                    )}
                   </div>
 
-                  {docFile.academicYear && (
-                    <span
-                      className="text-[10px] font-bold px-1.5 py-0.5"
-                      style={{
-                        background: 'rgba(16, 185, 129, 0.08)',
-                        color: '#10b981',
-                        border: '1px solid rgba(16, 185, 129, 0.2)',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      {docFile.academicYear}
-                    </span>
+                  {/* Title & Description */}
+                  <h3 className="font-bold text-sm leading-snug line-clamp-1" style={{ color: 'var(--dash-text)' }}>
+                    {docFile.title}
+                  </h3>
+                  <p className="text-xs font-mono truncate mt-1" style={{ color: 'var(--dash-muted)' }}>
+                    {docFile.fileName}
+                  </p>
+
+                  {docFile.description && (
+                    <p className="text-xs mt-1.5 line-clamp-2" style={{ color: 'var(--dash-muted)' }}>
+                      {docFile.description}
+                    </p>
+                  )}
+
+                  {docFile.eventName && (
+                    <div className="flex items-center gap-1 mt-2">
+                      <Ticket className="w-3 h-3 shrink-0" style={{ color: 'var(--dash-muted)' }} />
+                      <span className="text-[10px] truncate" style={{ color: 'var(--dash-muted)' }}>
+                        {docFile.eventName}
+                      </span>
+                    </div>
                   )}
                 </div>
 
-                {docFile.category && (
-                  <span
-                    className="text-[10px] font-medium px-1.5 py-0.5 truncate max-w-[130px]"
-                    style={{
-                      background: 'var(--dash-hover)',
-                      color: 'var(--dash-muted)',
-                      border: '1px solid var(--dash-border)',
-                      borderRadius: '4px',
-                    }}
-                  >
-                    {docFile.category}
+                {/* Actions */}
+                <div className="flex items-center justify-between gap-2 mt-4 pt-3" style={{ borderTop: '1px solid var(--dash-border)' }}>
+                  <span className="text-[10px] font-mono" style={{ color: 'var(--dash-muted)' }}>
+                    {docFile.fileSize
+                      ? docFile.fileSize > 1048576
+                        ? `${(docFile.fileSize / 1048576).toFixed(1)} MB`
+                        : `${Math.round(docFile.fileSize / 1024)} KB`
+                      : '—'}
                   </span>
-                )}
-              </div>
-
-              {/* Title & Description */}
-              <h3 className="font-bold text-sm leading-snug line-clamp-1" style={{ color: 'var(--dash-text)' }}>
-                {docFile.title}
-              </h3>
-              <p className="text-xs font-mono truncate mt-1" style={{ color: 'var(--dash-muted)' }}>
-                {docFile.fileName}
-              </p>
-              {docFile.description && (
-                <p className="text-xs line-clamp-2 mt-1.5 leading-relaxed" style={{ color: 'var(--dash-muted)' }}>
-                  {docFile.description}
-                </p>
-              )}
-
-              {docFile.eventName && (
-                <div className="mt-2.5 flex items-center gap-1 text-[11px]" style={{ color: '#f59e0b' }}>
-                  <Ticket className="w-3 h-3 shrink-0" />
-                  <span className="truncate">{docFile.eventName}</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleDownload(docFile)}
+                      disabled={downloadingId === docFile.id}
+                      title="Download"
+                      className="p-1.5 rounded transition-colors hover:bg-[var(--dash-hover)]"
+                    >
+                      <Download className="w-3.5 h-3.5" style={{ color: 'var(--dash-muted)' }} />
+                    </button>
+                    <button
+                      onClick={() => openEditModal(docFile)}
+                      title="Edit details"
+                      className="p-1.5 rounded transition-colors hover:bg-[var(--dash-hover)]"
+                    >
+                      <Pencil className="w-3.5 h-3.5" style={{ color: 'var(--dash-muted)' }} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(docFile.id)}
+                      title="Delete"
+                      className="p-1.5 rounded transition-colors hover:bg-red-500/10"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div
-              className="flex items-center justify-between pt-3 mt-4 border-t text-xs"
-              style={{ borderColor: 'var(--dash-border)' }}
-            >
-              <span className="text-[10px]" style={{ color: 'var(--dash-muted)' }}>
-                {new Date(docFile.createdAt).toLocaleDateString('en-IN', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </span>
-
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => handleDownload(docFile)}
-                  disabled={downloadingId === docFile.id}
-                  className="btn-outline !py-1 !px-2 !text-xs font-semibold"
-                  style={{ borderRadius: '4px' }}
-                >
-                  <Download className="w-3 h-3" />
-                  <span>{downloadingId === docFile.id ? 'Fetching...' : 'Download'}</span>
-                </button>
-
-                <button
-                  onClick={() => openEditModal(docFile)}
-                  className="p-1.5 rounded text-slate-400 hover:text-blue-500 hover:bg-blue-500/10 transition-colors"
-                  title="Edit details"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-
-                <button
-                  onClick={() => handleDelete(docFile.id)}
-                  className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                  title="Delete file"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
               </div>
-            </div>
-          </div>
-        ))}
-
-        {filteredDocs.length === 0 && (
-          <div
-            className="col-span-full py-16 text-center dash-card border-dashed flex flex-col items-center justify-center"
-            style={{ borderRadius: '6px' }}
-          >
-            <FolderOpen className="w-8 h-8 mb-2 opacity-30" style={{ color: 'var(--dash-text)' }} />
-            <p className="text-sm font-semibold" style={{ color: 'var(--dash-text)' }}>
-              No files match your selection
-            </p>
-            <p className="text-xs mt-1" style={{ color: 'var(--dash-muted)' }}>
-              Upload your first document or change the active filters.
-            </p>
-          </div>
-        )}
-      </div>
+            ))
+          )}
+        </div>
+      </DataStateWrapper>
 
       {/* ── Upload Drawer ── */}
       {isUploading && (

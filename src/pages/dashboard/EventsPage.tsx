@@ -14,12 +14,14 @@ import { uploadFileToSupabase, supabase, SUPABASE_BUCKET, SUPABASE_QUOTA_MB } fr
 import { Calendar, Clock, MapPin, Plus, Image, LayoutGrid, List } from 'lucide-react';
 import RightPanel from '../../components/ui/RightPanel';
 import { useToast } from '../../contexts/ToastContext';
+import { EventCardSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
 
 export default function EventsPage() {
   const navigate = useNavigate();
   const { profile } = useAuth();
   const { showToast } = useToast();
   const [events, setEvents] = useState<EventRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [isCreating, setIsCreating] = useState(false);
   const [formTitle, setFormTitle] = useState('');
@@ -41,7 +43,13 @@ export default function EventsPage() {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  useEffect(() => { const unsub = subscribeEvents(setEvents); return unsub; }, []);
+  useEffect(() => {
+    const unsub = subscribeEvents((items) => {
+      setEvents(items);
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
   useEffect(() => { fetchStorageUsage(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchStorageUsage() {
@@ -237,89 +245,80 @@ export default function EventsPage() {
       </div>
 
       {/* ── Events Grid / List ── */}
-      {viewMode === 'grid' ? (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((event) => (
-            <div
-              key={event.id}
-              onClick={() => navigate(`/dashboard/events/${event.id}`)}
-              className="dash-card !p-0 cursor-pointer overflow-hidden flex flex-col"
-              style={{ transition: 'border-color 0.15s, box-shadow 0.15s' }}
-            >
-              {/* Banner */}
-              {event.imageURL ? (
-                <div className="h-36 overflow-hidden shrink-0">
-                  <img src={event.imageURL} alt={event.title} className="w-full h-full object-cover" />
-                </div>
-              ) : (
-                <div
-                  className="h-36 flex items-center justify-center shrink-0 border-b"
-                  style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-accent-soft)' }}
-                >
-                  <Calendar className="w-8 h-8" style={{ color: 'var(--dash-accent)', opacity: 0.5 }} />
-                </div>
-              )}
-
-              <div className="p-4 flex flex-col flex-1">
-                {/* Meta row */}
-                <div className="flex items-center gap-2 mb-2">
-                  <span
-                    className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5"
-                    style={{
-                      background: event.status === 'published' ? 'rgba(16,185,129,0.08)' : 'var(--dash-hover)',
-                      color: event.status === 'published' ? '#10b981' : 'var(--dash-muted)',
-                      border: `1px solid ${event.status === 'published' ? 'rgba(16,185,129,0.2)' : 'var(--dash-border)'}`,
-                      borderRadius: '4px',
-                    }}
+      <DataStateWrapper
+        loading={loading}
+        isEmpty={filtered.length === 0}
+        emptyTitle="No events in this category"
+        emptyDescription="There are currently no events matching this view."
+        skeleton={<EventCardSkeleton count={6} variant={viewMode === 'grid' ? 'grid' : 'list'} />}
+      >
+        {viewMode === 'grid' ? (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((event) => (
+              <div
+                key={event.id}
+                onClick={() => navigate(`/dashboard/events/${event.id}`)}
+                className="dash-card !p-0 cursor-pointer overflow-hidden flex flex-col hover:border-blue-500/40 transition-all"
+              >
+                {/* Banner */}
+                {event.imageURL ? (
+                  <div className="h-36 overflow-hidden shrink-0">
+                    <img src={event.imageURL} alt={event.title} className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div
+                    className="h-36 flex items-center justify-center shrink-0 border-b"
+                    style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-accent-soft)' }}
                   >
-                    {event.status}
-                  </span>
-                  <span className="text-[10px] ml-auto" style={{ color: 'var(--dash-muted)' }}>
-                    {new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                </div>
-
-                <h3 className="font-bold text-sm leading-snug line-clamp-1 mb-1" style={{ color: 'var(--dash-text)' }}>
-                  {event.title}
-                </h3>
-                <p className="text-xs line-clamp-2 leading-relaxed flex-1" style={{ color: 'var(--dash-muted)' }}>
-                  {event.description}
-                </p>
-
-                {/* Footer */}
-                <div className="flex items-center justify-between pt-3 mt-3 border-t" style={{ borderColor: 'var(--dash-border)' }}>
-                  <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--dash-muted)' }}>
-                    <Clock className="w-3 h-3" />
-                    <span>{event.startTime}</span>
+                    <Calendar className="w-8 h-8" style={{ color: 'var(--dash-accent)', opacity: 0.5 }} />
                   </div>
-                  <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--dash-muted)' }}>
-                    <MapPin className="w-3 h-3" />
-                    <span className="truncate max-w-[110px]">{event.location}</span>
+                )}
+
+                <div className="p-4 flex flex-col flex-1">
+                  {/* Meta row */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span
+                      className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5"
+                      style={{
+                        background: event.status === 'published' ? 'rgba(16,185,129,0.08)' : 'var(--dash-hover)',
+                        color: event.status === 'published' ? '#10b981' : 'var(--dash-muted)',
+                        border: `1px solid ${event.status === 'published' ? 'rgba(16,185,129,0.2)' : 'var(--dash-border)'}`,
+                        borderRadius: '4px',
+                      }}
+                    >
+                      {event.status}
+                    </span>
+                    <span className="text-[10px] ml-auto" style={{ color: 'var(--dash-muted)' }}>
+                      {new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
+
+                  <h3 className="font-bold text-sm leading-snug line-clamp-1 mb-1" style={{ color: 'var(--dash-text)' }}>
+                    {event.title}
+                  </h3>
+                  <p className="text-xs line-clamp-2 leading-relaxed flex-1" style={{ color: 'var(--dash-muted)' }}>
+                    {event.description}
+                  </p>
+
+                  {/* Footer */}
+                  <div className="flex items-center justify-between pt-3 mt-3 border-t" style={{ borderColor: 'var(--dash-border)' }}>
+                    <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--dash-muted)' }}>
+                      <Clock className="w-3 h-3" />
+                      <span>{event.startTime}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--dash-muted)' }}>
+                      <MapPin className="w-3 h-3" />
+                      <span className="truncate max-w-[110px]">{event.location}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
-
-          {filtered.length === 0 && (
-            <div className="col-span-full">
-              <div className="dash-card empty-state">
-                <Calendar className="empty-state-icon" />
-                <p className="empty-state-text">No events in this category</p>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        /* List view */
-        <div className="dash-card !p-0 overflow-hidden">
-          {filtered.length === 0 ? (
-            <div className="empty-state">
-              <Calendar className="empty-state-icon" />
-              <p className="empty-state-text">No events in this category</p>
-            </div>
-          ) : (
-            filtered.map((event) => (
+            ))}
+          </div>
+        ) : (
+          /* List view */
+          <div className="dash-card !p-0 overflow-hidden">
+            {filtered.map((event) => (
               <div
                 key={event.id}
                 onClick={() => navigate(`/dashboard/events/${event.id}`)}
@@ -352,10 +351,10 @@ export default function EventsPage() {
                   {event.status}
                 </span>
               </div>
-            ))
-          )}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </DataStateWrapper>
 
       {/* ── Create Event Drawer ── */}
       {isCreating && (

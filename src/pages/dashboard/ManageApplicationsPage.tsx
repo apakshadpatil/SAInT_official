@@ -4,6 +4,7 @@ import { subscribeApplications, updateApplicationStatus, archiveApplication, del
 import { logActivity } from '../../services/activityService';
 import type { ClubApplication } from '../../types';
 import RightPanel from '../../components/ui/RightPanel';
+import { TableSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
 import {
   Download,
   Search,
@@ -34,6 +35,7 @@ function getAcademicYear(createdAtStr: string): string {
 export default function ManageApplicationsPage() {
   const { profile } = useAuth();
   const [applications, setApplications] = useState<ClubApplication[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [yearFilter, setYearFilter] = useState<string>('all');
@@ -42,7 +44,10 @@ export default function ManageApplicationsPage() {
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    const unsub = subscribeApplications(setApplications);
+    const unsub = subscribeApplications((apps) => {
+      setApplications(apps);
+      setLoading(false);
+    });
     return () => unsub();
   }, []);
 
@@ -363,110 +368,110 @@ export default function ManageApplicationsPage() {
       )}
 
       {/* Applications Data Table */}
-      <div className="dash-card border overflow-hidden" style={{ borderColor: 'var(--dash-border)' }}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b text-[10px] uppercase font-bold tracking-wider" style={{ borderColor: 'var(--dash-border)', color: 'var(--dash-muted)' }}>
-                <th className="py-3 px-3 w-10">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={toggleVisibleSelection}
-                    className="w-4 h-4 accent-blue-500 cursor-pointer"
-                    aria-label={allVisibleSelected ? 'Clear visible application selection' : 'Select all visible applications'}
-                  />
-                </th>
-                <th className="py-3 px-4">Applicant</th>
-                <th className="py-3 px-4">RBT Number</th>
-                <th className="py-3 px-4">Academic Cycle</th>
-                <th className="py-3 px-4">Applied Sections</th>
-                <th className="py-3 px-4">Allocated Panel</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="text-xs divide-y">
-              {filteredApps.map((app) => (
-                <tr key={app.id} className="hover:bg-black/5" style={{ color: 'var(--dash-text)' }}>
-                  <td className="py-3 px-3">
+      <DataStateWrapper
+        loading={loading}
+        isEmpty={filteredApps.length === 0}
+        emptyTitle="No matching applications found"
+        emptyDescription="Try adjusting your search filters or academic cycle."
+        skeleton={<TableSkeleton rows={8} cols={7} hasSearch={false} />}
+      >
+        <div className="dash-card border overflow-hidden" style={{ borderColor: 'var(--dash-border)' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b text-[10px] uppercase font-bold tracking-wider" style={{ borderColor: 'var(--dash-border)', color: 'var(--dash-muted)' }}>
+                  <th className="py-3 px-3 w-10">
                     <input
                       type="checkbox"
-                      checked={selectedIds.has(app.id)}
-                      onChange={() => toggleApplicationSelection(app.id)}
+                      checked={allVisibleSelected}
+                      onChange={toggleVisibleSelection}
                       className="w-4 h-4 accent-blue-500 cursor-pointer"
-                      aria-label={`Select ${app.firstName} ${app.lastName}`}
+                      aria-label={allVisibleSelected ? 'Clear visible application selection' : 'Select all visible applications'}
                     />
-                  </td>
-                  <td className="py-3 px-4 whitespace-nowrap">
-                    <span className="font-semibold">{app.firstName} {app.lastName}</span>
-                    <p className="text-[10px]" style={{ color: 'var(--dash-muted)' }}>{app.email}</p>
-                  </td>
-                  <td className="py-3 px-4 font-mono font-bold" style={{ color: 'var(--dash-text)' }}>{app.rbtNumber}</td>
-                  <td className="py-3 px-4 whitespace-nowrap">{getAcademicYear(app.createdAt)}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex flex-wrap gap-1">
-                      {app.sections.map((s) => (
-                        <span key={s} className="text-[9px] capsule-tag !py-0.5">{s.replace('_', ' ').toUpperCase()}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 whitespace-nowrap">
-                    {app.panelName ? (
-                      <span className="text-[10px] text-blue-400 font-semibold flex items-center gap-1">
-                        <Briefcase className="w-3.5 h-3.5" /> {app.panelName}
+                  </th>
+                  <th className="py-3 px-4">Applicant</th>
+                  <th className="py-3 px-4">RBT Number</th>
+                  <th className="py-3 px-4">Academic Cycle</th>
+                  <th className="py-3 px-4">Applied Sections</th>
+                  <th className="py-3 px-4">Allocated Panel</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="text-xs divide-y">
+                {filteredApps.map((app) => (
+                  <tr key={app.id} className="hover:bg-black/5" style={{ color: 'var(--dash-text)' }}>
+                    <td className="py-3 px-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(app.id)}
+                        onChange={() => toggleApplicationSelection(app.id)}
+                        className="w-4 h-4 accent-blue-500 cursor-pointer"
+                        aria-label={`Select ${app.firstName} ${app.lastName}`}
+                      />
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <span className="font-semibold">{app.firstName} {app.lastName}</span>
+                      <p className="text-[10px]" style={{ color: 'var(--dash-muted)' }}>{app.email}</p>
+                    </td>
+                    <td className="py-3 px-4 font-mono font-bold" style={{ color: 'var(--dash-text)' }}>{app.rbtNumber}</td>
+                    <td className="py-3 px-4 whitespace-nowrap">{getAcademicYear(app.createdAt)}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex flex-wrap gap-1">
+                        {app.sections.map((s) => (
+                          <span key={s} className="text-[9px] capsule-tag !py-0.5">{s.replace('_', ' ').toUpperCase()}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      {app.panelName ? (
+                        <span className="text-[10px] text-blue-400 font-semibold flex items-center gap-1">
+                          <Briefcase className="w-3.5 h-3.5" /> {app.panelName}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] italic" style={{ color: 'var(--dash-muted)' }}>Unallocated</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${getStatusBadge(app.status)}`}>
+                        {app.status.replace('_', ' ').toUpperCase()}
                       </span>
-                    ) : (
-                      <span className="text-[10px] italic" style={{ color: 'var(--dash-muted)' }}>Unallocated</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 whitespace-nowrap">
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${getStatusBadge(app.status)}`}>
-                      {app.status.replace('_', ' ').toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <div className="inline-flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => setSelectedApp(app)}
-                        className="btn-ghost !p-2 text-blue-300"
-                        title={`Inspect ${app.firstName} ${app.lastName}'s application`}
-                        aria-label={`Inspect ${app.firstName} ${app.lastName}'s application`}
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleArchive(app)}
-                        className="btn-ghost !p-2 text-amber-300 hover:!text-amber-200"
-                        title={`Archive ${app.firstName} ${app.lastName}'s application`}
-                        aria-label={`Archive ${app.firstName} ${app.lastName}'s application`}
-                      >
-                        <Archive className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(app)}
-                        className="btn-ghost !p-2 text-red-300 hover:!text-red-200"
-                        title={`Delete ${app.firstName} ${app.lastName}'s application`}
-                        aria-label={`Delete ${app.firstName} ${app.lastName}'s application`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {filteredApps.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-500 italic">
-                    No matching applications found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="inline-flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setSelectedApp(app)}
+                          className="btn-ghost !p-2 text-blue-300"
+                          title={`Inspect ${app.firstName} ${app.lastName}'s application`}
+                          aria-label={`Inspect ${app.firstName} ${app.lastName}'s application`}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleArchive(app)}
+                          className="btn-ghost !p-2 text-amber-300 hover:!text-amber-200"
+                          title={`Archive ${app.firstName} ${app.lastName}'s application`}
+                          aria-label={`Archive ${app.firstName} ${app.lastName}'s application`}
+                        >
+                          <Archive className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(app)}
+                          className="btn-ghost !p-2 text-red-300 hover:!text-red-200"
+                          title={`Delete ${app.firstName} ${app.lastName}'s application`}
+                          aria-label={`Delete ${app.firstName} ${app.lastName}'s application`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      </DataStateWrapper>
 
       {/* Details Side Drawer Modal */}
       {selectedApp && (

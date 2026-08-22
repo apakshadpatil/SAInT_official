@@ -1,6 +1,15 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  getFirestore,
+  collection,
+  limit,
+  getDocs,
+  query
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -16,7 +25,29 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+// Initialize Firestore with high-performance persistent IndexedDB local caching
+let firestoreInstance;
+try {
+  firestoreInstance = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
+  });
+} catch {
+  firestoreInstance = getFirestore(app);
+}
+
+export const db = firestoreInstance;
 export const storage = getStorage(app);
 
 export const SUPERADMIN_EMAIL = import.meta.env.VITE_SUPERADMIN_EMAIL as string | undefined;
+
+// Non-blocking background socket warm-up to eliminate initial cold-start query latency
+if (typeof window !== 'undefined' && db) {
+  setTimeout(() => {
+    try {
+      getDocs(query(collection(db, 'events'), limit(1))).catch(() => {});
+    } catch {}
+  }, 100);
+}

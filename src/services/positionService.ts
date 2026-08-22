@@ -10,8 +10,10 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import type { PositionRecord } from '../types';
-import { getUserProfile, updateUserProfile } from './authService';
+import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
+import { trackDBOperation } from './dbTrackingService';
+import type { PositionRecord, UserProfile } from '../types';
+import { getAllUsers, getUserProfile, updateUserProfile } from './authService';
 
 function now() {
   return new Date().toISOString();
@@ -27,11 +29,15 @@ export async function createPosition(title: string, description: string) {
     createdAt: now(),
   };
   const ref = await addDoc(collection(db, 'positions'), position);
+  invalidateCache('positions:');
+  trackDBOperation({ operation: 'write', action: 'create_position', resource: 'positions', documentCount: 1 });
   return ref.id;
 }
 
 export async function updatePosition(id: string, data: Partial<PositionRecord>) {
   await updateDoc(doc(db, 'positions', id), data);
+  invalidateCache('positions:');
+  trackDBOperation({ operation: 'update', action: 'update_position', resource: 'positions', documentCount: 1 });
 }
 
 export async function deletePosition(id: string) {
@@ -43,16 +49,32 @@ export async function deletePosition(id: string) {
     }
   }
   await deleteDoc(doc(db, 'positions', id));
+  invalidateCache('positions:');
+  trackDBOperation({ operation: 'delete', action: 'delete_position', resource: 'positions', documentCount: 1 });
 }
 
-export async function getPositions(): Promise<PositionRecord[]> {
-  const snap = await getDocs(query(collection(db, 'positions'), orderBy('order', 'asc')));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PositionRecord));
+export async function getPositions(forceRefresh = false): Promise<PositionRecord[]> {
+  return cachedFetch<PositionRecord[]>(
+    'positions:all',
+    async () => {
+      const snap = await getDocs(query(collection(db, 'positions'), orderBy('order', 'asc')));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PositionRecord));
+    },
+    {
+      ttlMs: 120 * 1000,
+      resource: 'positions',
+      action: 'get_positions',
+      forceRefresh,
+    }
+  );
 }
 
 export function subscribePositions(callback: (positions: PositionRecord[]) => void) {
+  trackDBOperation({ operation: 'listener', action: 'subscribe_positions', resource: 'positions' });
   return onSnapshot(query(collection(db, 'positions'), orderBy('order', 'asc')), (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as PositionRecord)));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as PositionRecord));
+    setCachedData('positions:all', items);
+    callback(items);
   });
 }
 
@@ -75,6 +97,8 @@ export async function assignPosition(positionId: string, userId: string) {
 
   await updateDoc(doc(db, 'positions', positionId), { holderIds });
   await updateUserProfile(userId, { positionId, positionTitle: position.title });
+  invalidateCache('positions:');
+  trackDBOperation({ operation: 'update', action: 'assign_position', resource: 'positions', documentCount: 1 });
 }
 
 export async function removeFromPosition(positionId: string, userId: string) {
@@ -86,14 +110,30 @@ export async function removeFromPosition(positionId: string, userId: string) {
     holderIds: position.holderIds.filter((id) => id !== userId),
   });
   await updateUserProfile(userId, { positionId: undefined, positionTitle: undefined });
+  invalidateCache('positions:');
+  trackDBOperation({ operation: 'update', action: 'remove_from_position', resource: 'positions', documentCount: 1 });
 }
 
-export async function getPositionHolders(): Promise<{ position: PositionRecord; users: Awaited<ReturnType<typeof getUserProfile>>[] }[]> {
-  const positions = await getPositions();
-  const result = [];
-  for (const position of positions) {
-    const users = await Promise.all(position.holderIds.map((id) => getUserProfile(id)));
-    result.push({ position, users: users.filter(Boolean) });
-  }
-  return result;
+export async function getPositionHolders(forceRefresh = false): Promise<{ position: PositionRecord; users: UserProfile[] }[]> {
+  return cachedFetch(
+    'positions:holders',
+    async () => {
+      const [positions, allUsers] = await Promise.all([
+        getPositions(forceRefresh),
+        getAllUsers(forceRefresh),
+      ]);
+      const userMap = new Map<string, UserProfile>(allUsers.map((u) => [u.uid, u]));
+      return positions.map((position) => ({
+        position,
+        users: position.holderIds.map((id) => userMap.get(id)).filter((u): u is UserProfile => Boolean(u)),
+      }));
+    },
+    {
+      ttlMs: 90 * 1000,
+      resource: 'positions',
+      action: 'get_position_holders',
+      forceRefresh,
+    }
+  );
 }
+

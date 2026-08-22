@@ -5,10 +5,12 @@ import { getAllUsers } from '../../services/authService';
 import type { TeamRecord, UserProfile } from '../../types';
 import { Plus, Users, Calendar } from 'lucide-react';
 import RightPanel from '../../components/ui/RightPanel';
+import { CardSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
 
 export default function TeamsPage() {
   const { profile } = useAuth();
   const [teams, setTeams] = useState<TeamRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<TeamRecord | null>(null);
 
@@ -21,7 +23,10 @@ export default function TeamsPage() {
   const [targetMemberId, setTargetMemberId] = useState('');
 
   useEffect(() => {
-    const unsub = subscribeTeams(setTeams);
+    const unsub = subscribeTeams((items) => {
+      setTeams(items);
+      setLoading(false);
+    });
     getAllUsers().then((res) => {
       setAllUsers(res.filter((u) => u.status === 'approved'));
     }).catch(console.error);
@@ -108,42 +113,44 @@ export default function TeamsPage() {
       </div>
 
       {/* Teams Grid */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {teams.map((team) => (
-          <div
-            key={team.id}
-            onClick={() => setSelectedTeam(team)}
-            className="dash-card cursor-pointer hover:shadow-lg hover:border-blue-500/20 transition-all flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
-                  <Users className="w-5 h-5 text-blue-500" />
+      <DataStateWrapper
+        loading={loading}
+        isEmpty={teams.length === 0}
+        emptyTitle="No teams registered"
+        emptyDescription="Create a team department to organize club activities."
+        skeleton={<CardSkeleton count={6} />}
+      >
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {teams.map((team) => (
+            <div
+              key={team.id}
+              onClick={() => setSelectedTeam(team)}
+              className="dash-card cursor-pointer hover:shadow-lg hover:border-blue-500/20 transition-all flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
+                    <Users className="w-5 h-5 text-blue-500" />
+                  </div>
+                  <span className="text-[10px] capsule-tag !py-0.5">{team.memberIds?.length || 0} Members</span>
                 </div>
-                <span className="text-[10px] capsule-tag !py-0.5">{team.memberIds?.length || 0} Members</span>
+
+                <h3 className="font-bold text-sm leading-snug line-clamp-1 mb-2" style={{ color: 'var(--dash-text)' }}>{team.name}</h3>
+                <p className="text-xs line-clamp-2 leading-relaxed" style={{ color: 'var(--dash-muted)' }}>{team.description}</p>
               </div>
 
-              <h3 className="font-bold text-sm leading-snug line-clamp-1 mb-2" style={{ color: 'var(--dash-text)' }}>{team.name}</h3>
-              <p className="text-xs line-clamp-2 leading-relaxed" style={{ color: 'var(--dash-muted)' }}>{team.description}</p>
-            </div>
+              <div className="flex items-center justify-between pt-4 mt-6 border-t" style={{ borderColor: 'var(--dash-border)', color: 'var(--dash-muted)' }}>
+                <div className="flex items-center gap-1.5 text-[9px]">
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Created: {new Date(team.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                </div>
 
-            <div className="flex items-center justify-between pt-4 mt-6 border-t" style={{ borderColor: 'var(--dash-border)', color: 'var(--dash-muted)' }}>
-              <div className="flex items-center gap-1.5 text-[9px]">
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Created: {new Date(team.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                <span className="text-[9px] truncate max-w-[120px]">Led: {team.createdByName}</span>
               </div>
-
-              <span className="text-[9px] truncate max-w-[120px]">Led: {team.createdByName}</span>
             </div>
-          </div>
-        ))}
-
-        {teams.length === 0 && (
-          <div className="col-span-full py-16 text-center dash-card border-dashed">
-            <p style={{ color: 'var(--dash-muted)' }}>No teams registered.</p>
-          </div>
-        )}
-      </div>
+          ))}
+        </div>
+      </DataStateWrapper>
 
       {/* Create Team Drawer */}
       {isCreating && (

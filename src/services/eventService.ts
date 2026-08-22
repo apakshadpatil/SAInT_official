@@ -14,6 +14,8 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
+import { trackDBOperation } from './dbTrackingService';
 import type { EventRecord, EventTicket, EventParticipant } from '../types';
 import { buildQRPayload, parseQRPayload } from '../utils/qrScan';
 import { extractSupabasePathFromPublicUrl, removeFileFromSupabase, uploadFileToSupabase } from '../utils/supabase';
@@ -96,6 +98,8 @@ export async function createEvent(data: Omit<EventRecord, 'id' | 'createdAt' | '
   });
 
   const ref = await addDoc(collection(db, 'events'), payload);
+  invalidateCache('events:');
+  trackDBOperation({ operation: 'write', action: 'create_event', resource: 'events', documentCount: 1 });
   return ref.id;
 }
 
@@ -115,6 +119,9 @@ export async function updateEvent(id: string, data: Partial<EventRecord>) {
 
   const cleanData = removeUndefinedFields({ ...data, updatedAt: now() });
   await updateDoc(doc(db, 'events', id), cleanData);
+  invalidateCache(`event:${id}`);
+  invalidateCache('events:');
+  trackDBOperation({ operation: 'update', action: 'update_event', resource: 'events', documentCount: 1 });
 }
 
 export async function deleteEvent(id: string) {
@@ -139,30 +146,61 @@ export async function deleteEvent(id: string) {
   }
 
   await deleteDoc(doc(db, 'events', id));
+  invalidateCache(`event:${id}`);
+  invalidateCache('events:');
+  trackDBOperation({ operation: 'delete', action: 'delete_event', resource: 'events', documentCount: 1 });
 }
 
-export async function getEvent(id: string): Promise<EventRecord | null> {
-  const snap = await getDoc(doc(db, 'events', id));
-  if (!snap.exists()) return null;
-  return { id: snap.id, ...snap.data() } as EventRecord;
+export async function getEvent(id: string, forceRefresh = false): Promise<EventRecord | null> {
+  return cachedFetch<EventRecord | null>(
+    `event:${id}`,
+    async () => {
+      const snap = await getDoc(doc(db, 'events', id));
+      if (!snap.exists()) return null;
+      return { id: snap.id, ...snap.data() } as EventRecord;
+    },
+    {
+      ttlMs: 60 * 1000,
+      resource: 'events',
+      action: 'get_event',
+      forceRefresh,
+    }
+  );
 }
 
 export const getEventById = getEvent;
 
-export async function getEvents(): Promise<EventRecord[]> {
-  const snap = await getDocs(query(collection(db, 'events'), orderBy('date', 'desc')));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
+export async function getEvents(forceRefresh = false): Promise<EventRecord[]> {
+  return cachedFetch<EventRecord[]>(
+    'events:all',
+    async () => {
+      const snap = await getDocs(query(collection(db, 'events'), orderBy('date', 'desc')));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
+    },
+    {
+      ttlMs: 45 * 1000,
+      resource: 'events',
+      action: 'get_events',
+      forceRefresh,
+    }
+  );
 }
 
 export function subscribeEventById(eventId: string, callback: (event: EventRecord | null) => void) {
+  trackDBOperation({ operation: 'listener', action: 'subscribe_event_by_id', resource: 'events' });
   return onSnapshot(doc(db, 'events', eventId), (snap) => {
-    callback(snap.exists() ? ({ id: snap.id, ...snap.data() } as EventRecord) : null);
+    const item = snap.exists() ? ({ id: snap.id, ...snap.data() } as EventRecord) : null;
+    if (item) setCachedData(`event:${eventId}`, item);
+    callback(item);
   });
 }
 
 export function subscribeEvents(callback: (events: EventRecord[]) => void) {
+  trackDBOperation({ operation: 'listener', action: 'subscribe_events', resource: 'events' });
   return onSnapshot(query(collection(db, 'events'), orderBy('date', 'desc')), (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord)));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
+    setCachedData('events:all', items);
+    callback(items);
   });
 }
 
@@ -346,23 +384,34 @@ export function subscribeEventTickets(eventId: string, callback: (tickets: Event
   });
 }
 
-export async function getPublishedUpcomingEvents(): Promise<EventRecord[]> {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const snap = await getDocs(
-      query(
-        collection(db, 'events'),
-        where('status', '==', 'published'),
-        orderBy('date', 'asc')
-      )
-    );
-    const events = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
-    return getUpcomingEvents(events, today);
-  } catch (indexErr) {
-    console.warn('Published events query failed, falling back to client filter:', indexErr);
-    const events = await getEvents();
-    return getUpcomingEvents(events);
-  }
+export async function getPublishedUpcomingEvents(forceRefresh = false): Promise<EventRecord[]> {
+  return cachedFetch<EventRecord[]>(
+    'events:upcoming_published',
+    async () => {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const snap = await getDocs(
+          query(
+            collection(db, 'events'),
+            where('status', '==', 'published'),
+            orderBy('date', 'asc')
+          )
+        );
+        const events = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
+        return getUpcomingEvents(events, today);
+      } catch (indexErr) {
+        console.warn('Published events query failed, falling back to client filter:', indexErr);
+        const events = await getEvents(forceRefresh);
+        return getUpcomingEvents(events);
+      }
+    },
+    {
+      ttlMs: 45 * 1000,
+      resource: 'events',
+      action: 'get_published_upcoming_events',
+      forceRefresh,
+    }
+  );
 }
 
 export function subscribePublishedUpcomingEvents(callback: (events: EventRecord[]) => void) {

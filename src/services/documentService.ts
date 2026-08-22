@@ -11,6 +11,8 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
+import { trackDBOperation } from './dbTrackingService';
 import type { DocumentFile } from '../types';
 import { uploadFileToSupabase, removeFileFromSupabase, extractSupabasePathFromPublicUrl } from '../utils/supabase';
 
@@ -61,6 +63,8 @@ export async function uploadDocument(
   if (data.fileDataUrl) payload.fileDataUrl = data.fileDataUrl;
 
   const ref = await addDoc(collection(db, 'documents'), payload);
+  invalidateCache('documents:');
+  trackDBOperation({ operation: 'write', action: 'upload_document', resource: 'documents', documentCount: 1 });
   return ref.id;
 }
 
@@ -79,6 +83,8 @@ export async function updateDocument(id: string, updates: Partial<DocumentFile>)
   if (updates.eventName !== undefined) payload.eventName = updates.eventName;
 
   await updateDoc(docRef, payload);
+  invalidateCache('documents:');
+  trackDBOperation({ operation: 'update', action: 'update_document', resource: 'documents', documentCount: 1 });
 }
 
 export async function deleteDocument(id: string) {
@@ -99,16 +105,32 @@ export async function deleteDocument(id: string) {
   }
 
   await deleteDoc(doc(db, 'documents', id));
+  invalidateCache('documents:');
+  trackDBOperation({ operation: 'delete', action: 'delete_document', resource: 'documents', documentCount: 1 });
 }
 
-export async function getDocuments(): Promise<DocumentFile[]> {
-  const snap = await getDocs(query(collection(db, 'documents'), orderBy('createdAt', 'desc')));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as DocumentFile));
+export async function getDocuments(forceRefresh = false): Promise<DocumentFile[]> {
+  return cachedFetch<DocumentFile[]>(
+    'documents:all',
+    async () => {
+      const snap = await getDocs(query(collection(db, 'documents'), orderBy('createdAt', 'desc')));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as DocumentFile));
+    },
+    {
+      ttlMs: 60 * 1000,
+      resource: 'documents',
+      action: 'get_documents',
+      forceRefresh,
+    }
+  );
 }
 
 export function subscribeDocuments(callback: (docs: DocumentFile[]) => void) {
+  trackDBOperation({ operation: 'listener', action: 'subscribe_documents', resource: 'documents' });
   return onSnapshot(query(collection(db, 'documents'), orderBy('createdAt', 'desc')), (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DocumentFile)));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as DocumentFile));
+    setCachedData('documents:all', items);
+    callback(items);
   });
 }
 

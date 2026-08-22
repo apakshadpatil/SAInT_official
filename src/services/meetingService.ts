@@ -10,6 +10,8 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
+import { trackDBOperation } from './dbTrackingService';
 import type { MeetingRecord, AgendaItem } from '../types';
 
 function now() {
@@ -32,25 +34,45 @@ export async function createMeeting(data: {
     updatedAt: now(),
   };
   const ref = await addDoc(collection(db, 'meetings'), meeting);
+  invalidateCache('meetings:');
+  trackDBOperation({ operation: 'write', action: 'create_meeting', resource: 'meetings', documentCount: 1 });
   return ref.id;
 }
 
 export async function updateMeeting(id: string, data: Partial<MeetingRecord>) {
   await updateDoc(doc(db, 'meetings', id), { ...data, updatedAt: now() });
+  invalidateCache('meetings:');
+  trackDBOperation({ operation: 'update', action: 'update_meeting', resource: 'meetings', documentCount: 1 });
 }
 
 export async function deleteMeeting(id: string) {
   await deleteDoc(doc(db, 'meetings', id));
+  invalidateCache('meetings:');
+  trackDBOperation({ operation: 'delete', action: 'delete_meeting', resource: 'meetings', documentCount: 1 });
 }
 
-export async function getMeetings(): Promise<MeetingRecord[]> {
-  const snap = await getDocs(query(collection(db, 'meetings'), orderBy('date', 'desc')));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as MeetingRecord));
+export async function getMeetings(forceRefresh = false): Promise<MeetingRecord[]> {
+  return cachedFetch<MeetingRecord[]>(
+    'meetings:all',
+    async () => {
+      const snap = await getDocs(query(collection(db, 'meetings'), orderBy('date', 'desc')));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as MeetingRecord));
+    },
+    {
+      ttlMs: 45 * 1000,
+      resource: 'meetings',
+      action: 'get_meetings',
+      forceRefresh,
+    }
+  );
 }
 
 export function subscribeMeetings(callback: (meetings: MeetingRecord[]) => void) {
+  trackDBOperation({ operation: 'listener', action: 'subscribe_meetings', resource: 'meetings' });
   return onSnapshot(query(collection(db, 'meetings'), orderBy('date', 'desc')), (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as MeetingRecord)));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MeetingRecord));
+    setCachedData('meetings:all', items);
+    callback(items);
   });
 }
 
@@ -67,3 +89,4 @@ export function getPastMeetings(meetings: MeetingRecord[]) {
 export async function reorderAgenda(meetingId: string, agenda: AgendaItem[]) {
   await updateMeeting(meetingId, { agenda: agenda.map((item, i) => ({ ...item, order: i })) });
 }
+

@@ -7,10 +7,12 @@ import { ShieldAlert, Save, Search, ShieldCheck } from 'lucide-react';
 import Toggle from '../../components/ui/Toggle';
 import VerifiedBadge from '../../components/ui/VerifiedBadge';
 import { useToast } from '../../contexts/ToastContext';
+import { DataStateWrapper, TableSkeleton } from '../../components/ui/skeleton';
 
 export default function AccessControlPage() {
   const { profile } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [search, setSearch] = useState('');
   
@@ -28,6 +30,8 @@ export default function AccessControlPage() {
       setUsers(all.filter((u) => u.status === 'approved' && u.uid !== profile?.uid));
     } catch (err) {
       console.error(err);
+    } finally {
+      setUsersLoading(false);
     }
   };
 
@@ -141,7 +145,7 @@ export default function AccessControlPage() {
   ] as const;
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
+    <DataStateWrapper loading={usersLoading} skeleton={<TableSkeleton rows={5} cols={1} hasSearch={false} />}>
       <div className="rounded-2xl border p-5" style={{ borderColor: 'var(--dash-border)', background: 'linear-gradient(135deg, rgba(59,130,246,0.12), rgba(15,23,42,0.05))' }}>
         <div className="flex items-start gap-3">
           <div className="rounded-xl p-2" style={{ background: 'rgba(59,130,246,0.15)' }}>
@@ -170,7 +174,11 @@ export default function AccessControlPage() {
                 />
               </div>
               <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                {filteredUsers.map((u) => (
+                {usersLoading ? (
+                  <TableSkeleton rows={5} cols={1} hasSearch={false} />
+                ) : filteredUsers.length === 0 ? (
+                  <p className="text-xs text-center py-12" style={{ color: 'var(--dash-muted)' }}>No members found matching your search.</p>
+                ) : filteredUsers.map((u) => (
                   <div
                     key={u.uid}
                     onClick={() => selectUserForEdit(u)}
@@ -189,10 +197,6 @@ export default function AccessControlPage() {
                     </div>
                   </div>
                 ))}
-
-                {filteredUsers.length === 0 && (
-                  <p className="text-xs text-center py-12" style={{ color: 'var(--dash-muted)' }}>No members found matching your search.</p>
-                )}
               </div>
             </div>
           </div>
@@ -288,6 +292,7 @@ export default function AccessControlPage() {
           </div>
         </div>
       </div>
-    </div>
+    </DataStateWrapper>
+
   );
 }

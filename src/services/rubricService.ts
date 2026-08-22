@@ -13,11 +13,15 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
+import { trackDBOperation } from './dbTrackingService';
 import type { GDRubric, StudentRubricEvaluation, RubricScoreItem } from '../types';
 
 function now() {
   return new Date().toISOString();
 }
+
+let rubricsSeeded = false;
 
 const DEFAULT_RUBRICS: Omit<GDRubric, 'id' | 'createdAt'>[] = [
   {
@@ -47,17 +51,24 @@ const DEFAULT_RUBRICS: Omit<GDRubric, 'id' | 'createdAt'>[] = [
 ];
 
 export async function seedDefaultRubrics() {
-  const snap = await getDocs(collection(db, 'assessmentRubrics'));
-  if (snap.empty) {
-    const batch = writeBatch(db);
-    for (const r of DEFAULT_RUBRICS) {
-      const ref = doc(collection(db, 'assessmentRubrics'));
-      batch.set(ref, {
-        ...r,
-        createdAt: now(),
-      });
+  if (rubricsSeeded) return;
+  rubricsSeeded = true;
+  try {
+    const snap = await getDocs(collection(db, 'assessmentRubrics'));
+    if (snap.empty) {
+      const batch = writeBatch(db);
+      for (const r of DEFAULT_RUBRICS) {
+        const ref = doc(collection(db, 'assessmentRubrics'));
+        batch.set(ref, {
+          ...r,
+          createdAt: now(),
+        });
+      }
+      await batch.commit();
+      invalidateCache('assessmentRubrics:');
     }
-    await batch.commit();
+  } catch (err) {
+    console.warn('[Seeding] Rubrics seeding error', err);
   }
 }
 
@@ -70,27 +81,47 @@ export async function createRubric(title: string, description: string, maxMarks:
     createdAt: now(),
   };
   const ref = await addDoc(collection(db, 'assessmentRubrics'), rubric);
+  invalidateCache('assessmentRubrics:');
+  trackDBOperation({ operation: 'write', action: 'create_rubric', resource: 'assessmentRubrics', documentCount: 1 });
   return ref.id;
 }
 
 export async function updateRubric(id: string, data: Partial<GDRubric>) {
   await updateDoc(doc(db, 'assessmentRubrics', id), data);
+  invalidateCache('assessmentRubrics:');
+  trackDBOperation({ operation: 'update', action: 'update_rubric', resource: 'assessmentRubrics', documentCount: 1 });
 }
 
 export async function deleteRubric(id: string) {
   await deleteDoc(doc(db, 'assessmentRubrics', id));
+  invalidateCache('assessmentRubrics:');
+  trackDBOperation({ operation: 'delete', action: 'delete_rubric', resource: 'assessmentRubrics', documentCount: 1 });
 }
 
-export async function getRubrics(): Promise<GDRubric[]> {
+export async function getRubrics(forceRefresh = false): Promise<GDRubric[]> {
   await seedDefaultRubrics();
-  const snap = await getDocs(query(collection(db, 'assessmentRubrics'), orderBy('createdAt', 'asc')));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as GDRubric));
+  return cachedFetch<GDRubric[]>(
+    'assessmentRubrics:all',
+    async () => {
+      const snap = await getDocs(query(collection(db, 'assessmentRubrics'), orderBy('createdAt', 'asc')));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as GDRubric));
+    },
+    {
+      ttlMs: 120 * 1000,
+      resource: 'assessmentRubrics',
+      action: 'get_rubrics',
+      forceRefresh,
+    }
+  );
 }
 
 export function subscribeRubrics(callback: (rubrics: GDRubric[]) => void) {
   seedDefaultRubrics().catch(() => {});
+  trackDBOperation({ operation: 'listener', action: 'subscribe_rubrics', resource: 'assessmentRubrics' });
   return onSnapshot(query(collection(db, 'assessmentRubrics'), orderBy('createdAt', 'asc')), (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as GDRubric)));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as GDRubric));
+    setCachedData('assessmentRubrics:all', items);
+    callback(items);
   });
 }
 

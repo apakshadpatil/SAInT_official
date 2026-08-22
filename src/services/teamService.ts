@@ -11,6 +11,8 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
+import { trackDBOperation } from './dbTrackingService';
 import type { TeamRecord } from '../types';
 import { getUserProfile, updateUserProfile } from './authService';
 
@@ -31,6 +33,8 @@ export async function createTeam(data: {
     createdAt: now(),
   };
   const ref = await addDoc(collection(db, 'teams'), team);
+  invalidateCache('teams:');
+  trackDBOperation({ operation: 'write', action: 'create_team', resource: 'teams', documentCount: 1 });
   return ref.id;
 }
 
@@ -41,22 +45,49 @@ export async function deleteTeam(id: string) {
     await removeMemberFromTeamTags(memberId, team.name, team.id);
   }
   await deleteDoc(doc(db, 'teams', id));
+  invalidateCache('teams:');
+  trackDBOperation({ operation: 'delete', action: 'delete_team', resource: 'teams', documentCount: 1 });
 }
 
-export async function getTeam(id: string): Promise<TeamRecord | null> {
-  const snap = await getDoc(doc(db, 'teams', id));
-  if (!snap.exists()) return null;
-  return { id: snap.id, ...snap.data() } as TeamRecord;
+export async function getTeam(id: string, forceRefresh = false): Promise<TeamRecord | null> {
+  return cachedFetch<TeamRecord | null>(
+    `team:${id}`,
+    async () => {
+      const snap = await getDoc(doc(db, 'teams', id));
+      if (!snap.exists()) return null;
+      return { id: snap.id, ...snap.data() } as TeamRecord;
+    },
+    {
+      ttlMs: 60 * 1000,
+      resource: 'teams',
+      action: 'get_team',
+      forceRefresh,
+    }
+  );
 }
 
-export async function getTeams(): Promise<TeamRecord[]> {
-  const snap = await getDocs(query(collection(db, 'teams'), orderBy('createdAt', 'desc')));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as TeamRecord));
+export async function getTeams(forceRefresh = false): Promise<TeamRecord[]> {
+  return cachedFetch<TeamRecord[]>(
+    'teams:all',
+    async () => {
+      const snap = await getDocs(query(collection(db, 'teams'), orderBy('createdAt', 'desc')));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as TeamRecord));
+    },
+    {
+      ttlMs: 60 * 1000,
+      resource: 'teams',
+      action: 'get_teams',
+      forceRefresh,
+    }
+  );
 }
 
 export function subscribeTeams(callback: (teams: TeamRecord[]) => void) {
+  trackDBOperation({ operation: 'listener', action: 'subscribe_teams', resource: 'teams' });
   return onSnapshot(query(collection(db, 'teams'), orderBy('createdAt', 'desc')), (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as TeamRecord)));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as TeamRecord));
+    setCachedData('teams:all', items);
+    callback(items);
   });
 }
 
@@ -88,6 +119,8 @@ export async function addMemberToTeam(teamId: string, memberId: string) {
     : [...profile.teamNames, team.name];
 
   await updateUserProfile(memberId, { teamIds, teamNames });
+  invalidateCache('teams:');
+  trackDBOperation({ operation: 'update', action: 'add_member_to_team', resource: 'teams', documentCount: 1 });
 }
 
 export async function removeMemberFromTeam(teamId: string, memberId: string) {
@@ -102,4 +135,7 @@ export async function removeMemberFromTeam(teamId: string, memberId: string) {
   });
 
   await removeMemberFromTeamTags(memberId, team.name, teamId);
+  invalidateCache('teams:');
+  trackDBOperation({ operation: 'update', action: 'remove_member_from_team', resource: 'teams', documentCount: 1 });
 }
+

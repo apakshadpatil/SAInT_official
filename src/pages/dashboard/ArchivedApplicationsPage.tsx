@@ -5,16 +5,21 @@ import { logActivity } from '../../services/activityService';
 import type { ClubApplication } from '../../types';
 import RightPanel from '../../components/ui/RightPanel';
 import { ArchiveRestore, Eye, Search, Trash2, Archive, X } from 'lucide-react';
+import { TableSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
 
 export default function ArchivedApplicationsPage() {
   const { profile } = useAuth();
   const [applications, setApplications] = useState<ClubApplication[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
   const [query, setQuery] = useState('');
   const [selectedApp, setSelectedApp] = useState<ClubApplication | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState('');
 
-  useEffect(() => subscribeApplications(setApplications), []);
+  useEffect(() => subscribeApplications((apps) => {
+    setApplications(apps);
+    setLoadingData(false);
+  }), []);
 
   const archivedApps = applications.filter((app) => app.archivedAt).filter((app) => {
     const search = query.trim().toLowerCase();
@@ -137,26 +142,33 @@ export default function ArchivedApplicationsPage() {
         </div>
       )}
 
-      <div className="dash-card p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="dash-table min-w-[720px]">
-            <thead><tr><th className="w-10"><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} className="w-4 h-4 accent-blue-500 cursor-pointer" aria-label={allVisibleSelected ? 'Clear visible archived application selection' : 'Select all visible archived applications'} /></th><th>Applicant</th><th>Department</th><th>Interview status</th><th>Archived on</th><th className="text-right">Actions</th></tr></thead>
-            <tbody>
-              {archivedApps.map((app) => (
-                <tr key={app.id}>
-                  <td><input type="checkbox" checked={selectedIds.has(app.id)} onChange={() => toggleSelection(app.id)} className="w-4 h-4 accent-blue-500 cursor-pointer" aria-label={`Select ${app.firstName} ${app.lastName}`} /></td>
-                  <td><p className="font-semibold">{app.firstName} {app.lastName}</p><p className="text-[10px]" style={{ color: 'var(--dash-muted)' }}>{app.email} · {app.rbtNumber}</p></td>
-                  <td>{app.department}</td>
-                  <td><span className="dash-badge">{app.status.replace('_', ' ')}</span></td>
-                  <td>{app.archivedAt ? new Date(app.archivedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
-                  <td><div className="flex justify-end gap-2"><button onClick={() => setSelectedApp(app)} className="btn-ghost !py-1.5 !px-2 text-blue-300" title="View application"><Eye className="w-4 h-4" /></button><button onClick={() => restore(app)} className="btn-ghost !py-1.5 !px-2 text-emerald-300" title="Unarchive application"><ArchiveRestore className="w-4 h-4" /></button></div></td>
-                </tr>
-              ))}
-              {archivedApps.length === 0 && <tr><td colSpan={6} className="py-14 text-center" style={{ color: 'var(--dash-muted)' }}>No archived applications match this search.</td></tr>}
-            </tbody>
-          </table>
+      <DataStateWrapper
+        loading={loadingData}
+        isEmpty={archivedApps.length === 0}
+        emptyTitle="No archived applications"
+        emptyDescription="Archived applications will appear here."
+        skeleton={<TableSkeleton rows={6} cols={5} hasSearch={false} />}
+      >
+        <div className="dash-card p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="dash-table min-w-[720px]">
+              <thead><tr><th className="w-10"><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} className="w-4 h-4 accent-blue-500 cursor-pointer" aria-label={allVisibleSelected ? 'Clear visible archived application selection' : 'Select all visible archived applications'} /></th><th>Applicant</th><th>Department</th><th>Interview status</th><th>Archived on</th><th className="text-right">Actions</th></tr></thead>
+              <tbody>
+                {archivedApps.map((app) => (
+                  <tr key={app.id}>
+                    <td><input type="checkbox" checked={selectedIds.has(app.id)} onChange={() => toggleSelection(app.id)} className="w-4 h-4 accent-blue-500 cursor-pointer" aria-label={`Select ${app.firstName} ${app.lastName}`} /></td>
+                    <td><p className="font-semibold">{app.firstName} {app.lastName}</p><p className="text-[10px]" style={{ color: 'var(--dash-muted)' }}>{app.email} · {app.rbtNumber}</p></td>
+                    <td>{app.department}</td>
+                    <td><span className="dash-badge">{app.status.replace('_', ' ')}</span></td>
+                    <td>{app.archivedAt ? new Date(app.archivedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
+                    <td><div className="flex justify-end gap-2"><button onClick={() => setSelectedApp(app)} className="btn-ghost !py-1.5 !px-2 text-blue-300" title="View application"><Eye className="w-4 h-4" /></button><button onClick={() => restore(app)} className="btn-ghost !py-1.5 !px-2 text-emerald-300" title="Unarchive application"><ArchiveRestore className="w-4 h-4" /></button></div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      </DataStateWrapper>
 
       <RightPanel open={!!selectedApp} onClose={() => setSelectedApp(null)} title="Archived Application" width="560px">
         {selectedApp && <div className="space-y-5 text-sm">

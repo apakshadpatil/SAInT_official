@@ -15,17 +15,22 @@ import {
 } from 'recharts';
 import { Search, Eye, Filter, Calendar, Activity, Users, ShieldAlert, Award } from 'lucide-react';
 import RightPanel from '../../components/ui/RightPanel';
+import { StatGridSkeleton, TableSkeleton, ChartSkeleton } from '../../components/ui/skeleton';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
 
 export default function UserActivityPage() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
   const [selectedLog, setSelectedLog] = useState<ActivityLog | null>(null);
 
   useEffect(() => {
-    const unsub = subscribeActivity(setLogs);
+    const unsub = subscribeActivity((data) => {
+      setLogs(data);
+      setLogsLoading(false);
+    });
     return () => unsub();
   }, []);
 
@@ -117,47 +122,48 @@ export default function UserActivityPage() {
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="dash-card p-4 border flex items-center gap-4" style={{ borderColor: 'var(--dash-border)' }}>
-          <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-            <Activity className="w-5 h-5" />
+      {logsLoading ? (
+        <StatGridSkeleton count={4} />
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="dash-card p-4 border flex items-center gap-4" style={{ borderColor: 'var(--dash-border)' }}>
+            <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+              <Activity className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold" style={{ color: 'var(--dash-muted)' }}>Total Actions</span>
+              <p className="text-xl font-bold" style={{ color: 'var(--dash-text)' }}>{totalActions}</p>
+            </div>
           </div>
-          <div>
-            <span className="text-[10px] uppercase font-bold" style={{ color: 'var(--dash-muted)' }}>Total Actions</span>
-            <p className="text-xl font-bold" style={{ color: 'var(--dash-text)' }}>{totalActions}</p>
+          <div className="dash-card p-4 border flex items-center gap-4" style={{ borderColor: 'var(--dash-border)' }}>
+            <div className="w-10 h-10 rounded-xl bg-green-600/10 border border-green-500/20 flex items-center justify-center text-green-400">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold" style={{ color: 'var(--dash-muted)' }}>Active Users</span>
+              <p className="text-xl font-bold" style={{ color: 'var(--dash-text)' }}>{uniqueUsers}</p>
+            </div>
+          </div>
+          <div className="dash-card p-4 border flex items-center gap-4" style={{ borderColor: 'var(--dash-border)' }}>
+            <div className="w-10 h-10 rounded-xl bg-amber-600/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold" style={{ color: 'var(--dash-muted)' }}>Actions Today</span>
+              <p className="text-xl font-bold" style={{ color: 'var(--dash-text)' }}>{actionsToday}</p>
+            </div>
+          </div>
+          <div className="dash-card p-4 border flex items-center gap-4" style={{ borderColor: 'var(--dash-border)' }}>
+            <div className="w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+              <Eye className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold" style={{ color: 'var(--dash-muted)' }}>Logins Today</span>
+              <p className="text-xl font-bold" style={{ color: 'var(--dash-text)' }}>{loginsToday}</p>
+            </div>
           </div>
         </div>
-
-        <div className="dash-card p-4 border flex items-center gap-4" style={{ borderColor: 'var(--dash-border)' }}>
-          <div className="w-10 h-10 rounded-xl bg-green-600/10 border border-green-500/20 flex items-center justify-center text-green-400">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] uppercase font-bold" style={{ color: 'var(--dash-muted)' }}>Active Users</span>
-            <p className="text-xl font-bold" style={{ color: 'var(--dash-text)' }}>{uniqueUsers}</p>
-          </div>
-        </div>
-
-        <div className="dash-card p-4 border flex items-center gap-4" style={{ borderColor: 'var(--dash-border)' }}>
-          <div className="w-10 h-10 rounded-xl bg-amber-600/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-            <Calendar className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] uppercase font-bold" style={{ color: 'var(--dash-muted)' }}>Actions Today</span>
-            <p className="text-xl font-bold" style={{ color: 'var(--dash-text)' }}>{actionsToday}</p>
-          </div>
-        </div>
-
-        <div className="dash-card p-4 border flex items-center gap-4" style={{ borderColor: 'var(--dash-border)' }}>
-          <div className="w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-            <Eye className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] uppercase font-bold" style={{ color: 'var(--dash-muted)' }}>Logins Today</span>
-            <p className="text-xl font-bold" style={{ color: 'var(--dash-text)' }}>{loginsToday}</p>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Analytics Charts Panel */}
       <div className="grid lg:grid-cols-3 gap-6">

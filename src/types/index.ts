@@ -29,6 +29,9 @@ export interface SidebarPermissions {
   interviewPanels: boolean;
   gdPanels: boolean;
   homeImages: boolean;
+  systemStats: boolean;
+  deploymentStats?: boolean;
+  userInteractions?: boolean;
 }
 
 export interface UserProfile {
@@ -554,6 +557,9 @@ export const DEFAULT_MEMBER_PERMISSIONS: SidebarPermissions = {
   interviewPanels: false,
   gdPanels: false,
   homeImages: false,
+  systemStats: false,
+  deploymentStats: false,
+  userInteractions: false,
 };
 
 export const DEFAULT_CORE_PERMISSIONS: SidebarPermissions = {
@@ -565,6 +571,9 @@ export const DEFAULT_CORE_PERMISSIONS: SidebarPermissions = {
   manageApplications: true,
   interviewPanels: true,
   gdPanels: true,
+  systemStats: false,
+  deploymentStats: false,
+  userInteractions: false,
 };
 
 export const DEFAULT_SUPERADMIN_PERMISSIONS: SidebarPermissions = {
@@ -591,4 +600,170 @@ export const DEFAULT_SUPERADMIN_PERMISSIONS: SidebarPermissions = {
   interviewPanels: true,
   gdPanels: true,
   homeImages: true,
+  systemStats: true,
+  deploymentStats: true,
+  userInteractions: true,
 };
+
+export type DBOperationType = 'read' | 'write' | 'update' | 'delete' | 'fetch' | 'listener';
+
+export interface DBTelemetryRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userRole: UserRole | 'anonymous';
+  operation: DBOperationType;
+  action: string;
+  resource: string;
+  documentCount: number;
+  cached: boolean;
+  status: 'success' | 'error';
+  errorMessage?: string;
+  page: string;
+  timestamp: string;
+  date: string;
+}
+
+export interface DayWiseDBStats {
+  date: string;
+  totalCalls: number;
+  totalReads: number;
+  totalWrites: number;
+  totalFetches: number;
+  cachedReads: number;
+  cacheSavingsRate: number;
+  activeUsersCount: number;
+  operations: Record<DBOperationType, number>;
+  resources: Record<string, number>;
+  pages: Record<string, number>;
+  hourlyDistribution: Record<string, number>;
+}
+
+export interface UserDBAnalyticsSummary {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userRole: UserRole | 'anonymous';
+  totalCalls: number;
+  totalReads: number;
+  totalWrites: number;
+  totalFetches: number;
+  cachedReads: number;
+  firstActivity: string;
+  lastActivity: string;
+  topPages: { page: string; count: number }[];
+  topResources: { resource: string; count: number }[];
+  dayWiseBreakdown: Array<{
+    date: string;
+    calls: number;
+    reads: number;
+    writes: number;
+    fetches: number;
+    pages: string[];
+  }>;
+}
+
+export interface SystemStatsOverview {
+  totalCalls: number;
+  totalReads: number;
+  totalWrites: number;
+  totalFetches: number;
+  cachedReads: number;
+  cacheSavingsRate: number;
+  activeUsersCount: number;
+  avgCallsPerUser: number;
+  todayCalls: number;
+  todayReads: number;
+  yesterdayCalls: number;
+  thisMonthCalls: number;
+  topResources: { resource: string; count: number }[];
+  topPages: { page: string; count: number }[];
+  topUsers: UserDBAnalyticsSummary[];
+  dayWiseStats: DayWiseDBStats[];
+  recentTraces: DBTelemetryRecord[];
+}
+
+export interface VisitorInteraction {
+  id: string;
+  sessionId: string;
+  visitorIp?: string;
+  city?: string;
+  country?: string;
+  deviceType: 'desktop' | 'mobile' | 'tablet';
+  browser: string;
+  os: string;
+  screenResolution: string;
+  language: string;
+  pagePath: string;
+  pageTitle: string;
+  referrer: string;
+  timestamp: string;
+  date: string;
+  durationSeconds: number;
+  userId?: string;
+  userName?: string;
+  userEmail?: string;
+  userRole?: UserRole | 'guest';
+}
+
+export interface VisitorStatsOverview {
+  totalVisits: number;
+  uniqueVisitors: number;
+  todayVisits: number;
+  todayUnique: number;
+  weekVisits: number;
+  monthVisits: number;
+  yearVisits: number;
+  avgDurationSeconds: number;
+  bounceRate: number;
+  deviceBreakdown: { device: string; count: number; percentage: number }[];
+  browserBreakdown: { browser: string; count: number; percentage: number }[];
+  osBreakdown: { os: string; count: number; percentage: number }[];
+  topPages: { page: string; title: string; count: number }[];
+  topCountries: { country: string; count: number }[];
+  referrers: { referrer: string; count: number }[];
+  recentVisitors: VisitorInteraction[];
+  dayWiseVisitors: Array<{
+    date: string;
+    visits: number;
+    unique: number;
+    pageviews: number;
+  }>;
+}
+
+export interface DeploymentHealthReport {
+  status: 'healthy' | 'degraded' | 'critical';
+  environment: string;
+  version: string;
+  buildTime: string;
+  uptimeSeconds: number;
+  firestore: {
+    connected: boolean;
+    latencyMs: number;
+    activeListeners: number;
+    status: 'operational' | 'slow' | 'disconnected';
+    readWriteHealthy: boolean;
+  };
+  storage: {
+    connected: boolean;
+    provider: 'Supabase' | 'Firebase';
+    status: 'operational' | 'error';
+  };
+  website: {
+    status: 'online' | 'degraded';
+    domLoadTimeMs: number;
+    memoryHeapMb: number;
+    sslActive: boolean;
+    pwaActive: boolean;
+  };
+  checks: Array<{
+    id: string;
+    name: string;
+    service: string;
+    status: 'pass' | 'warn' | 'fail';
+    latencyMs?: number;
+    message: string;
+    timestamp: string;
+  }>;
+}

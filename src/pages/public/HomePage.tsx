@@ -6,9 +6,12 @@ import { getPositionHolders } from '../../services/positionService';
 import { getPublishedUpcomingEvents } from '../../services/eventService';
 import type { EventRecord } from '../../types';
 import Lightning from '../../components/animation/Lightning';
+import { EventCardSkeleton, CardSkeleton } from '../../components/ui/skeleton';
 
 export default function HomePage() {
   const [events, setEvents] = useState<EventRecord[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [membersLoading, setMembersLoading] = useState(true);
   const [members, setMembers] = useState<{ id: string; name: string; role: string; photoURL?: string }[]>([]);
   const [faculty, setFaculty] = useState<{ name: string; designation: string; email?: string; photoURL?: string } | null>(null);
   const [images, setImages] = useState<string[]>([]);
@@ -32,8 +35,8 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    getPublishedUpcomingEvents().then(setEvents).catch(() => {});
-    getSiteMembers().then((m: unknown[]) => m.length && setMembers(m as typeof members)).catch(() => {});
+    getPublishedUpcomingEvents().then((e) => { setEvents(e); setEventsLoading(false); }).catch(() => setEventsLoading(false));
+    getSiteMembers().then((m: unknown[]) => { if (m.length) setMembers(m as typeof members); setMembersLoading(false); }).catch(() => setMembersLoading(false));
     getFacultyCoordinator().then((f: unknown) => f && setFaculty(f as typeof faculty)).catch(() => {});
     getHomeImagesConfig().then((config) => {
       setImages(config.images || []);
@@ -182,7 +185,11 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {events.length === 0 ? (
+          {eventsLoading ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <EventCardSkeleton count={3} />
+            </div>
+          ) : events.length === 0 ? (
             <div className="card text-center py-16 border-dashed">
               <Calendar className="w-12 h-12 text-blue-300 mx-auto mb-4" />
               <p className="text-slate-500 font-medium">No upcoming events right now.</p>

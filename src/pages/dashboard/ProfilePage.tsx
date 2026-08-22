@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import VerifiedBadge from '../../components/ui/VerifiedBadge';
 import { useToast } from '../../contexts/ToastContext';
+import { ProfileSkeleton } from '../../components/ui/skeleton';
 
 export default function ProfilePage() {
   const { profile, refreshProfile } = useAuth();
@@ -143,7 +144,7 @@ export default function ProfilePage() {
     }
   };
 
-  if (!profile) return null;
+  if (!profile) return <ProfileSkeleton />;
 
   const followers = getRelationProfiles(profile.followers || []);
   const following = getRelationProfiles(profile.following || []);

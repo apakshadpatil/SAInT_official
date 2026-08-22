@@ -4,7 +4,7 @@ import {
   User, LogOut, Moon, Sun, BarChart3, FileText, Wallet, PieChart,
   Settings, Shield, UserCheck, KeyRound, Menu, X, ClipboardList,
   Upload, Activity, FileCheck, Briefcase, Trophy, Archive, ImagePlus,
-  ChevronRight, Zap,
+  ChevronRight, Zap, Database, Server, Globe,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,6 +15,7 @@ import { getApplications, subscribeSiteSettings, setDoomsdayMode } from '../../s
 import { getPublishedUpcomingEvents } from '../../services/eventService';
 import { getTasksForUser } from '../../services/taskService';
 import { getPendingUsers } from '../../services/authService';
+import { trackVisitorPageView } from '../../services/visitorTrackingService';
 import {
   hasTabAccess, hasFinanceAccess, isCoreMember, isSuperAdmin, getRoleBadge,
 } from '../../utils/permissions';
@@ -52,6 +53,9 @@ const ALL_NAV: NavItem[] = [
   { to: '/dashboard/interview-allocations', label: 'Final Allocations',     icon: Trophy,          tab: 'interviewPanels',    group: 'management' },
   { to: '/dashboard/finance',              label: 'Manage Financials',     icon: Wallet,          tab: 'finance',            financeOnly: true, group: 'finance' },
   { to: '/dashboard/financial-analytics',  label: 'Financial Analytics',   icon: PieChart,        tab: 'financialAnalytics', financeOnly: true, group: 'finance' },
+  { to: '/dashboard/system-stats',         label: 'System Stats',          icon: Database,        tab: 'systemStats',        superOnly: true,   group: 'settings', settingsGroup: true },
+  { to: '/dashboard/deployment-stats',     label: 'Deployment Stats',      icon: Server,          tab: 'deploymentStats',    superOnly: true,   group: 'settings', settingsGroup: true },
+  { to: '/dashboard/user-interactions',    label: 'User Interactions',     icon: Globe,           tab: 'userInteractions',   superOnly: true,   group: 'settings', settingsGroup: true },
   { to: '/dashboard/monitor-activity',     label: 'Monitor Activity',      icon: Activity,        tab: 'monitorActivity',    superOnly: true,   group: 'settings', settingsGroup: true },
   { to: '/dashboard/control-centre',       label: 'Control Centre',        icon: Settings,        tab: 'controlCentre',      superOnly: true,   group: 'settings', settingsGroup: true },
   { to: '/dashboard/positions',            label: 'Positions',             icon: Shield,          tab: 'positions',          superOnly: true,   group: 'settings', settingsGroup: true },
@@ -393,21 +397,36 @@ export default function DashboardLayout() {
     }
 
     let active = true;
+    const isSuper = isSuperAdmin(profile);
+    const isCore = isCoreMember(profile);
+
     const loadBadges = async () => {
       try {
-        const [pendingUsers, userTasks, applications, upcomingEvents] = await Promise.all([
-          getPendingUsers(),
+        const promises: Promise<any>[] = [
           getTasksForUser(profile.uid),
-          getApplications(),
           getPublishedUpcomingEvents(),
-        ]);
+        ];
 
+        if (isSuper) {
+          promises.push(getPendingUsers());
+        }
+        if (isCore) {
+          promises.push(getApplications());
+        }
+
+        const results = await Promise.all(promises);
         if (!active) return;
+
+        const userTasks = results[0] || [];
+        const upcomingEvents = results[1] || [];
+        const pendingUsers = isSuper ? results[2] || [] : [];
+        const applications = isCore ? (isSuper ? results[3] : results[2]) || [] : [];
 
         const nextBadges: Record<string, number> = {};
         if (pendingUsers.length > 0) nextBadges['/dashboard/user-approvals'] = pendingUsers.length;
-        if (userTasks.filter((task) => task.status !== 'completed').length > 0) nextBadges['/dashboard/tasks'] = userTasks.filter((task) => task.status !== 'completed').length;
-        const submittedApps = applications.filter((app) => app.status === 'submitted').length;
+        const pendingTaskCount = userTasks.filter((task: any) => task.status !== 'completed').length;
+        if (pendingTaskCount > 0) nextBadges['/dashboard/tasks'] = pendingTaskCount;
+        const submittedApps = applications.filter((app: any) => app.status === 'submitted').length;
         if (submittedApps > 0) nextBadges['/dashboard/manage-applications'] = submittedApps;
         if (upcomingEvents.length > 0) nextBadges['/dashboard/events'] = upcomingEvents.length;
         setNavBadges(nextBadges);
@@ -417,9 +436,13 @@ export default function DashboardLayout() {
     };
 
     void loadBadges();
-    const interval = window.setInterval(() => { void loadBadges(); }, 30000);
+    const interval = window.setInterval(() => { void loadBadges(); }, 90000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [profile?.uid]);
+  }, [profile?.uid, profile?.role]);
+
+  useEffect(() => {
+    trackVisitorPageView(profile);
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     await logoutUser();

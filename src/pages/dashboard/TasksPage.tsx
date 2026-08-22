@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import RightPanel from '../../components/ui/RightPanel';
 import { useToast } from '../../contexts/ToastContext';
+import { TaskItemSkeleton, StatGridSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
 
 const PRIORITY_THEMES: Record<TaskPriority, { label: string; text: string; bg: string; border: string }> = {
   urgent: { label: 'Urgent', text: '#ef4444', bg: 'rgba(239, 68, 68, 0.08)', border: 'rgba(239, 68, 68, 0.2)' },
@@ -43,6 +44,7 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // Form State (Assign Task)
   const [isAssigning, setIsAssigning] = useState(false);
@@ -68,8 +70,14 @@ export default function TasksPage() {
   useEffect(() => {
     if (!profile) return;
     const unsub = isCoreMember(profile)
-      ? subscribeAllTasks(setTasks)
-      : subscribeUserTasks(profile.uid, setTasks);
+      ? subscribeAllTasks((ts) => {
+          setTasks(ts);
+          setLoading(false);
+        })
+      : subscribeUserTasks(profile.uid, (ts) => {
+          setTasks(ts);
+          setLoading(false);
+        });
 
     if (isCoreMember(profile)) {
       getAllUsers()
@@ -286,102 +294,107 @@ export default function TasksPage() {
       </div>
 
       {/* ── Stats Metric Row ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="stat-card">
-          <div className="stat-card-accent-bar" style={{ background: 'var(--dash-accent)' }} />
-          <div className="flex items-start justify-between mt-1">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
-                Total Tasks
-              </p>
-              <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: 'var(--dash-text)' }}>
-                {totalTasks}
-              </p>
-              <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
-                All assigned records
-              </p>
-            </div>
-            <div
-              className="w-9 h-9 flex items-center justify-center shrink-0"
-              style={{ background: 'var(--dash-accent-soft)', borderRadius: '6px' }}
-            >
-              <Layers className="w-4 h-4" style={{ color: 'var(--dash-accent)' }} />
+      <DataStateWrapper
+        loading={loading}
+        skeleton={<StatGridSkeleton count={4} columns="grid-cols-2 lg:grid-cols-4" />}
+      >
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="stat-card">
+            <div className="stat-card-accent-bar" style={{ background: 'var(--dash-accent)' }} />
+            <div className="flex items-start justify-between mt-1">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
+                  Total Tasks
+                </p>
+                <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: 'var(--dash-text)' }}>
+                  {totalTasks}
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
+                  All assigned records
+                </p>
+              </div>
+              <div
+                className="w-9 h-9 flex items-center justify-center shrink-0"
+                style={{ background: 'var(--dash-accent-soft)', borderRadius: '6px' }}
+              >
+                <Layers className="w-4 h-4" style={{ color: 'var(--dash-accent)' }} />
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="stat-card">
-          <div className="stat-card-accent-bar" style={{ background: '#3b82f6' }} />
-          <div className="flex items-start justify-between mt-1">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
-                In Progress
-              </p>
-              <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: '#3b82f6' }}>
-                {pendingTasks.length}
-              </p>
-              <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
-                Awaiting delivery
-              </p>
-            </div>
-            <div
-              className="w-9 h-9 flex items-center justify-center shrink-0"
-              style={{ background: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px' }}
-            >
-              <Clock className="w-4 h-4 text-blue-500" />
+          <div className="stat-card">
+            <div className="stat-card-accent-bar" style={{ background: '#3b82f6' }} />
+            <div className="flex items-start justify-between mt-1">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
+                  In Progress
+                </p>
+                <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: '#3b82f6' }}>
+                  {pendingTasks.length}
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
+                  Awaiting delivery
+                </p>
+              </div>
+              <div
+                className="w-9 h-9 flex items-center justify-center shrink-0"
+                style={{ background: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px' }}
+              >
+                <Clock className="w-4 h-4 text-blue-500" />
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="stat-card">
-          <div className="stat-card-accent-bar" style={{ background: '#10b981' }} />
-          <div className="flex items-start justify-between mt-1">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
-                Completed
-              </p>
-              <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: '#10b981' }}>
-                {completedTasks.length}
-              </p>
-              <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
-                Approved & verified
-              </p>
-            </div>
-            <div
-              className="w-9 h-9 flex items-center justify-center shrink-0"
-              style={{ background: 'rgba(16, 185, 129, 0.1)', borderRadius: '6px' }}
-            >
-              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+          <div className="stat-card">
+            <div className="stat-card-accent-bar" style={{ background: '#10b981' }} />
+            <div className="flex items-start justify-between mt-1">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
+                  Completed
+                </p>
+                <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: '#10b981' }}>
+                  {completedTasks.length}
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
+                  Approved & verified
+                </p>
+              </div>
+              <div
+                className="w-9 h-9 flex items-center justify-center shrink-0"
+                style={{ background: 'rgba(16, 185, 129, 0.1)', borderRadius: '6px' }}
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="stat-card">
-          <div className="stat-card-accent-bar" style={{ background: '#f59e0b' }} />
-          <div className="flex items-start justify-between mt-1">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
-                Points Pool
-              </p>
-              <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: '#f59e0b' }}>
-                {isCoreMember(profile) ? totalPoints : earnedPoints}
-                <span className="text-xs font-semibold ml-1" style={{ color: 'var(--dash-muted)' }}>
-                  {isCoreMember(profile) ? 'pts' : `/ ${totalPoints} pts`}
-                </span>
-              </p>
-              <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
-                {isCoreMember(profile) ? 'Allocated score total' : 'Your earned score'}
-              </p>
-            </div>
-            <div
-              className="w-9 h-9 flex items-center justify-center shrink-0"
-              style={{ background: 'rgba(245, 158, 11, 0.1)', borderRadius: '6px' }}
-            >
-              <Award className="w-4 h-4 text-amber-500" />
+          <div className="stat-card">
+            <div className="stat-card-accent-bar" style={{ background: '#f59e0b' }} />
+            <div className="flex items-start justify-between mt-1">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
+                  Points Pool
+                </p>
+                <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: '#f59e0b' }}>
+                  {isCoreMember(profile) ? totalPoints : earnedPoints}
+                  <span className="text-xs font-semibold ml-1" style={{ color: 'var(--dash-muted)' }}>
+                    {isCoreMember(profile) ? 'pts' : `/ ${totalPoints} pts`}
+                  </span>
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
+                  {isCoreMember(profile) ? 'Allocated score total' : 'Your earned score'}
+                </p>
+              </div>
+              <div
+                className="w-9 h-9 flex items-center justify-center shrink-0"
+                style={{ background: 'rgba(245, 158, 11, 0.1)', borderRadius: '6px' }}
+              >
+                <Award className="w-4 h-4 text-amber-500" />
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </DataStateWrapper>
 
       {/* ── Tabs & Filter Bar ── */}
       <div
@@ -469,166 +482,33 @@ export default function TasksPage() {
       </div>
 
       {/* ── Tasks View (Grid or List) ── */}
-      {viewMode === 'grid' ? (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {filteredTasks.map((task) => {
-            const pTheme = PRIORITY_THEMES[task.priority] || PRIORITY_THEMES.medium;
-            const isCompleted = task.status === 'completed';
+      <DataStateWrapper
+        loading={loading}
+        isEmpty={filteredTasks.length === 0}
+        emptyTitle="No tasks match your criteria"
+        emptyDescription="Try adjusting your search query or status filter."
+        skeleton={<TaskItemSkeleton count={6} />}
+      >
+        {viewMode === 'grid' ? (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {filteredTasks.map((task) => {
+              const pTheme = PRIORITY_THEMES[task.priority] || PRIORITY_THEMES.medium;
+              const isCompleted = task.status === 'completed';
 
-            return (
-              <div
-                key={task.id}
-                onClick={() => setSelectedTask(task)}
-                className="dash-card cursor-pointer flex flex-col justify-between group transition-all duration-150"
-                style={{
-                  borderRadius: '6px',
-                  borderColor: 'var(--dash-card-border)',
-                }}
-              >
-                <div>
-                  {/* Card Header Tag Row */}
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className="text-[10px] font-bold px-2 py-0.5"
-                        style={{
-                          background: pTheme.bg,
-                          color: pTheme.text,
-                          border: `1px solid ${pTheme.border}`,
-                          borderRadius: '4px',
-                        }}
-                      >
-                        {pTheme.label}
-                      </span>
-
-                      {isCompleted && (
-                        <span
-                          className="text-[10px] font-bold px-2 py-0.5 flex items-center gap-1"
-                          style={{
-                            background: 'rgba(16, 185, 129, 0.08)',
-                            color: '#10b981',
-                            border: '1px solid rgba(16, 185, 129, 0.2)',
-                            borderRadius: '4px',
-                          }}
-                        >
-                          <CheckCircle2 className="w-2.5 h-2.5" /> Done
-                        </span>
-                      )}
-                    </div>
-
-                    <span
-                      className="text-[11px] font-extrabold px-2 py-0.5"
-                      style={{
-                        background: 'rgba(245, 158, 11, 0.08)',
-                        color: '#f59e0b',
-                        border: '1px solid rgba(245, 158, 11, 0.2)',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      +{task.points} pts
-                    </span>
-                  </div>
-
-                  {/* Task Title & Description */}
-                  <h3
-                    className="font-bold text-sm leading-snug line-clamp-1 group-hover:text-blue-500 transition-colors"
-                    style={{ color: 'var(--dash-text)' }}
-                  >
-                    {task.title}
-                  </h3>
-                  <p
-                    className="text-xs line-clamp-2 leading-relaxed mt-1.5"
-                    style={{ color: 'var(--dash-muted)' }}
-                  >
-                    {task.description || 'No additional description provided.'}
-                  </p>
-                </div>
-
-                {/* Card Footer */}
+              return (
                 <div
-                  className="flex items-center justify-between pt-3 mt-4 border-t text-xs"
-                  style={{ borderColor: 'var(--dash-border)', color: 'var(--dash-muted)' }}
+                  key={task.id}
+                  onClick={() => setSelectedTask(task)}
+                  className="dash-card cursor-pointer flex flex-col justify-between group transition-all duration-150"
+                  style={{
+                    borderRadius: '6px',
+                    borderColor: 'var(--dash-card-border)',
+                  }}
                 >
-                  <div className="flex items-center gap-1.5 text-[11px]">
-                    <Calendar className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--dash-accent)' }} />
-                    <span className="font-medium">Due {task.deadline || 'No date'}</span>
-                  </div>
-
-                  {isCoreMember(profile) ? (
-                    <span
-                      className="text-[10px] font-medium px-1.5 py-0.5 truncate max-w-[130px]"
-                      style={{
-                        background: 'var(--dash-hover)',
-                        color: 'var(--dash-text)',
-                        borderRadius: '3px',
-                        border: '1px solid var(--dash-border)',
-                      }}
-                    >
-                      @{task.assigneeName || 'Unassigned'}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-medium" style={{ color: 'var(--dash-muted)' }}>
-                      By {task.assignedByName || 'Core'}
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {filteredTasks.length === 0 && (
-            <div
-              className="col-span-full py-16 text-center dash-card border-dashed flex flex-col items-center justify-center"
-              style={{ borderRadius: '6px' }}
-            >
-              <FileText className="w-8 h-8 mb-2 opacity-30" style={{ color: 'var(--dash-text)' }} />
-              <p className="text-sm font-semibold" style={{ color: 'var(--dash-text)' }}>
-                No tasks match your criteria
-              </p>
-              <p className="text-xs mt-1" style={{ color: 'var(--dash-muted)' }}>
-                Try adjusting your search query or status filter.
-              </p>
-            </div>
-          )}
-        </div>
-      ) : (
-        /* List View */
-        <div
-          className="dash-card !p-0 overflow-hidden"
-          style={{ borderRadius: '6px', borderColor: 'var(--dash-card-border)' }}
-        >
-          <div className="overflow-x-auto">
-            <table className="dash-table">
-              <thead>
-                <tr>
-                  <th>Task</th>
-                  <th>Priority</th>
-                  <th>Assignee / Assigner</th>
-                  <th>Deadline</th>
-                  <th>Points</th>
-                  <th>Status</th>
-                  <th className="text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTasks.map((task) => {
-                  const pTheme = PRIORITY_THEMES[task.priority] || PRIORITY_THEMES.medium;
-                  const isCompleted = task.status === 'completed';
-
-                  return (
-                    <tr
-                      key={task.id}
-                      onClick={() => setSelectedTask(task)}
-                      className="cursor-pointer hover:bg-white/5 transition-colors"
-                      style={{ borderBottom: '1px solid var(--dash-border)' }}
-                    >
-                      <td className="font-semibold text-xs py-3" style={{ color: 'var(--dash-text)' }}>
-                        <div className="max-w-xs truncate">{task.title}</div>
-                        <div className="text-[10px] font-normal truncate opacity-60 mt-0.5" style={{ color: 'var(--dash-muted)' }}>
-                          {task.description}
-                        </div>
-                      </td>
-                      <td>
+                  <div>
+                    {/* Card Header Tag Row */}
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-1.5">
                         <span
                           className="text-[10px] font-bold px-2 py-0.5"
                           style={{
@@ -640,20 +520,10 @@ export default function TasksPage() {
                         >
                           {pTheme.label}
                         </span>
-                      </td>
-                      <td className="text-xs" style={{ color: 'var(--dash-text)' }}>
-                        {isCoreMember(profile) ? task.assigneeName : `Assigned by ${task.assignedByName}`}
-                      </td>
-                      <td className="text-xs font-mono" style={{ color: 'var(--dash-muted)' }}>
-                        {task.deadline || '—'}
-                      </td>
-                      <td className="font-bold text-xs" style={{ color: '#f59e0b' }}>
-                        +{task.points} pts
-                      </td>
-                      <td>
-                        {isCompleted ? (
+
+                        {isCompleted && (
                           <span
-                            className="text-[10px] font-bold px-2 py-0.5 inline-flex items-center gap-1"
+                            className="text-[10px] font-bold px-2 py-0.5 flex items-center gap-1"
                             style={{
                               background: 'rgba(16, 185, 129, 0.08)',
                               color: '#10b981',
@@ -663,39 +533,166 @@ export default function TasksPage() {
                           >
                             <CheckCircle2 className="w-2.5 h-2.5" /> Done
                           </span>
-                        ) : (
+                        )}
+                      </div>
+
+                      <span
+                        className="text-[11px] font-extrabold px-2 py-0.5"
+                        style={{
+                          background: 'rgba(245, 158, 11, 0.08)',
+                          color: '#f59e0b',
+                          border: '1px solid rgba(245, 158, 11, 0.2)',
+                          borderRadius: '4px',
+                        }}
+                      >
+                        +{task.points} pts
+                      </span>
+                    </div>
+
+                    {/* Task Title & Description */}
+                    <h3
+                      className="font-bold text-sm leading-snug line-clamp-1 group-hover:text-blue-500 transition-colors"
+                      style={{ color: 'var(--dash-text)' }}
+                    >
+                      {task.title}
+                    </h3>
+                    <p
+                      className="text-xs line-clamp-2 leading-relaxed mt-1.5"
+                      style={{ color: 'var(--dash-muted)' }}
+                    >
+                      {task.description || 'No additional description provided.'}
+                    </p>
+                  </div>
+
+                  {/* Card Footer */}
+                  <div
+                    className="flex items-center justify-between pt-3 mt-4 border-t text-xs"
+                    style={{ borderColor: 'var(--dash-border)', color: 'var(--dash-muted)' }}
+                  >
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <Calendar className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--dash-accent)' }} />
+                      <span className="font-medium">Due {task.deadline || 'No date'}</span>
+                    </div>
+
+                    {isCoreMember(profile) ? (
+                      <span
+                        className="text-[10px] font-medium px-1.5 py-0.5 truncate max-w-[130px]"
+                        style={{
+                          background: 'var(--dash-hover)',
+                          borderRadius: '4px',
+                          color: 'var(--dash-text)',
+                        }}
+                      >
+                        {task.assigneeName}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium opacity-60">
+                        Assigned by {task.assignedByName}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* List View */
+          <div
+            className="dash-card !p-0 overflow-hidden"
+            style={{ borderRadius: '6px', borderColor: 'var(--dash-card-border)' }}
+          >
+            <div className="overflow-x-auto">
+              <table className="dash-table">
+                <thead>
+                  <tr>
+                    <th>Task</th>
+                    <th>Priority</th>
+                    <th>Assignee / Assigner</th>
+                    <th>Deadline</th>
+                    <th>Points</th>
+                    <th>Status</th>
+                    <th className="text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTasks.map((task) => {
+                    const pTheme = PRIORITY_THEMES[task.priority] || PRIORITY_THEMES.medium;
+                    const isCompleted = task.status === 'completed';
+
+                    return (
+                      <tr
+                        key={task.id}
+                        onClick={() => setSelectedTask(task)}
+                        className="cursor-pointer hover:bg-white/5 transition-colors"
+                        style={{ borderBottom: '1px solid var(--dash-border)' }}
+                      >
+                        <td className="font-semibold text-xs py-3" style={{ color: 'var(--dash-text)' }}>
+                          <div className="max-w-xs truncate">{task.title}</div>
+                          <div className="text-[10px] font-normal truncate opacity-60 mt-0.5" style={{ color: 'var(--dash-muted)' }}>
+                            {task.description}
+                          </div>
+                        </td>
+                        <td>
                           <span
                             className="text-[10px] font-bold px-2 py-0.5"
                             style={{
-                              background: 'rgba(59, 130, 246, 0.08)',
-                              color: '#3b82f6',
-                              border: '1px solid rgba(59, 130, 246, 0.2)',
+                              background: pTheme.bg,
+                              color: pTheme.text,
+                              border: `1px solid ${pTheme.border}`,
                               borderRadius: '4px',
                             }}
                           >
-                            Pending
+                            {pTheme.label}
                           </span>
-                        )}
-                      </td>
-                      <td className="text-right">
-                        <ChevronRight className="w-4 h-4 ml-auto opacity-40" />
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {filteredTasks.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="text-center py-10" style={{ color: 'var(--dash-muted)' }}>
-                      No tasks found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                        </td>
+                        <td className="text-xs" style={{ color: 'var(--dash-text)' }}>
+                          {isCoreMember(profile) ? task.assigneeName : `Assigned by ${task.assignedByName}`}
+                        </td>
+                        <td className="text-xs font-mono" style={{ color: 'var(--dash-muted)' }}>
+                          {task.deadline || '—'}
+                        </td>
+                        <td className="font-bold text-xs" style={{ color: '#f59e0b' }}>
+                          +{task.points} pts
+                        </td>
+                        <td>
+                          {isCompleted ? (
+                            <span
+                              className="text-[10px] font-bold px-2 py-0.5 inline-flex items-center gap-1"
+                              style={{
+                                background: 'rgba(16, 185, 129, 0.08)',
+                                color: '#10b981',
+                                border: '1px solid rgba(16, 185, 129, 0.2)',
+                                borderRadius: '4px',
+                              }}
+                            >
+                              <CheckCircle2 className="w-2.5 h-2.5" /> Done
+                            </span>
+                          ) : (
+                            <span
+                              className="text-[10px] font-bold px-2 py-0.5"
+                              style={{
+                                background: 'rgba(59, 130, 246, 0.08)',
+                                color: '#3b82f6',
+                                border: '1px solid rgba(59, 130, 246, 0.2)',
+                                borderRadius: '4px',
+                              }}
+                            >
+                              Pending
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-right">
+                          <ChevronRight className="w-4 h-4 ml-auto opacity-40" />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </DataStateWrapper>
 
       {/* ── Assign Task Drawer ── */}
       {isAssigning && (

@@ -9,6 +9,7 @@ import { Download } from 'lucide-react';
 import { Plus, SlidersHorizontal } from 'lucide-react';
 import RightPanel from '../../components/ui/RightPanel';
 import Toggle from '../../components/ui/Toggle';
+import { TableSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
 
 export default function FinancePage() {
   const { profile } = useAuth();
@@ -29,13 +30,17 @@ export default function FinancePage() {
   const [budgetValue, setBudgetValue] = useState('');
 
   const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoggingTransaction, setIsLoggingTransaction] = useState(false);
   const [isAdjustingBudget, setIsAdjustingBudget] = useState(false);
 
   useEffect(() => {
-    const unsubTxns = subscribeTransactions(setTransactions);
+    const unsubTxns = subscribeTransactions((txns) => {
+      setTransactions(txns);
+      setDataLoading(false);
+    });
     const unsubEvents = subscribeEvents(setEvents);
     return () => {
       unsubTxns();
@@ -247,51 +252,52 @@ export default function FinancePage() {
           <div className="dash-card p-6 h-full flex flex-col justify-between">
             <div>
               <h3 className="font-bold text-sm mb-6" style={{ color: 'var(--dash-text)' }}>Financial Ledger Log</h3>
-              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
-                {transactions.map((txn) => (
-                  <div
-                    key={txn.id}
-                    className="p-4 border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-500/5 text-xs"
-                    style={{ borderColor: 'var(--dash-border)' }}
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm" style={{ color: 'var(--dash-text)' }}>{txn.shopName}</span>
-                        {txn.isSponsorship && <span className="text-[9px] capsule-tag !py-0.5">Sponsorship</span>}
+              <DataStateWrapper
+                loading={dataLoading}
+                isEmpty={transactions.length === 0}
+                emptyTitle="No transactions logged"
+                emptyDescription="Use the Log Transaction button to record your first entry."
+                skeleton={<TableSkeleton rows={6} cols={3} hasSearch={false} />}
+              >
+                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                  {transactions.map((txn) => (
+                    <div
+                      key={txn.id}
+                      className="p-4 border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-500/5 text-xs"
+                      style={{ borderColor: 'var(--dash-border)' }}
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm" style={{ color: 'var(--dash-text)' }}>{txn.shopName}</span>
+                          {txn.isSponsorship && <span className="text-[9px] capsule-tag !py-0.5">Sponsorship</span>}
+                        </div>
+                        <p className="text-slate-400 mt-1">{txn.purpose}</p>
+                        <div className="flex flex-wrap items-center gap-3 mt-2 text-[10px]" style={{ color: 'var(--dash-muted)' }}>
+                          {txn.eventTitle && <span>Event: <strong>{txn.eventTitle}</strong></span>}
+                          <span>By: {txn.enteredByName}</span>
+                        </div>
                       </div>
-                      <p className="text-slate-400 mt-1">{txn.purpose}</p>
-                      
-                      <div className="flex flex-wrap items-center gap-3 mt-2 text-[10px]" style={{ color: 'var(--dash-muted)' }}>
-                        {txn.eventTitle && <span>Event: <strong>{txn.eventTitle}</strong></span>}
-                        <span>By: {txn.enteredByName}</span>
+                      <div className="flex items-center gap-4 self-end sm:self-center shrink-0">
+                        <div className="text-right">
+                          <span className={`font-bold text-sm ${txn.amount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            {txn.amount >= 0 ? '+' : ''}₹{txn.amount}
+                          </span>
+                          <p className="text-[8px] text-slate-400 mt-0.5">Ref: {txn.transactionId || 'None'}</p>
+                        </div>
+                        {txn.billDataUrl && (
+                          <button
+                            onClick={() => handleDownloadBill(txn)}
+                            className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                            title="Download invoice bill"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-4 self-end sm:self-center shrink-0">
-                      <div className="text-right">
-                        <span className={`font-bold text-sm ${txn.amount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                          {txn.amount >= 0 ? '+' : ''}₹{txn.amount}
-                        </span>
-                        <p className="text-[8px] text-slate-400 mt-0.5">Ref: {txn.transactionId || 'None'}</p>
-                      </div>
-
-                      {txn.billDataUrl && (
-                        <button
-                          onClick={() => handleDownloadBill(txn)}
-                          className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-                          title="Download invoice bill"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                {transactions.length === 0 && (
-                  <p className="text-xs text-center py-12" style={{ color: 'var(--dash-muted)' }}>No transactions logged in the club ledger.</p>
-                )}
-              </div>
+                  ))}
+                </div>
+              </DataStateWrapper>
             </div>
           </div>
         </div>

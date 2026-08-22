@@ -2,6 +2,7 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { subscribeSiteSettings } from '../../services/applicationService';
+import { trackVisitorPageView } from '../../services/visitorTrackingService';
 
 export default function PublicLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -20,6 +21,10 @@ export default function PublicLayout() {
     return false;
   });
   const location = useLocation();
+
+  useEffect(() => {
+    trackVisitorPageView();
+  }, [location.pathname]);
 
   useEffect(() => {
     const unsub = subscribeSiteSettings((settings) => {
@@ -56,8 +61,8 @@ export default function PublicLayout() {
   }, []);
 
   const navLinks = [
-    { to: '/#home', label: 'Home' },
-    { to: '/#events', label: 'Events' },
+    { to: '/', label: 'Home' },
+    { to: '/events', label: 'Events' },
     { to: '/about', label: 'About' },
     { to: '/activities', label: 'Activities' },
     { to: '/apply', label: 'Apply' },

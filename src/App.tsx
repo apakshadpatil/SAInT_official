@@ -46,6 +46,10 @@ import InterviewAllocationsPage from './pages/dashboard/InterviewAllocationsPage
 import GDPanelsPage from './pages/dashboard/GDPanelsPage';
 import HomeImagesPage from './pages/dashboard/HomeImagesPage';
 import WinnersPage from './pages/dashboard/WinnersPage';
+import PublicEventsPage from './pages/public/PublicEventsPage';
+import DeploymentStatsPage from './pages/dashboard/DeploymentStatsPage';
+import UserInteractionsPage from './pages/dashboard/UserInteractionsPage';
+import SystemStatsPage from './pages/dashboard/SystemStatsPage';
 
 export default function App() {
   return (
@@ -62,6 +66,7 @@ export default function App() {
             }
           >
             <Route path="/" element={<HomePage />} />
+            <Route path="/events" element={<PublicEventsPage />} />
             <Route path="/activities" element={<ActivitiesPage />} />
             <Route path="/apply" element={<ApplyPage />} />
             <Route path="/about" element={<AboutPage />} />
@@ -135,6 +140,9 @@ export default function App() {
             <Route path="interview-allocations" element={<InterviewAllocationsPage />} />
             <Route path="winners" element={<WinnersPage />} />
             <Route path="home-images" element={<HomeImagesPage />} />
+            <Route path="system-stats" element={<SystemStatsPage />} />
+            <Route path="deployment-stats" element={<DeploymentStatsPage />} />
+            <Route path="user-interactions" element={<UserInteractionsPage />} />
           </Route>
 
           {/* Catch-all Redirect */}

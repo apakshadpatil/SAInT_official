@@ -11,6 +11,7 @@ import { getAllUsers } from '../../services/authService';
 import type { PositionRecord, UserProfile } from '../../types';
 import { Shield, Trash2, ArrowUp, ArrowDown, UserMinus, Plus, UserPlus } from 'lucide-react';
 import RightPanel from '../../components/ui/RightPanel';
+import { TableSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
 
 export default function PositionsPage() {
   const [positions, setPositions] = useState<PositionRecord[]>([]);
@@ -27,11 +28,15 @@ export default function PositionsPage() {
   const [isAssigning, setIsAssigning] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    const unsub = subscribePositions(setPositions);
+    const unsub = subscribePositions((pos) => {
+      setPositions(pos);
+      setDataLoading(false);
+    });
     getAllUsers().then((users) => {
       setAllUsers(users.filter((u) => u.status === 'approved'));
     }).catch(console.error);
@@ -138,85 +143,70 @@ export default function PositionsPage() {
           <div className="dash-card p-6 h-full flex flex-col justify-between">
             <div>
               <h3 className="font-bold text-sm mb-6" style={{ color: 'var(--dash-text)' }}>Positions Hierarchy</h3>
-              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
-                {positions
-                  .sort((a, b) => a.order - b.order)
-                  .map((pos, idx) => (
-                    <div
-                      key={pos.id}
-                      className="p-4 border rounded-xl flex flex-col gap-3 bg-slate-500/5 text-xs"
-                      style={{ borderColor: 'var(--dash-border)' }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                            <Shield className="w-4 h-4 text-blue-500" />
+              <DataStateWrapper
+                loading={dataLoading}
+                isEmpty={positions.length === 0}
+                emptyTitle="No positions defined"
+                emptyDescription="Create position titles to assign to association members."
+                skeleton={<TableSkeleton rows={4} cols={2} hasSearch={false} />}
+              >
+                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                  {positions
+                    .sort((a, b) => a.order - b.order)
+                    .map((pos, idx) => (
+                      <div
+                        key={pos.id}
+                        className="p-4 border rounded-xl flex flex-col gap-3 bg-slate-500/5 text-xs"
+                        style={{ borderColor: 'var(--dash-border)' }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                              <Shield className="w-4 h-4 text-blue-500" />
+                            </div>
+                            <div>
+                              <span className="font-bold text-sm" style={{ color: 'var(--dash-text)' }}>{pos.title}</span>
+                              {pos.description && <p className="text-[10px] mt-0.5" style={{ color: 'var(--dash-muted)' }}>{pos.description}</p>}
+                            </div>
                           </div>
-                          <div>
-                            <span className="font-bold text-sm" style={{ color: 'var(--dash-text)' }}>{pos.title}</span>
-                            {pos.description && <p className="text-[10px] mt-0.5" style={{ color: 'var(--dash-muted)' }}>{pos.description}</p>}
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button onClick={() => handleReorder(idx, 'up')} disabled={idx === 0} className="p-1.5 rounded bg-slate-200/50 hover:bg-slate-200 dark:bg-slate-800 disabled:opacity-40">
+                              <ArrowUp className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+                            </button>
+                            <button onClick={() => handleReorder(idx, 'down')} disabled={idx === positions.length - 1} className="p-1.5 rounded bg-slate-200/50 hover:bg-slate-200 dark:bg-slate-800 disabled:opacity-40">
+                              <ArrowDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+                            </button>
+                            <button onClick={() => handleDeletePosition(pos.id)} className="p-1.5 rounded text-red-500 hover:bg-red-500/10">
+                              <Trash2 className="w-4.5 h-4.5" />
+                            </button>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            onClick={() => handleReorder(idx, 'up')}
-                            disabled={idx === 0}
-                            className="p-1.5 rounded bg-slate-200/50 hover:bg-slate-200 dark:bg-slate-800 disabled:opacity-40"
-                          >
-                            <ArrowUp className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
-                          </button>
-                          <button
-                            onClick={() => handleReorder(idx, 'down')}
-                            disabled={idx === positions.length - 1}
-                            className="p-1.5 rounded bg-slate-200/50 hover:bg-slate-200 dark:bg-slate-800 disabled:opacity-40"
-                          >
-                            <ArrowDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
-                          </button>
-                          <button
-                            onClick={() => handleDeletePosition(pos.id)}
-                            className="p-1.5 rounded text-red-500 hover:bg-red-500/10"
-                          >
-                            <Trash2 className="w-4.5 h-4.5" />
-                          </button>
+                        {/* Holders of this position */}
+                        <div className="pt-2 border-t" style={{ borderColor: 'var(--dash-border)' }}>
+                          <span className="text-[10px] font-semibold text-slate-400 block mb-2">Assigned Holders:</span>
+                          <div className="flex flex-wrap gap-2">
+                            {pos.holderIds?.map((uid) => {
+                              const u = allUsers.find((user) => user.uid === uid);
+                              return (
+                                <div key={uid} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px]" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)', color: 'var(--dash-text)' }}>
+                                  <span>{u?.displayName || uid}</span>
+                                  <button type="button" onClick={() => handleRemoveUser(pos.id, uid)} className="text-red-500 hover:text-red-700 shrink-0">
+                                    <UserMinus className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                            {(!pos.holderIds || pos.holderIds.length === 0) && (
+                              <span className="text-[10px] italic text-slate-400">Unassigned</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-
-                      {/* Holders of this position */}
-                      <div className="pt-2 border-t" style={{ borderColor: 'var(--dash-border)' }}>
-                        <span className="text-[10px] font-semibold text-slate-400 block mb-2">Assigned Holders:</span>
-                        <div className="flex flex-wrap gap-2">
-                          {pos.holderIds?.map((uid) => {
-                            const u = allUsers.find((user) => user.uid === uid);
-                            return (
-                              <div
-                                key={uid}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px]"
-                                style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)', color: 'var(--dash-text)' }}
-                              >
-                                <span>{u?.displayName || uid}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveUser(pos.id, uid)}
-                                  className="text-red-500 hover:text-red-700 shrink-0"
-                                >
-                                  <UserMinus className="w-3 h-3" />
-                                </button>
-                              </div>
-                            );
-                          })}
-                          {(!pos.holderIds || pos.holderIds.length === 0) && (
-                            <span className="text-[10px] italic text-slate-400">Unassigned</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                {positions.length === 0 && (
-                  <p className="text-xs text-center py-12" style={{ color: 'var(--dash-muted)' }}>No officer titles defined.</p>
-                )}
-              </div>
+                    ))}
+                </div>
+              </DataStateWrapper>
             </div>
           </div>
         </div>

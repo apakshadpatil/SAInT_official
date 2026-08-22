@@ -15,9 +15,12 @@ import {
   collection,
   getDocs,
   query,
+  where,
   orderBy,
 } from 'firebase/firestore';
 import { auth, db, SUPERADMIN_EMAIL } from '../firebase/config';
+import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
+import { trackDBOperation } from './dbTrackingService';
 import type { UserProfile, UserRole, SidebarPermissions } from '../types';
 import {
   DEFAULT_CORE_PERMISSIONS,
@@ -151,10 +154,21 @@ export async function logoutUser() {
   await signOut(auth);
 }
 
-export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  const snap = await getDoc(doc(db, 'users', uid));
-  if (!snap.exists()) return null;
-  return snap.data() as UserProfile;
+export async function getUserProfile(uid: string, forceRefresh = false): Promise<UserProfile | null> {
+  return cachedFetch<UserProfile | null>(
+    `user:${uid}`,
+    async () => {
+      const snap = await getDoc(doc(db, 'users', uid));
+      if (!snap.exists()) return null;
+      return snap.data() as UserProfile;
+    },
+    {
+      ttlMs: 120 * 1000,
+      resource: 'users',
+      action: 'get_user_profile',
+      forceRefresh,
+    }
+  );
 }
 
 export async function ensureUserProfile(user: User): Promise<UserProfile> {
@@ -189,16 +203,24 @@ export async function ensureUserProfile(user: User): Promise<UserProfile> {
   };
 
   await setDoc(doc(db, 'users', user.uid), profile);
+  setCachedData(`user:${user.uid}`, profile);
+  invalidateCache('users:');
+  trackDBOperation({ operation: 'write', action: 'create_user_profile', resource: 'users', documentCount: 1 });
   return profile;
 }
 
 export async function updateUserProfile(uid: string, data: Partial<UserProfile>) {
   await updateDoc(doc(db, 'users', uid), { ...data, updatedAt: now() });
+  invalidateCache(`user:${uid}`);
+  invalidateCache('users:');
+  trackDBOperation({ operation: 'update', action: 'update_user_profile', resource: 'users', documentCount: 1 });
 }
 
 export async function updateUserPresenceStatus(uid: string, isOnline: boolean) {
   if (!uid) return;
-  await updateDoc(doc(db, 'users', uid), { isOnline, lastSeen: now(), updatedAt: now() });
+  try {
+    await updateDoc(doc(db, 'users', uid), { isOnline, lastSeen: now(), updatedAt: now() });
+  } catch {}
 }
 
 export async function completeProfileSetup(
@@ -219,6 +241,9 @@ export async function completeProfileSetup(
     displayName: `${data.firstName} ${data.lastName}`.trim(),
     updatedAt: now(),
   });
+  invalidateCache(`user:${uid}`);
+  invalidateCache('users:');
+  trackDBOperation({ operation: 'update', action: 'complete_profile_setup', resource: 'users', documentCount: 1 });
 }
 
 export async function approveUser(uid: string, role: 'member' | 'core', approverUid: string) {
@@ -231,11 +256,13 @@ export async function approveUser(uid: string, role: 'member' | 'core', approver
     approvedBy: approverUid,
     approvedAt: now(),
   });
+  invalidateCache(`user:${uid}`);
+  invalidateCache('users:');
+  trackDBOperation({ operation: 'update', action: 'approve_user', resource: 'users', documentCount: 1 });
 
   const userProfile = await getUserProfile(uid);
   if (userProfile) {
     await ensureCurrentUserFollowsSuperadmin(userProfile);
-    await ensureAllUsersFollowSuperadmin();
   }
 }
 
@@ -244,6 +271,9 @@ export async function rejectUser(uid: string) {
     status: 'rejected',
     updatedAt: now(),
   });
+  invalidateCache(`user:${uid}`);
+  invalidateCache('users:');
+  trackDBOperation({ operation: 'update', action: 'reject_user', resource: 'users', documentCount: 1 });
 }
 
 export async function removeUser(uid: string) {
@@ -252,6 +282,9 @@ export async function removeUser(uid: string) {
     role: 'pending',
     updatedAt: now(),
   });
+  invalidateCache(`user:${uid}`);
+  invalidateCache('users:');
+  trackDBOperation({ operation: 'update', action: 'remove_user', resource: 'users', documentCount: 1 });
 }
 
 export async function updateUserRole(uid: string, role: 'member' | 'core' | 'superadmin') {
@@ -267,15 +300,9 @@ export async function updateUserRole(uid: string, role: 'member' | 'core' | 'sup
   };
 
   await updateDoc(doc(db, 'users', uid), updates);
-
-  const updatedProfile = await getUserProfile(uid);
-  if (!updatedProfile) return;
-
-  if (updatedProfile.role === 'superadmin') {
-    await ensureAllUsersFollowSuperadmin();
-  } else if (updatedProfile.status === 'approved') {
-    await ensureCurrentUserFollowsSuperadmin(updatedProfile);
-  }
+  invalidateCache(`user:${uid}`);
+  invalidateCache('users:');
+  trackDBOperation({ operation: 'update', action: 'update_user_role', resource: 'users', documentCount: 1 });
 }
 
 export async function updateUserPermissions(
@@ -290,6 +317,9 @@ export async function updateUserPermissions(
     ...extras,
     updatedAt: now(),
   });
+  invalidateCache(`user:${uid}`);
+  invalidateCache('users:');
+  trackDBOperation({ operation: 'update', action: 'update_user_permissions', resource: 'users', documentCount: 1 });
 }
 
 export async function followUser(currentUid: string, targetUid: string) {
@@ -307,6 +337,10 @@ export async function followUser(currentUid: string, targetUid: string) {
 
   await updateDoc(doc(db, 'users', currentUid), { following, updatedAt: now() });
   await updateDoc(doc(db, 'users', targetUid), { followers, updatedAt: now() });
+  invalidateCache(`user:${currentUid}`);
+  invalidateCache(`user:${targetUid}`);
+  invalidateCache('users:');
+  trackDBOperation({ operation: 'update', action: 'follow_user', resource: 'users', documentCount: 2 });
 }
 
 export async function unfollowUser(currentUid: string, targetUid: string) {
@@ -322,14 +356,50 @@ export async function unfollowUser(currentUid: string, targetUid: string) {
     followers: target.followers.filter((id) => id !== currentUid),
     updatedAt: now(),
   });
+  invalidateCache(`user:${currentUid}`);
+  invalidateCache(`user:${targetUid}`);
+  invalidateCache('users:');
+  trackDBOperation({ operation: 'update', action: 'unfollow_user', resource: 'users', documentCount: 2 });
 }
 
-export async function getAllUsers(): Promise<UserProfile[]> {
-  const snap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')));
-  return snap.docs.map((d) => d.data() as UserProfile);
+export async function getAllUsers(forceRefresh = false): Promise<UserProfile[]> {
+  return cachedFetch<UserProfile[]>(
+    'users:all',
+    async () => {
+      const snap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')));
+      return snap.docs.map((d) => d.data() as UserProfile);
+    },
+    {
+      ttlMs: 60 * 1000,
+      resource: 'users',
+      action: 'get_all_users',
+      forceRefresh,
+    }
+  );
 }
 
-export async function getPendingUsers(): Promise<UserProfile[]> {
-  const users = await getAllUsers();
-  return users.filter((u) => u.status === 'pending' && u.role !== 'superadmin');
+export async function getPendingUsers(forceRefresh = false): Promise<UserProfile[]> {
+  return cachedFetch<UserProfile[]>(
+    'users:pending',
+    async () => {
+      try {
+        const snap = await getDocs(
+          query(collection(db, 'users'), where('status', '==', 'pending'), orderBy('createdAt', 'desc'))
+        );
+        return snap.docs
+          .map((d) => d.data() as UserProfile)
+          .filter((u) => u.role !== 'superadmin');
+      } catch {
+        const users = await getAllUsers(forceRefresh);
+        return users.filter((u) => u.status === 'pending' && u.role !== 'superadmin');
+      }
+    },
+    {
+      ttlMs: 45 * 1000,
+      resource: 'users',
+      action: 'get_pending_users',
+      forceRefresh,
+    }
+  );
 }
+

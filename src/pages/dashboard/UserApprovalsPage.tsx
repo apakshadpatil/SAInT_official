@@ -7,11 +7,13 @@ import type { UserProfile, PositionRecord } from '../../types';
 import { getRoleBadge } from '../../utils/permissions';
 import { Clock, Mail, Phone, Users, Shield, ShieldAlert, Check, X } from 'lucide-react';
 import VerifiedBadge from '../../components/ui/VerifiedBadge';
+import { CardSkeleton, TableSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
 
 export default function UserApprovalsPage() {
   const { profile: approver } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [positions, setPositions] = useState<PositionRecord[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -23,6 +25,7 @@ export default function UserApprovalsPage() {
   const [financeAccess, setFinanceAccess] = useState<Record<string, boolean>>({});
 
   const fetchData = async () => {
+    setLoadingData(true);
     try {
       const [allUsers, allPositions] = await Promise.all([
         getAllUsers(),
@@ -32,10 +35,13 @@ export default function UserApprovalsPage() {
       setPositions(allPositions);
     } catch (err) {
       console.error(err);
-      setError('Failed to fetch data');
+      setError('Failed to load data');
+    } finally {
+      setLoadingData(false);
     }
   };
 
+  // Fetch data on mount
   useEffect(() => {
     fetchData();
   }, []);
@@ -178,140 +184,140 @@ export default function UserApprovalsPage() {
             <Clock className="w-4 h-4 text-amber-500" /> Pending Sign-up Requests ({pendingRequests.length})
           </h2>
 
-          <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
-            {pendingRequests.map((u) => {
-              const currentRole = approvalRoles[u.uid] || 'member';
-              const currentPos = approvalPositions[u.uid] || '';
-              const newTitle = newPositionTitles[u.uid] || '';
-              const hasFinance = financeAccess[u.uid] || false;
+          <DataStateWrapper
+            loading={loadingData}
+            isEmpty={pendingRequests.length === 0}
+            emptyTitle="No pending registration requests"
+            emptyDescription="There are currently no sign-up requests awaiting approval."
+            skeleton={<CardSkeleton count={3} />}
+          >
+            <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
+              {pendingRequests.map((u) => {
+                const currentRole = approvalRoles[u.uid] || 'member';
+                const currentPos = approvalPositions[u.uid] || '';
+                const newTitle = newPositionTitles[u.uid] || '';
+                const hasFinance = financeAccess[u.uid] || false;
 
-              return (
-                <div
-                  key={u.uid}
-                  className="dash-card p-5 border flex flex-col justify-between gap-4"
-                  style={{ borderColor: 'var(--dash-border)' }}
-                >
-                  <div>
-                    <div className="flex items-center gap-3">
-                      {u.photoURL ? (
-                        <img src={u.photoURL} alt="" className="w-10 h-10 rounded-full object-cover border" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-sm text-slate-700">
-                          {u.firstName?.[0] || u.displayName?.[0]}
+                return (
+                  <div
+                    key={u.uid}
+                    className="dash-card p-5 border flex flex-col justify-between gap-4"
+                    style={{ borderColor: 'var(--dash-border)' }}
+                  >
+                    <div>
+                      <div className="flex items-center gap-3">
+                        {u.photoURL ? (
+                          <img src={u.photoURL} alt="" className="w-10 h-10 rounded-full object-cover border" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-sm text-slate-700">
+                            {u.firstName?.[0] || u.displayName?.[0]}
+                          </div>
+                        )}
+                        <div>
+                          <h3 className="font-bold text-sm flex items-center" style={{ color: 'var(--dash-text)' }}>
+                            <span>{u.displayName}</span>
+                            <VerifiedBadge user={u} />
+                          </h3>
+                          <span className="text-[10px]" style={{ color: 'var(--dash-muted)' }}>Batch: {u.batchYear || 'N/A'}</span>
                         </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[10px] mt-3" style={{ color: 'var(--dash-muted)' }}>
+                        <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> {u.email}</span>
+                        {u.phone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {u.phone}</span>}
+                      </div>
+                      {u.description && (
+                        <p className="text-[11px] mt-2 italic leading-relaxed" style={{ color: 'var(--dash-muted)' }}>
+                          &quot;{u.description}&quot;
+                        </p>
                       )}
-                      <div>
-                        <h3 className="font-bold text-sm flex items-center" style={{ color: 'var(--dash-text)' }}>
-                          <span>{u.displayName}</span>
-                          <VerifiedBadge user={u} />
-                        </h3>
-                        <span className="text-[10px]" style={{ color: 'var(--dash-muted)' }}>Batch: {u.batchYear || 'N/A'}</span>
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-[10px] mt-3" style={{ color: 'var(--dash-muted)' }}>
-                      <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> {u.email}</span>
-                      {u.phone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {u.phone}</span>}
-                    </div>
-                    {u.description && (
-                      <p className="text-[11px] mt-2 italic leading-relaxed" style={{ color: 'var(--dash-muted)' }}>
-                        &quot;{u.description}&quot;
-                      </p>
-                    )}
+                      {/* Inline Approvals Configuration Panel */}
+                      <div className="mt-4 p-4 rounded-xl space-y-4 border bg-black/10" style={{ borderColor: 'var(--dash-border)' }}>
+                        <p className="text-xs font-semibold" style={{ color: 'var(--dash-text)' }}>Privileges & Position</p>
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                          {/* Role Select */}
+                          <div>
+                            <label className="block text-[10px] mb-1 uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>Role</label>
+                            <select
+                              className="input-field !py-1.5 !px-2 !text-xs"
+                              value={currentRole}
+                              onChange={(e) => setApprovalRoles({ ...approvalRoles, [u.uid]: e.target.value as 'member' | 'core' })}
+                            >
+                              <option value="member">Member</option>
+                              <option value="core">Core Team</option>
+                            </select>
+                          </div>
 
-                    {/* Inline Approvals Configuration Panel */}
-                    <div className="mt-4 p-4 rounded-xl space-y-4 border bg-black/10" style={{ borderColor: 'var(--dash-border)' }}>
-                      <p className="text-xs font-semibold" style={{ color: 'var(--dash-text)' }}>Privileges & Position</p>
-                      
-                      <div className="grid grid-cols-2 gap-3">
-                        {/* Role Select */}
-                        <div>
-                          <label className="block text-[10px] mb-1 uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>Role</label>
-                          <select
-                            className="input-field !py-1.5 !px-2 !text-xs"
-                            value={currentRole}
-                            onChange={(e) => setApprovalRoles({ ...approvalRoles, [u.uid]: e.target.value as 'member' | 'core' })}
-                          >
-                            <option value="member">Member</option>
-                            <option value="core">Core Team</option>
-                          </select>
+                          {/* Position Select */}
+                          <div>
+                            <label className="block text-[10px] mb-1 uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>Position</label>
+                            <select
+                              className="input-field !py-1.5 !px-2 !text-xs"
+                              value={currentPos}
+                              onChange={(e) => setApprovalPositions({ ...approvalPositions, [u.uid]: e.target.value })}
+                            >
+                              <option value="">No Position</option>
+                              {positions.map((p) => (
+                                <option key={p.id} value={p.id}>{p.title}</option>
+                              ))}
+                              <option value="new">+ Create New Position</option>
+                            </select>
+                          </div>
                         </div>
 
-                        {/* Position Select */}
-                        <div>
-                          <label className="block text-[10px] mb-1 uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>Position</label>
-                          <select
-                            className="input-field !py-1.5 !px-2 !text-xs"
-                            value={currentPos}
-                            onChange={(e) => setApprovalPositions({ ...approvalPositions, [u.uid]: e.target.value })}
-                          >
-                            <option value="">No Position</option>
-                            {positions.map((p) => (
-                              <option key={p.id} value={p.id}>{p.title}</option>
-                            ))}
-                            <option value="new">+ Create New...</option>
-                          </select>
-                        </div>
-                      </div>
+                        {/* On-The-Fly Position Creator */}
+                        {currentPos === 'new' && (
+                          <div className="pt-2">
+                            <label className="block text-[10px] mb-1 uppercase tracking-wider text-amber-500 font-bold">New Position Title</label>
+                            <input
+                              type="text"
+                              className="input-field !py-1.5 !px-2 !text-xs"
+                              placeholder="e.g. Lead Designer"
+                              value={newTitle}
+                              onChange={(e) => setNewPositionTitles({ ...newPositionTitles, [u.uid]: e.target.value })}
+                            />
+                          </div>
+                        )}
 
-                      {/* New Position Title Input */}
-                      {currentPos === 'new' && (
-                        <div className="flex gap-2 items-center">
+                        {/* Finance Permission Toggle */}
+                        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                          <div>
+                            <span className="block text-xs font-medium" style={{ color: 'var(--dash-text)' }}>Finance Tab Access</span>
+                            <span className="block text-[10px]" style={{ color: 'var(--dash-muted)' }}>Allow access to Manage Financials</span>
+                          </div>
                           <input
-                            type="text"
-                            placeholder="New position title..."
-                            className="input-field !py-1.5 !px-2.5 !text-xs flex-1"
-                            value={newTitle}
-                            onChange={(e) => setNewPositionTitles({ ...newPositionTitles, [u.uid]: e.target.value })}
+                            type="checkbox"
+                            checked={hasFinance}
+                            onChange={(e) => setFinanceAccess({ ...financeAccess, [u.uid]: e.target.checked })}
+                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
                           />
                         </div>
-                      )}
-
-                      {/* Finance Access Toggle Option */}
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="text-xs" style={{ color: 'var(--dash-muted)' }}>Grant Financial Ledger Access</span>
-                        <button
-                          type="button"
-                          onClick={() => setFinanceAccess({ ...financeAccess, [u.uid]: !hasFinance })}
-                          className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all border ${
-                            hasFinance 
-                              ? 'bg-blue-600/20 text-blue-400 border-blue-500/40' 
-                              : 'bg-transparent text-slate-400 border-slate-700'
-                          }`}
-                        >
-                          {hasFinance ? 'Access Granted' : 'Access Restricted'}
-                        </button>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex gap-2 border-t pt-4" style={{ borderColor: 'var(--dash-border)' }}>
-                    <button
-                      onClick={() => handleApprove(u.uid, u.displayName)}
-                      disabled={loading}
-                      className="btn-primary !py-2 !px-3 !text-xs flex-1 flex items-center justify-center gap-1.5"
-                    >
-                      <Check className="w-3.5 h-3.5" /> Approve Registration
-                    </button>
-                    <button
-                      onClick={() => handleReject(u.uid, u.displayName)}
-                      disabled={loading}
-                      className="btn-outline border-red-500 text-red-500 hover:bg-red-500/10 !py-2 !px-3 !text-xs flex items-center justify-center gap-1.5 shrink-0"
-                    >
-                      <X className="w-3.5 h-3.5" /> Reject
-                    </button>
+                    <div className="flex items-center gap-2 pt-2">
+                      <button
+                        onClick={() => handleApprove(u.uid, u.displayName)}
+                        disabled={loading}
+                        className="btn-primary !py-2 !px-3 !text-xs flex-1 flex items-center justify-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Approve Registration
+                      </button>
+                      <button
+                        onClick={() => handleReject(u.uid, u.displayName)}
+                        disabled={loading}
+                        className="btn-outline border-red-500 text-red-500 hover:bg-red-500/10 !py-2 !px-3 !text-xs flex items-center justify-center gap-1.5 shrink-0"
+                      >
+                        <X className="w-3.5 h-3.5" /> Reject
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-
-            {pendingRequests.length === 0 && (
-              <div className="py-16 text-center dash-card border-dashed">
-                <Shield className="w-8 h-8 mx-auto mb-2 text-slate-500" />
-                <p style={{ color: 'var(--dash-muted)' }} className="text-sm">No pending registration requests in the queue.</p>
-              </div>
-            )}
-          </div>
+                );
+              })}
+            </div>
+          </DataStateWrapper>
         </div>
 
         {/* Right Column: Approved Members Directory */}
@@ -320,50 +326,51 @@ export default function UserApprovalsPage() {
             <Users className="w-4 h-4 text-blue-500" /> Active Association Members ({approvedUsers.length})
           </h2>
 
-          <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
-            {approvedUsers.map((u) => (
-              <div
-                key={u.uid}
-                className="dash-card p-4 border flex items-center justify-between gap-4"
-                style={{ borderColor: 'var(--dash-border)' }}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  {u.photoURL ? (
-                    <img src={u.photoURL} alt="" className="w-10 h-10 rounded-full object-cover shrink-0 border" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-sm text-slate-700 shrink-0">
-                      {u.firstName?.[0] || u.displayName?.[0]}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <h3 className="font-semibold text-xs truncate" style={{ color: 'var(--dash-text)' }}>{u.displayName}</h3>
-                    <p className="text-[10px] truncate" style={{ color: 'var(--dash-muted)' }}>{u.email}</p>
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                      <span className="text-[9px] capsule-tag !py-0.5">{getRoleBadge(u)}</span>
-                      {u.hasFinanceAccess && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">Finance</span>
-                      )}
+          <DataStateWrapper
+            loading={loadingData}
+            isEmpty={approvedUsers.length === 0}
+            emptyTitle="No active members"
+            emptyDescription="No active members registered yet."
+            skeleton={<TableSkeleton rows={5} cols={2} hasSearch={false} />}
+          >
+            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+              {approvedUsers.map((u) => (
+                <div
+                  key={u.uid}
+                  className="dash-card p-4 border flex items-center justify-between gap-4"
+                  style={{ borderColor: 'var(--dash-border)' }}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {u.photoURL ? (
+                      <img src={u.photoURL} alt="" className="w-10 h-10 rounded-full object-cover shrink-0 border" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-sm text-slate-700 shrink-0">
+                        {u.firstName?.[0] || u.displayName?.[0]}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-xs truncate" style={{ color: 'var(--dash-text)' }}>{u.displayName}</h3>
+                      <p className="text-[10px] truncate" style={{ color: 'var(--dash-muted)' }}>{u.email}</p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                        <span className="text-[9px] capsule-tag !py-0.5">{getRoleBadge(u)}</span>
+                        {u.hasFinanceAccess && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">Finance</span>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  <button
+                    onClick={() => handleRemove(u.uid, u.displayName)}
+                    disabled={loading}
+                    className="btn-outline border-red-500 text-red-500 hover:bg-red-500/10 !py-1.5 !px-3 !text-[11px] shrink-0"
+                  >
+                    Revoke Access
+                  </button>
                 </div>
-
-                <button
-                  onClick={() => handleRemove(u.uid, u.displayName)}
-                  disabled={loading}
-                  className="btn-outline border-red-500 text-red-500 hover:bg-red-500/10 !py-1.5 !px-3 !text-[11px] shrink-0"
-                >
-                  Revoke Access
-                </button>
-              </div>
-            ))}
-
-            {approvedUsers.length === 0 && (
-              <div className="py-16 text-center dash-card border-dashed">
-                <ShieldAlert className="w-8 h-8 mx-auto mb-2 text-slate-500" />
-                <p style={{ color: 'var(--dash-muted)' }} className="text-sm">No active members registered yet.</p>
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          </DataStateWrapper>
         </div>
       </div>
     </div>

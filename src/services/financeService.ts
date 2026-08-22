@@ -11,6 +11,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
+import { trackDBOperation } from './dbTrackingService';
 import type { FinanceTransaction } from '../types';
 
 function now() {
@@ -22,32 +24,63 @@ export async function addTransaction(data: Omit<FinanceTransaction, 'id' | 'crea
     ...data,
     createdAt: now(),
   });
+  invalidateCache('transactions:');
+  trackDBOperation({ operation: 'write', action: 'add_transaction', resource: 'transactions', documentCount: 1 });
   return ref.id;
 }
 
 export async function updateTransaction(id: string, data: Partial<FinanceTransaction>) {
   await updateDoc(doc(db, 'transactions', id), data);
+  invalidateCache('transactions:');
+  trackDBOperation({ operation: 'update', action: 'update_transaction', resource: 'transactions', documentCount: 1 });
 }
 
 export async function deleteTransaction(id: string) {
   await deleteDoc(doc(db, 'transactions', id));
+  invalidateCache('transactions:');
+  trackDBOperation({ operation: 'delete', action: 'delete_transaction', resource: 'transactions', documentCount: 1 });
 }
 
-export async function getTransactions(): Promise<FinanceTransaction[]> {
-  const snap = await getDocs(query(collection(db, 'transactions'), orderBy('createdAt', 'desc')));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FinanceTransaction));
-}
-
-export async function getEventTransactions(eventId: string): Promise<FinanceTransaction[]> {
-  const snap = await getDocs(
-    query(collection(db, 'transactions'), where('eventId', '==', eventId), orderBy('createdAt', 'desc'))
+export async function getTransactions(forceRefresh = false): Promise<FinanceTransaction[]> {
+  return cachedFetch<FinanceTransaction[]>(
+    'transactions:all',
+    async () => {
+      const snap = await getDocs(query(collection(db, 'transactions'), orderBy('createdAt', 'desc')));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FinanceTransaction));
+    },
+    {
+      ttlMs: 45 * 1000,
+      resource: 'transactions',
+      action: 'get_transactions',
+      forceRefresh,
+    }
   );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FinanceTransaction));
+}
+
+export async function getEventTransactions(eventId: string, forceRefresh = false): Promise<FinanceTransaction[]> {
+  return cachedFetch<FinanceTransaction[]>(
+    `transactions:event:${eventId}`,
+    async () => {
+      const snap = await getDocs(
+        query(collection(db, 'transactions'), where('eventId', '==', eventId), orderBy('createdAt', 'desc'))
+      );
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FinanceTransaction));
+    },
+    {
+      ttlMs: 45 * 1000,
+      resource: 'transactions',
+      action: 'get_event_transactions',
+      forceRefresh,
+    }
+  );
 }
 
 export function subscribeTransactions(callback: (txns: FinanceTransaction[]) => void) {
+  trackDBOperation({ operation: 'listener', action: 'subscribe_transactions', resource: 'transactions' });
   return onSnapshot(query(collection(db, 'transactions'), orderBy('createdAt', 'desc')), (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FinanceTransaction)));
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FinanceTransaction));
+    setCachedData('transactions:all', items);
+    callback(items);
   });
 }
 
@@ -71,4 +104,7 @@ export function computeFinancialAnalytics(transactions: FinanceTransaction[]) {
 
 export async function setEventBudget(eventId: string, budget: number) {
   await updateDoc(doc(db, 'events', eventId), { budget });
+  invalidateCache('events:');
+  trackDBOperation({ operation: 'update', action: 'set_event_budget', resource: 'events', documentCount: 1 });
 }
+
