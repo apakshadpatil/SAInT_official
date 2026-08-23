@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { completeProfileSetup } from '../../services/authService';
-import { fileToDataUrl } from '../../utils/fileUtils';
+import { uploadFileToSupabase } from '../../utils/supabase';
 import { isCoreMember } from '../../utils/permissions';
 
 export default function ProfileSetupPage() {
@@ -22,10 +22,12 @@ export default function ProfileSetupPage() {
 
   const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !user) return;
     try {
-      const { dataUrl } = await fileToDataUrl(file);
-      setPhotoURL(dataUrl);
+      const dest = `avatars/${user.uid}_${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      const url = await uploadFileToSupabase(file, dest);
+      setPhotoURL(url);
+      setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to upload photo');
     }

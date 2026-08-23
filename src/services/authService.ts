@@ -2,6 +2,8 @@ import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -111,6 +113,7 @@ export function subscribeToAuth(callback: (user: User | null) => void) {
 }
 
 export async function signInWithGoogle() {
+  await setPersistence(auth, browserLocalPersistence);
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(auth, provider);
   const profile = await ensureUserProfile(result.user);
@@ -124,6 +127,7 @@ export async function signInWithGoogle() {
 }
 
 export async function signInWithEmail(email: string, password: string) {
+  await setPersistence(auth, browserLocalPersistence);
   const result = await signInWithEmailAndPassword(auth, email, password);
   const profile = await ensureUserProfile(result.user);
   if (profile.role === 'superadmin') {

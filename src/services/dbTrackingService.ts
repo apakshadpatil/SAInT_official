@@ -239,7 +239,7 @@ function schedulePeriodicSync() {
  * Uses merge: true on single daily rollup documents, creating at most 1 write every 5 minutes.
  */
 export async function flushAggregatesToFirestore() {
-  if (isSyncingToFirestore || typeof window === 'undefined') return;
+  if (!auth.currentUser || isSyncingToFirestore || typeof window === 'undefined') return;
   isSyncingToFirestore = true;
   try {
     const today = new Date().toISOString().split('T')[0];

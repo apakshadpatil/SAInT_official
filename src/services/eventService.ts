@@ -401,7 +401,8 @@ export async function getPublishedUpcomingEvents(forceRefresh = false): Promise<
         return getUpcomingEvents(events, today);
       } catch (indexErr) {
         console.warn('Published events query failed, falling back to client filter:', indexErr);
-        const events = await getEvents(forceRefresh);
+        const snap = await getDocs(query(collection(db, 'events'), where('status', '==', 'published')));
+        const events = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
         return getUpcomingEvents(events);
       }
     },
