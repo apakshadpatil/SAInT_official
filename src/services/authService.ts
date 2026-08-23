@@ -2,6 +2,8 @@ import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -111,6 +113,7 @@ export function subscribeToAuth(callback: (user: User | null) => void) {
 }
 
 export async function signInWithGoogle() {
+  await setPersistence(auth, browserLocalPersistence);
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(auth, provider);
   const profile = await ensureUserProfile(result.user);
@@ -124,6 +127,7 @@ export async function signInWithGoogle() {
 }
 
 export async function signInWithEmail(email: string, password: string) {
+  await setPersistence(auth, browserLocalPersistence);
   const result = await signInWithEmailAndPassword(auth, email, password);
   const profile = await ensureUserProfile(result.user);
   if (profile.role === 'superadmin') {
@@ -366,11 +370,17 @@ export async function getAllUsers(forceRefresh = false): Promise<UserProfile[]> 
   return cachedFetch<UserProfile[]>(
     'users:all',
     async () => {
-      const snap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')));
-      return snap.docs.map((d) => d.data() as UserProfile);
+      try {
+        const snap = await getDocs(collection(db, 'users'));
+        const users = snap.docs.map((d) => ({ uid: d.id, ...(d.data() as UserProfile) }));
+        return users.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      } catch (err) {
+        console.warn('getAllUsers error:', err);
+        return [];
+      }
     },
     {
-      ttlMs: 60 * 1000,
+      ttlMs: 30 * 1000,
       resource: 'users',
       action: 'get_all_users',
       forceRefresh,

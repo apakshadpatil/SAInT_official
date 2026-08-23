@@ -79,6 +79,17 @@ export default function AuthPage() {
     });
   };
 
+  if (authLoading) {
+    return (
+      <div className="auth-page min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden">
+        <div className="auth-grid" aria-hidden="true" />
+        <div className="auth-orb auth-orb-one" aria-hidden="true" />
+        <div className="auth-orb auth-orb-two" aria-hidden="true" />
+        <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin relative z-10" />
+      </div>
+    );
+  }
+
   return (
     <div
       className="auth-page min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden"

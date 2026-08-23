@@ -1,11 +1,11 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Calendar, MapPin, Clock, Ticket, Search, Filter,
-  LayoutGrid, List, ChevronRight, Sparkles, Zap, Tag,
-  Users, Layers, ArrowRight, ShieldAlert
+  Calendar, MapPin, Clock, Ticket, Search, X,
+  LayoutGrid, List, Sparkles, Zap, Filter,
+  Users
 } from 'lucide-react';
-import { getPublishedUpcomingEvents } from '../../services/eventService';
+import { subscribePublishedUpcomingEvents } from '../../services/eventService';
 import { subscribeSiteSettings } from '../../services/applicationService';
 import type { EventRecord } from '../../types';
 import { EventCardSkeleton } from '../../components/ui/skeleton';
@@ -34,17 +34,12 @@ export default function PublicEventsPage() {
   }, []);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const list = await getPublishedUpcomingEvents();
-        setEvents(list);
-      } catch (err) {
-        console.error('Failed to load upcoming events', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
+    setLoading(true);
+    const unsub = subscribePublishedUpcomingEvents((list) => {
+      setEvents(list);
+      setLoading(false);
+    });
+    return () => unsub();
   }, []);
 
   const categories = useMemo(() => {
@@ -54,21 +49,20 @@ export default function PublicEventsPage() {
   }, [events]);
 
   const filteredEvents = useMemo(() => {
-    return events.filter(event => {
-      const matchesSearch =
-        event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        event.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (event.location && event.location.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (event.venue && event.venue.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (event.tags && event.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())));
-
-      const matchesCat = selectedCategory === 'all' || event.category === selectedCategory;
-      return matchesSearch && matchesCat;
+    return events.filter(e => {
+      const matchCat = selectedCategory === 'all' || e.category?.toLowerCase() === selectedCategory.toLowerCase();
+      const q = searchQuery.toLowerCase().trim();
+      const matchQuery = !q ||
+        e.title.toLowerCase().includes(q) ||
+        (e.description && e.description.toLowerCase().includes(q)) ||
+        (e.location && e.location.toLowerCase().includes(q)) ||
+        (e.tags && e.tags.some(t => t.toLowerCase().includes(q)));
+      return matchCat && matchQuery;
     });
-  }, [events, searchQuery, selectedCategory]);
+  }, [events, selectedCategory, searchQuery]);
 
   return (
-    <div className={`min-h-screen relative pb-20 ${doomsdayMode ? 'bg-[#050505] text-white' : ''}`}>
+    <div className={`min-h-screen relative pb-20 ${doomsdayMode ? 'bg-[#050505] text-white' : 'bg-slate-50/50 text-slate-900'}`}>
       {/* Doomsday Green Smoke Animation Background — strictly NO lightning */}
       {doomsdayMode && (
         <div className="doomsday-green-smoke">
@@ -78,10 +72,10 @@ export default function PublicEventsPage() {
         </div>
       )}
 
-      {/* Hero Banner Header */}
-      <section className={`relative z-10 pt-10 pb-12 px-4 sm:px-6 lg:px-8 border-b ${doomsdayMode ? 'border-emerald-500/20 bg-black/40' : 'border-slate-200/80 bg-gradient-to-b from-blue-50/60 to-transparent'}`}>
-        <div className="max-w-7xl mx-auto text-center space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider" style={doomsdayMode ? { background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)' } : { background: 'rgba(37,99,235,0.08)', color: '#2563eb', border: '1px solid rgba(37,99,235,0.2)' }}>
+      {/* Header Banner */}
+      <section className={`relative z-10 pt-12 pb-14 px-4 sm:px-6 lg:px-8 border-b ${doomsdayMode ? 'border-emerald-500/20 bg-black/40' : 'border-slate-200/80 bg-gradient-to-b from-blue-50/80 via-white to-transparent'}`}>
+        <div className="max-w-4xl mx-auto text-center space-y-4">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm" style={doomsdayMode ? { background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)' } : { background: 'rgba(37,99,235,0.08)', color: '#2563eb', border: '1px solid rgba(37,99,235,0.2)' }}>
             {doomsdayMode ? <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" /> : <Sparkles className="w-3.5 h-3.5" />}
             <span>{doomsdayMode ? 'DOOMSDAY PORTAL — ACTIVE EVENTS' : 'SAInT IT Events Portal'}</span>
           </div>
@@ -98,55 +92,85 @@ export default function PublicEventsPage() {
 
       {/* Controls: Search, View Mode Toggle, Category Filters */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 relative z-10">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 rounded-xl border" style={doomsdayMode ? { background: 'rgba(10,15,10,0.8)', borderColor: 'rgba(16,185,129,0.2)' } : { background: 'var(--dash-card, #ffffff)', borderColor: 'var(--dash-border, #e2e8f0)' }}>
-          {/* Search bar */}
-          <div className="relative w-full md:w-96">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: doomsdayMode ? '#34d399' : '#64748b' }} />
-            <input
-              type="text"
-              placeholder="Search by event title, location, tags..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs sm:text-sm rounded-lg outline-none transition-all"
-              style={doomsdayMode ? { background: '#0a0a0a', border: '1px solid rgba(16,185,129,0.3)', color: '#ffffff' } : { background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a' }}
-            />
+        <div className="p-4 sm:p-5 rounded-2xl border shadow-sm backdrop-blur-md transition-all space-y-4" style={doomsdayMode ? { background: 'rgba(10,15,10,0.85)', borderColor: 'rgba(16,185,129,0.25)', boxShadow: '0 4px 24px rgba(0,0,0,0.5)' } : { background: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.05)' }}>
+          {/* Top Row: Search input + View Switcher */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            {/* Search bar with glow, icons and clear button */}
+            <div className="relative flex-1 group">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors pointer-events-none" style={{ color: doomsdayMode ? '#34d399' : searchQuery ? '#2563eb' : '#94a3b8' }} />
+              <input
+                type="text"
+                placeholder="Search events by title, description, venue, tags..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-24 py-2.5 text-xs sm:text-sm rounded-xl outline-none transition-all focus:ring-2"
+                style={doomsdayMode ? {
+                  background: '#090909',
+                  border: '1px solid rgba(16,185,129,0.3)',
+                  color: '#ffffff'
+                } : {
+                  background: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  color: '#0f172a'
+                }}
+              />
+              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md font-mono shrink-0" style={doomsdayMode ? { background: 'rgba(16,185,129,0.2)', color: '#34d399' } : { background: '#eff6ff', color: '#2563eb' }}>
+                  {filteredEvents.length} found
+                </span>
+              </div>
+            </div>
+
+            {/* View Mode Switcher (Tile vs Detailed) */}
+            <div className="flex items-center gap-1 p-1 rounded-xl border shrink-0 self-end md:self-auto" style={doomsdayMode ? { background: '#000', borderColor: 'rgba(16,185,129,0.3)' } : { background: '#f1f5f9', borderColor: '#e2e8f0' }}>
+              <button
+                onClick={() => setViewMode('tile')}
+                title="Tile Format (Grid Cards)"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${viewMode === 'tile' ? (doomsdayMode ? 'bg-emerald-500 text-black font-bold' : 'bg-white shadow text-blue-600') : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Grid</span>
+              </button>
+              <button
+                onClick={() => setViewMode('detailed')}
+                title="Detailed Format (Expanded List)"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${viewMode === 'detailed' ? (doomsdayMode ? 'bg-emerald-500 text-black font-bold' : 'bg-white shadow text-blue-600') : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                <List className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">List</span>
+              </button>
+            </div>
           </div>
 
-          {/* Controls: View Mode & Categories */}
-          <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
-            {/* Category pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto text-xs py-1">
+          {/* Bottom Row: Category Chips with Filter Icon */}
+          <div className="flex items-center gap-2 pt-2 border-t" style={{ borderColor: doomsdayMode ? 'rgba(16,185,129,0.15)' : '#f1f5f9' }}>
+            <div className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider shrink-0" style={{ color: doomsdayMode ? '#34d399' : '#64748b' }}>
+              <Filter className="w-3 h-3" /> Filter:
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto text-xs py-1 scrollbar-none">
               {categories.map(cat => (
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className="px-3 py-1.5 rounded-lg font-semibold uppercase text-[10px] tracking-wider transition-all capitalize"
+                  className="px-3 py-1 rounded-lg font-semibold uppercase text-[10px] tracking-wider transition-all capitalize whitespace-nowrap cursor-pointer"
                   style={selectedCategory === cat
-                    ? (doomsdayMode ? { background: '#10b981', color: '#000000' } : { background: '#2563eb', color: '#ffffff' })
-                    : (doomsdayMode ? { background: 'rgba(16,185,129,0.1)', color: '#a7f3d0' } : { background: '#f1f5f9', color: '#64748b' })
+                    ? (doomsdayMode ? { background: '#10b981', color: '#000000', fontWeight: 'bold' } : { background: '#2563eb', color: '#ffffff', boxShadow: '0 2px 8px rgba(37,99,235,0.25)' })
+                    : (doomsdayMode ? { background: 'rgba(16,185,129,0.1)', color: '#a7f3d0', border: '1px solid rgba(16,185,129,0.2)' } : { background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0' })
                   }
                 >
                   {cat}
                 </button>
               ))}
-            </div>
-
-            {/* View Mode Switcher (Tile vs Detailed) */}
-            <div className="flex items-center p-1 rounded-lg border shrink-0" style={doomsdayMode ? { background: '#000', borderColor: 'rgba(16,185,129,0.3)' } : { background: '#f8fafc', borderColor: '#e2e8f0' }}>
-              <button
-                onClick={() => setViewMode('tile')}
-                title="Tile Format (Grid Cards)"
-                className={`p-1.5 rounded transition-all ${viewMode === 'tile' ? (doomsdayMode ? 'bg-emerald-500 text-black' : 'bg-white shadow text-blue-600') : 'text-slate-400'}`}
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('detailed')}
-                title="Detailed Format (Expanded List)"
-                className={`p-1.5 rounded transition-all ${viewMode === 'detailed' ? (doomsdayMode ? 'bg-emerald-500 text-black' : 'bg-white shadow text-blue-600') : 'text-slate-400'}`}
-              >
-                <List className="w-4 h-4" />
-              </button>
             </div>
           </div>
         </div>
@@ -155,9 +179,11 @@ export default function PublicEventsPage() {
       {/* Events Grid / List */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 relative z-10">
         {loading ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <EventCardSkeleton count={6} />
-          </div>
+          viewMode === 'detailed' ? (
+            <EventCardSkeleton count={4} viewMode="list" />
+          ) : (
+            <EventCardSkeleton count={6} viewMode="grid" />
+          )
         ) : filteredEvents.length === 0 ? (
           <div className="text-center py-20 rounded-2xl border border-dashed" style={doomsdayMode ? { borderColor: 'rgba(16,185,129,0.3)', background: 'rgba(10,15,10,0.4)' } : { borderColor: '#cbd5e1', background: '#ffffff' }}>
             <Calendar className="w-12 h-12 mx-auto mb-3" style={{ color: doomsdayMode ? '#34d399' : '#94a3b8' }} />

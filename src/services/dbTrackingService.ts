@@ -26,7 +26,15 @@ function initTelemetry() {
     if (rawTraces) memoryTraces = JSON.parse(rawTraces);
 
     const rawDaily = localStorage.getItem(STORAGE_KEY_DAILY_AGGREGATES);
-    if (rawDaily) dailyAggregates = JSON.parse(rawDaily);
+    if (rawDaily) {
+      dailyAggregates = JSON.parse(rawDaily);
+      // Backfill 'operations' field for entries persisted by older versions of the code
+      for (const key of Object.keys(dailyAggregates)) {
+        if (!dailyAggregates[key].operations) {
+          dailyAggregates[key].operations = { read: 0, write: 0, update: 0, delete: 0, fetch: 0, listener: 0 };
+        }
+      }
+    }
 
     const rawUser = localStorage.getItem(STORAGE_KEY_USER_AGGREGATES);
     if (rawUser) userAggregates = JSON.parse(rawUser);
@@ -65,7 +73,7 @@ export function trackDBOperation(options: {
   documentCount?: number;
   cached?: boolean;
   durationMs?: number;
-  status?: 'success' | 'failed';
+  status?: 'success' | 'error' | 'failed';
   errorMessage?: string;
   page?: string;
   userId?: string;
@@ -89,7 +97,7 @@ export function trackDBOperation(options: {
   const documentCount = options.documentCount ?? 1;
   const cached = Boolean(options.cached);
   const durationMs = options.durationMs ?? 0;
-  const status = options.status || 'success';
+  const status: 'success' | 'error' = options.status === 'failed' ? 'error' : (options.status || 'success');
 
   const record: DBTelemetryRecord = {
     id: `trace_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -122,10 +130,12 @@ export function trackDBOperation(options: {
       totalCalls: 0,
       totalReads: 0,
       totalWrites: 0,
-      fetchOperations: 0,
+      totalFetches: 0,
       cachedReads: 0,
+      cacheSavingsRate: 0,
       activeUserIds: [],
       activeUsersCount: 0,
+      operations: { read: 0, write: 0, update: 0, delete: 0, fetch: 0, listener: 0 },
       resources: {},
       pages: {},
       hourlyDistribution: {},
@@ -134,18 +144,22 @@ export function trackDBOperation(options: {
 
   const dayStat = dailyAggregates[dateKey];
   dayStat.totalCalls += 1;
+  // Ensure operations map exists (defensive guard for stale persisted data)
+  dayStat.operations ??= { read: 0, write: 0, update: 0, delete: 0, fetch: 0, listener: 0 };
+  dayStat.operations[options.operation] = (dayStat.operations[options.operation] || 0) + 1;
+
   if (options.operation === 'read' || options.operation === 'fetch') {
     if (cached) {
       dayStat.cachedReads += documentCount;
     } else {
       dayStat.totalReads += documentCount;
-      dayStat.fetchOperations += 1;
+      dayStat.totalFetches += 1;
     }
   } else if (['write', 'update', 'delete'].includes(options.operation)) {
     dayStat.totalWrites += documentCount;
   }
 
-  if (userId && !dayStat.activeUserIds.includes(userId)) {
+  if (userId && dayStat.activeUserIds && !dayStat.activeUserIds.includes(userId)) {
     dayStat.activeUserIds.push(userId);
     dayStat.activeUsersCount = dayStat.activeUserIds.length;
   }
@@ -239,7 +253,7 @@ function schedulePeriodicSync() {
  * Uses merge: true on single daily rollup documents, creating at most 1 write every 5 minutes.
  */
 export async function flushAggregatesToFirestore() {
-  if (isSyncingToFirestore || typeof window === 'undefined') return;
+  if (!auth.currentUser || isSyncingToFirestore || typeof window === 'undefined') return;
   isSyncingToFirestore = true;
   try {
     const today = new Date().toISOString().split('T')[0];
@@ -297,14 +311,14 @@ export async function getSystemStatsOverview(dateRange?: { startDate?: string; e
   const totalCalls = filteredDays.reduce((sum, d) => sum + (d.totalCalls || 0), 0);
   const totalReads = filteredDays.reduce((sum, d) => sum + (d.totalReads || 0), 0);
   const totalWrites = filteredDays.reduce((sum, d) => sum + (d.totalWrites || 0), 0);
-  const totalFetches = filteredDays.reduce((sum, d) => sum + (d.fetchOperations || 0), 0);
+  const totalFetches = filteredDays.reduce((sum, d) => sum + (d.totalFetches || 0), 0);
   const cachedReads = filteredDays.reduce((sum, d) => sum + (d.cachedReads || 0), 0);
 
   const totalAttemptedReads = totalReads + cachedReads;
   const cacheSavingsRate = totalAttemptedReads > 0 ? Math.round((cachedReads / totalAttemptedReads) * 100) : 0;
 
   const allActiveUsers = new Set<string>();
-  filteredDays.forEach((d) => (d.activeUserIds || []).forEach((u) => allActiveUsers.add(u)));
+  filteredDays.forEach((d) => (d.activeUserIds || []).forEach((u: string) => allActiveUsers.add(u)));
   const activeUsersCount = allActiveUsers.size || Object.keys(userAggregates).length || 1;
 
   const avgCallsPerUser = activeUsersCount > 0 ? Math.round(totalCalls / activeUsersCount) : 0;

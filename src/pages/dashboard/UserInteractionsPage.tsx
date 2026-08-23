@@ -2,15 +2,15 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   Users, Eye, Clock, TrendingUp, RefreshCw, Search,
   Globe, Monitor, Smartphone, Tablet, Calendar, Download,
-  MapPin, Compass, ShieldCheck, X, Activity, Filter
+  MapPin, Compass, ShieldCheck, X
 } from 'lucide-react';
 import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { useAuth } from '../../contexts/AuthContext';
 import { isSuperAdmin } from '../../utils/permissions';
-import { getVisitorAnalytics, clearVisitorLogs } from '../../services/visitorTrackingService';
+import { getVisitorAnalytics } from '../../services/visitorTrackingService';
 import type { VisitorStatsOverview, VisitorInteraction } from '../../types';
 import { StatGridSkeleton, TableSkeleton, ChartSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
 import { useToast } from '../../contexts/ToastContext';

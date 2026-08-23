@@ -16,7 +16,7 @@ import {
 import { db } from '../firebase/config';
 import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
 import { trackDBOperation } from './dbTrackingService';
-import type { EventRecord, EventTicket, EventParticipant } from '../types';
+import type { EventRecord, EventTicket, EventParticipant, EventTeam } from '../types';
 import { buildQRPayload, parseQRPayload } from '../utils/qrScan';
 import { extractSupabasePathFromPublicUrl, removeFileFromSupabase, uploadFileToSupabase } from '../utils/supabase';
 import { uploadFileToStorage } from '../utils/fileUtils';
@@ -136,8 +136,18 @@ export async function deleteEvent(id: string) {
           try {
             await removeFileFromSupabase(path);
           } catch (e) {
-            console.warn('Failed to remove Supabase object for event', id, e);
+            console.warn('Failed to remove Supabase banner for event', id, e);
           }
+        }
+      }
+
+      // Cleanup certificate template if stored in Supabase
+      const certPath = data.certificateConfig?.templatePath || (data.certificateConfig?.templateUrl ? extractSupabasePathFromPublicUrl(data.certificateConfig.templateUrl) : undefined);
+      if (certPath) {
+        try {
+          await removeFileFromSupabase(certPath);
+        } catch (e) {
+          console.warn('Failed to remove Supabase certificate template for event', id, e);
         }
       }
     }
@@ -348,9 +358,52 @@ export async function registerParticipantForEvent(
 
   const participantIds = Array.from(new Set([...(event.participantIds || []), ticket.id]));
 
+  // If this is a team event or multi-member registration, also record it in event.teams
+  const existingTeams = event.teams || [];
+  let nextTeams = existingTeams;
+  const isTeamRegistration =
+    Boolean(event.teamsEnabled) ||
+    (participantData.teamMembers && participantData.teamMembers.length > 0) ||
+    (participantData.teamSize && participantData.teamSize > 1);
+
+  if (isTeamRegistration) {
+    const rawTeamName =
+      participantData.customResponses?.teamName ||
+      participantData.customResponses?.['Team Name'] ||
+      `Team ${participantData.name}`;
+
+    const newTeam: EventTeam = {
+      id: `team_${ticket.id}`,
+      eventId,
+      teamName: rawTeamName.trim(),
+      leadName: participantData.name.trim(),
+      leadEmail: (participantData.email || '').trim().toLowerCase(),
+      leadPhone: participantData.phone?.trim(),
+      college: participantData.college?.trim(),
+      department: participantData.department?.trim(),
+      memberCount: (participantData.teamMembers?.length || 0) + 1,
+      members: participantData.teamMembers || [],
+      tierId: participantData.tierId,
+      tierName: participantData.tierName,
+      transactionId: participantData.transactionId,
+      customResponses: participantData.customResponses,
+      registeredAt: ticket.createdAt,
+      arrived: false,
+    };
+
+    const teamIndex = existingTeams.findIndex((t) => t.id === newTeam.id || t.leadEmail === newTeam.leadEmail);
+    if (teamIndex >= 0) {
+      nextTeams = [...existingTeams];
+      nextTeams[teamIndex] = newTeam;
+    } else {
+      nextTeams = [newTeam, ...existingTeams];
+    }
+  }
+
   await updateEvent(eventId, {
     participants: nextParticipants,
     participantIds,
+    ...(isTeamRegistration ? { teams: nextTeams } : {}),
   });
 
   return { ticket, participant: rawParticipant };
@@ -359,18 +412,17 @@ export async function registerParticipantForEvent(
 export async function addParticipant(eventId: string, userId: string) {
   const event = await getEvent(eventId);
   if (!event) throw new Error('Event not found');
-  const participantIds = event.participantIds.includes(userId)
-    ? event.participantIds
-    : [...event.participantIds, userId];
+
+  const participantIds = Array.from(new Set([...(event.participantIds || []), userId]));
   await updateEvent(eventId, { participantIds });
 }
 
 export async function removeParticipant(eventId: string, userId: string) {
   const event = await getEvent(eventId);
   if (!event) throw new Error('Event not found');
-  await updateEvent(eventId, {
-    participantIds: event.participantIds.filter((id) => id !== userId),
-  });
+
+  const participantIds = (event.participantIds || []).filter((id) => id !== userId);
+  await updateEvent(eventId, { participantIds });
 }
 
 export async function getEventTickets(eventId: string): Promise<EventTicket[]> {
@@ -390,23 +442,16 @@ export async function getPublishedUpcomingEvents(forceRefresh = false): Promise<
     async () => {
       try {
         const today = new Date().toISOString().split('T')[0];
-        const snap = await getDocs(
-          query(
-            collection(db, 'events'),
-            where('status', '==', 'published'),
-            orderBy('date', 'asc')
-          )
-        );
-        const events = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
-        return getUpcomingEvents(events, today);
-      } catch (indexErr) {
-        console.warn('Published events query failed, falling back to client filter:', indexErr);
-        const events = await getEvents(forceRefresh);
-        return getUpcomingEvents(events);
+        const snap = await getDocs(collection(db, 'events'));
+        const allEvents = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
+        return getUpcomingEvents(allEvents, today);
+      } catch (err) {
+        console.warn('Published upcoming events query error:', err);
+        return [];
       }
     },
     {
-      ttlMs: 45 * 1000,
+      ttlMs: 15 * 1000,
       resource: 'events',
       action: 'get_published_upcoming_events',
       forceRefresh,
@@ -414,13 +459,56 @@ export async function getPublishedUpcomingEvents(forceRefresh = false): Promise<
   );
 }
 
+export async function getPublishedActivities(forceRefresh = false): Promise<EventRecord[]> {
+  return cachedFetch<EventRecord[]>(
+    'events:published_activities',
+    async () => {
+      try {
+        const snap = await getDocs(collection(db, 'events'));
+        const allEvents = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
+        return allEvents
+          .filter((e) => e.status !== 'cancelled')
+          .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      } catch (err) {
+        console.warn('Failed to fetch public activities:', err);
+        return [];
+      }
+    },
+    {
+      ttlMs: 15 * 1000,
+      resource: 'events',
+      action: 'get_published_activities',
+      forceRefresh,
+    }
+  );
+}
+
+export function subscribePublishedActivities(callback: (events: EventRecord[]) => void) {
+  return onSnapshot(
+    collection(db, 'events'),
+    (snap) => {
+      const allEvents = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
+      const sorted = allEvents
+        .filter((e) => e.status !== 'cancelled')
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      callback(sorted);
+    },
+    (err) => {
+      console.warn('Subscription to published activities failed:', err);
+    }
+  );
+}
+
 export function subscribePublishedUpcomingEvents(callback: (events: EventRecord[]) => void) {
   const today = new Date().toISOString().split('T')[0];
   return onSnapshot(
-    query(collection(db, 'events'), orderBy('date', 'asc')),
+    collection(db, 'events'),
     (snap) => {
       const events = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
       callback(getUpcomingEvents(events, today));
+    },
+    (err) => {
+      console.warn('Subscription to published upcoming events failed:', err);
     }
   );
 }
@@ -582,16 +670,29 @@ async function checkInTicket(ticketRef: ReturnType<typeof doc>, scannerUid: stri
 
 export function getUpcomingEvents(events: EventRecord[], todayOverride?: string) {
   const today = todayOverride || new Date().toISOString().split('T')[0];
-  return events
+  const upcoming = events
     .filter((e) => {
-      if (e.status !== 'published') return false;
+      if (e.status === 'cancelled' || e.status === 'draft') return false;
       const eventDate = (e.date || '').slice(0, 10);
-      return eventDate >= today;
+      return !eventDate || eventDate >= today;
     })
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  // If strict date filter yielded 0 upcoming but there are active events, show all non-cancelled/non-draft events
+  if (upcoming.length === 0) {
+    const published = events.filter((e) => e.status !== 'cancelled' && e.status !== 'draft');
+    if (published.length > 0) {
+      return published.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    }
+  }
+
+  return upcoming;
 }
 
 export function getPastEvents(events: EventRecord[]) {
   const today = new Date().toISOString().split('T')[0];
-  return events.filter((e) => e.date < today || e.status === 'completed');
+  return events.filter((e) => {
+    const eventDate = (e.date || '').slice(0, 10);
+    return (eventDate && eventDate < today) || e.status === 'completed';
+  });
 }

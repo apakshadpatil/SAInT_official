@@ -5,7 +5,7 @@ import { getPositions, createPosition, assignPosition } from '../../services/pos
 import { logActivity } from '../../services/activityService';
 import type { UserProfile, PositionRecord } from '../../types';
 import { getRoleBadge } from '../../utils/permissions';
-import { Clock, Mail, Phone, Users, Shield, ShieldAlert, Check, X } from 'lucide-react';
+import { Clock, Mail, Phone, Users, Check, X } from 'lucide-react';
 import VerifiedBadge from '../../components/ui/VerifiedBadge';
 import { CardSkeleton, TableSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
 
@@ -26,16 +26,17 @@ export default function UserApprovalsPage() {
 
   const fetchData = async () => {
     setLoadingData(true);
+    setError('');
     try {
       const [allUsers, allPositions] = await Promise.all([
-        getAllUsers(),
-        getPositions(),
+        getAllUsers(true),
+        getPositions(true),
       ]);
       setUsers(allUsers);
       setPositions(allPositions);
     } catch (err) {
-      console.error(err);
-      setError('Failed to load data');
+      console.error('User approvals load error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
       setLoadingData(false);
     }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Calendar, Clock, MapPin, Download, CheckCircle, Ticket, ArrowLeft, Loader2, CreditCard, UserPlus } from 'lucide-react';
-import { getEvent, registerParticipantForEvent } from '../../services/eventService';
+import { Calendar, Clock, MapPin, Download, CheckCircle, Ticket, ArrowLeft, Loader2, CreditCard, Users, Plus, Trash2 } from 'lucide-react';
+import { getEvent, subscribeEventById, registerParticipantForEvent } from '../../services/eventService';
 import type { EventRecord, EventTicket, TicketTier, TeamMemberDetail } from '../../types';
 import { downloadTicketImage } from '../../utils/ticketDownload';
 import QRCode from 'qrcode';
@@ -15,6 +15,7 @@ export default function EventRegisterPage() {
   const [qrDataUrl, setQrDataUrl] = useState('');
 
   // Form Fields
+  const [teamName, setTeamName] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -33,49 +34,71 @@ export default function EventRegisterPage() {
 
   useEffect(() => {
     if (!eventId) return;
-    getEvent(eventId)
-      .then((e) => {
-        if (!e) {
-          setError('Event not found.');
-          setLoading(false);
-          return;
-        }
+    setLoading(true);
+    setError('');
+
+    // 1. Subscribe to real-time event updates
+    const unsub = subscribeEventById(eventId, (e) => {
+      if (e) {
         setEvent(e);
-        // Default tier selection if tiered ticketing enabled
+        setError('');
+        // Initialize tiers if available
         if (e.enableTieredTicketing && e.ticketTiers && e.ticketTiers.length > 0) {
-          setSelectedTierId(e.ticketTiers[0].id);
+          setSelectedTierId((prev) => prev || e.ticketTiers![0].id);
           const initialTeamSize = e.ticketTiers[0].teamSize || 1;
           if (initialTeamSize > 1) {
-            setTeamMembers(
-              Array.from({ length: initialTeamSize - 1 }, () => ({
-                name: '',
-                email: '',
-                phone: '',
-                college: '',
-                department: '',
-              }))
+            setTeamMembers((prev) =>
+              prev.length > 0
+                ? prev
+                : Array.from({ length: initialTeamSize - 1 }, () => ({
+                    name: '', email: '', phone: '', college: '', department: '',
+                  }))
             );
-          } else {
-            setTeamMembers([]);
           }
+        } else if (e.teamsEnabled) {
+          // Initialize default team members based on minTeamSize
+          const minMembers = Math.max(1, (e.minTeamSize || 2) - 1);
+          setTeamMembers((prev) =>
+            prev.length > 0
+              ? prev
+              : Array.from({ length: minMembers }, () => ({
+                  name: '', email: '', phone: '', college: '', department: '',
+                }))
+          );
         }
+        setLoading(false);
+      } else {
+        // Fallback: direct getEvent fetch with cache bypass
+        getEvent(eventId, true)
+          .then((directDoc) => {
+            if (directDoc) {
+              setEvent(directDoc);
+              setError('');
+            } else {
+              setError('Event not found.');
+            }
+          })
+          .catch(() => {
+            setError('Event not found.');
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+      }
+    });
 
-        const storedTicket = ticketStorageKey ? sessionStorage.getItem(ticketStorageKey) : null;
-        if (storedTicket) {
-          try {
-            const savedTicket = JSON.parse(storedTicket) as EventTicket;
-            setTicket(savedTicket);
-            QRCode.toDataURL(savedTicket.qrPayload, { width: 300, margin: 2 }).then(setQrDataUrl);
-          } catch {
-            sessionStorage.removeItem(ticketStorageKey);
-          }
-        }
-        setLoading(false);
-      })
-      .catch(() => {
-        setError('Event not found.');
-        setLoading(false);
-      });
+    const storedTicket = ticketStorageKey ? sessionStorage.getItem(ticketStorageKey) : null;
+    if (storedTicket) {
+      try {
+        const savedTicket = JSON.parse(storedTicket) as EventTicket;
+        setTicket(savedTicket);
+        QRCode.toDataURL(savedTicket.qrPayload, { width: 300, margin: 2 }).then(setQrDataUrl);
+      } catch {
+        sessionStorage.removeItem(ticketStorageKey);
+      }
+    }
+
+    return () => unsub();
   }, [eventId, ticketStorageKey]);
 
   const handleTierSelect = (tier: TicketTier) => {
@@ -94,6 +117,26 @@ export default function EventRegisterPage() {
     }
   };
 
+  const handleAddTeammate = () => {
+    const maxAllowed = (event?.maxTeamSize || 10) - 1;
+    if (teamMembers.length >= maxAllowed) {
+      setError(`Maximum team size is ${event?.maxTeamSize || 10} members (including leader).`);
+      return;
+    }
+    setError('');
+    setTeamMembers((prev) => [...prev, { name: '', email: '', phone: '', college: '', department: '' }]);
+  };
+
+  const handleRemoveTeammate = (index: number) => {
+    const minRequired = Math.max(0, (event?.minTeamSize || 2) - 2);
+    if (teamMembers.length <= minRequired) {
+      setError(`Minimum team size is ${event?.minTeamSize || 2} members (including leader).`);
+      return;
+    }
+    setError('');
+    setTeamMembers((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleTeamMemberChange = (index: number, field: keyof TeamMemberDetail, value: string) => {
     setTeamMembers((prev) => {
       const copy = [...prev];
@@ -103,11 +146,12 @@ export default function EventRegisterPage() {
   };
 
   const selectedTier = event?.ticketTiers?.find((t) => t.id === selectedTierId);
+  const isTeam = Boolean(event?.teamsEnabled) || Boolean(selectedTier && selectedTier.teamSize > 1);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!event || !eventId) return;
-    if (event.status !== 'published') {
+    if (event.status === 'cancelled' || event.status === 'completed') {
       setError('Registration is closed for this event.');
       return;
     }
@@ -117,8 +161,13 @@ export default function EventRegisterPage() {
       return;
     }
 
-    // Validate team members if multi-member tier selected
-    if (selectedTier && selectedTier.teamSize > 1) {
+    if (isTeam && !teamName.trim()) {
+      setError('Please enter your Team Name.');
+      return;
+    }
+
+    // Validate team members if in team mode
+    if (isTeam && teamMembers.length > 0) {
       for (let i = 0; i < teamMembers.length; i++) {
         if (!teamMembers[i].name?.trim()) {
           setError(`Please enter the full name for Teammate #${i + 2}`);
@@ -142,6 +191,17 @@ export default function EventRegisterPage() {
     setSubmitting(true);
     setError('');
     try {
+      const finalCustomResponses = {
+        ...customResponses,
+        ...(isTeam && teamName.trim() ? { teamName: teamName.trim() } : {}),
+      };
+
+      const calculatedTeamSize = selectedTier
+        ? selectedTier.teamSize
+        : isTeam
+        ? 1 + teamMembers.length
+        : 1;
+
       const { ticket: newTicket } = await registerParticipantForEvent(eventId, {
         name: guestName,
         email: email.trim() || undefined,
@@ -152,10 +212,10 @@ export default function EventRegisterPage() {
         domainId: selectedDomainId || undefined,
         tierId: selectedTier?.id,
         tierName: selectedTier?.name,
-        teamSize: selectedTier ? selectedTier.teamSize : 1,
-        teamMembers: teamMembers.length > 0 ? teamMembers : undefined,
+        teamSize: calculatedTeamSize,
+        teamMembers: isTeam && teamMembers.length > 0 ? teamMembers : undefined,
         transactionId: transactionId.trim() || undefined,
-        customResponses: Object.keys(customResponses).length > 0 ? customResponses : undefined,
+        customResponses: Object.keys(finalCustomResponses).length > 0 ? finalCustomResponses : undefined,
         registrationSource: 'public',
       });
 
@@ -203,7 +263,7 @@ export default function EventRegisterPage() {
     );
   }
 
-  const registrationClosed = event.status !== 'published';
+  const registrationClosed = event.status === 'cancelled' || event.status === 'completed';
   const showDomainSelection = Boolean(event.enableDomainSelection && event.participantDomains?.length);
 
   // Active payment QR logic: Tier QR if tier selected, otherwise event default QR
@@ -401,11 +461,28 @@ export default function EventRegisterPage() {
             )}
 
             <form onSubmit={handleRegister} className="space-y-4">
+              {/* Team Name Field — shown for team events */}
+              {(event.teamsEnabled || (selectedTier && selectedTier.teamSize > 1)) && (
+                <div className="p-4 rounded-2xl border space-y-2" style={{ borderColor: 'rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.06)' }}>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-blue-300">
+                    Team Name *
+                  </label>
+                  <input
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    placeholder="e.g. CyberKnights, CodeCrafters..."
+                    className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
+                  />
+                  <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                    Pick a creative team name. This will appear on all your team's certificates.
+                  </p>
+                </div>
+              )}
+
               {/* Leader / Primary Attendee */}
               <div className="space-y-3">
                 <p className="text-xs font-bold uppercase tracking-wider text-blue-400">
-                  {selectedTier && selectedTier.teamSize > 1 ? 'Team Leader Details' : 'Attendee Information'}
-                </p>
+                  {selectedTier && selectedTier.teamSize > 1 ? 'Team Leader Details' : 'Attendee Information'}</p>
 
                 <div>
                   <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
@@ -475,54 +552,109 @@ export default function EventRegisterPage() {
                 </div>
               </div>
 
-              {/* Teammates fields if teamSize > 1 */}
-              {selectedTier && selectedTier.teamSize > 1 && teamMembers.map((member, idx) => (
-                <div key={idx} className="p-4 rounded-xl border border-white/10 bg-white/[0.02] space-y-3 mt-4">
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-indigo-300">
-                    <UserPlus className="w-3.5 h-3.5" /> Teammate #{idx + 2} Details
+              {/* Teammates fields for Team Events */}
+              {isTeam && (
+                <div className="space-y-4 pt-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+                      <Users className="w-4 h-4" /> Teammates ({teamMembers.length + 1} Total Members)
+                    </p>
+                    {!selectedTier && (
+                      <button
+                        type="button"
+                        onClick={handleAddTeammate}
+                        className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold text-blue-300 border border-blue-400/30 hover:bg-blue-500/10 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add Teammate
+                      </button>
+                    )}
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold mb-1 text-slate-300">
-                      Full Name *
-                    </label>
-                    <input
-                      value={member.name}
-                      onChange={(e) => handleTeamMemberChange(idx, 'name', e.target.value)}
-                      required
-                      placeholder={`Full name for teammate ${idx + 2}`}
-                      className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
-                    />
-                  </div>
+                  {teamMembers.map((member, idx) => (
+                    <div key={idx} className="p-4 rounded-xl border border-white/10 bg-white/[0.02] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+                          Teammate #{idx + 2} Details
+                        </span>
+                        {!selectedTier && teamMembers.length > Math.max(0, (event.minTeamSize || 2) - 1) && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTeammate(idx)}
+                            className="text-red-400 hover:text-red-300 text-xs flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Remove
+                          </button>
+                        )}
+                      </div>
 
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold mb-1 text-slate-300">
-                        Email Address
-                      </label>
-                      <input
-                        type="email"
-                        value={member.email || ''}
-                        onChange={(e) => handleTeamMemberChange(idx, 'email', e.target.value)}
-                        placeholder="teammate@email.com"
-                        className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
-                      />
+                      <div>
+                        <label className="block text-xs font-semibold mb-1 text-slate-300">
+                          Full Name *
+                        </label>
+                        <input
+                          value={member.name}
+                          onChange={(e) => handleTeamMemberChange(idx, 'name', e.target.value)}
+                          required
+                          placeholder={`Full name for teammate #${idx + 2}`}
+                          className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
+                        />
+                      </div>
+
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold mb-1 text-slate-300">
+                            Email Address (Optional)
+                          </label>
+                          <input
+                            type="email"
+                            value={member.email || ''}
+                            onChange={(e) => handleTeamMemberChange(idx, 'email', e.target.value)}
+                            placeholder="teammate@email.com"
+                            className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold mb-1 text-slate-300">
+                            Phone Number (Optional)
+                          </label>
+                          <input
+                            type="tel"
+                            value={member.phone || ''}
+                            onChange={(e) => handleTeamMemberChange(idx, 'phone', e.target.value)}
+                            placeholder="10-digit number"
+                            className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold mb-1 text-slate-300">
+                            College (Optional)
+                          </label>
+                          <input
+                            value={member.college || ''}
+                            onChange={(e) => handleTeamMemberChange(idx, 'college', e.target.value)}
+                            placeholder="e.g. JSPM RSCOE"
+                            className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold mb-1 text-slate-300">
+                            Department (Optional)
+                          </label>
+                          <input
+                            value={member.department || ''}
+                            onChange={(e) => handleTeamMemberChange(idx, 'department', e.target.value)}
+                            placeholder="e.g. IT"
+                            className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold mb-1 text-slate-300">
-                        Phone Number
-                      </label>
-                      <input
-                        type="tel"
-                        value={member.phone || ''}
-                        onChange={(e) => handleTeamMemberChange(idx, 'phone', e.target.value)}
-                        placeholder="10-digit number"
-                        className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
-                      />
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              )}
 
               {/* Payment Transaction ID if paid */}
               {showPaymentQR && (

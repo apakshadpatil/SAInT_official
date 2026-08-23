@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Users, Sparkles, ArrowRight, ChevronRight, MapPin, Ticket, Zap } from 'lucide-react';
+import { Calendar, Users, Sparkles, ArrowRight, ChevronRight, MapPin, Ticket, Zap, AlertCircle } from 'lucide-react';
 import { getSiteMembers, getFacultyCoordinator, getHomeImagesConfig, subscribeSiteSettings } from '../../services/applicationService';
 import { getPositionHolders } from '../../services/positionService';
-import { getPublishedUpcomingEvents } from '../../services/eventService';
+import { subscribePublishedUpcomingEvents } from '../../services/eventService';
 import type { EventRecord } from '../../types';
 import Lightning from '../../components/animation/Lightning';
-import { EventCardSkeleton, CardSkeleton } from '../../components/ui/skeleton';
+import { EventCardSkeleton } from '../../components/ui/skeleton';
 
 export default function HomePage() {
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
-  const [membersLoading, setMembersLoading] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
   const [members, setMembers] = useState<{ id: string; name: string; role: string; photoURL?: string }[]>([]);
   const [faculty, setFaculty] = useState<{ name: string; designation: string; email?: string; photoURL?: string } | null>(null);
   const [images, setImages] = useState<string[]>([]);
@@ -35,14 +35,31 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    getPublishedUpcomingEvents().then((e) => { setEvents(e); setEventsLoading(false); }).catch(() => setEventsLoading(false));
-    getSiteMembers().then((m: unknown[]) => { if (m.length) setMembers(m as typeof members); setMembersLoading(false); }).catch(() => setMembersLoading(false));
-    getFacultyCoordinator().then((f: unknown) => f && setFaculty(f as typeof faculty)).catch(() => {});
+    let isMounted = true;
+    setEventsLoading(true);
+    setEventsError(null);
+
+    const unsubEvents = subscribePublishedUpcomingEvents((data) => {
+      if (isMounted) {
+        setEvents(data);
+        setEventsLoading(false);
+      }
+    });
+
+    getSiteMembers().then((m: unknown[]) => { if (m.length && isMounted) setMembers(m as typeof members); }).catch(() => {});
+    getFacultyCoordinator().then((f: unknown) => f && isMounted && setFaculty(f as typeof faculty)).catch(() => {});
     getHomeImagesConfig().then((config) => {
-      setImages(config.images || []);
-      setShowHomeImages(config.showHomeImages !== false);
+      if (isMounted) {
+        setImages(config.images || []);
+        setShowHomeImages(config.showHomeImages !== false);
+      }
     }).catch(() => {});
-    getPositionHolders().then((p) => setPositions(p as typeof positions)).catch(() => {});
+    getPositionHolders().then((p) => { if (isMounted) setPositions(p as typeof positions); }).catch(() => {});
+
+    return () => {
+      isMounted = false;
+      unsubEvents();
+    };
   }, []);
 
   const hasImagesToDisplay = showHomeImages && images.length > 0;
@@ -124,10 +141,26 @@ export default function HomePage() {
               </p>
 
               <div className={`flex flex-wrap gap-4 ${!hasImagesToDisplay ? 'justify-center' : ''}`}>
-                <Link to="/apply" className="btn-primary">
+                <Link
+                  to="/apply"
+                  className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 shadow-md ${
+                    doomsdayMode
+                      ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/20'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/25'
+                  }`}
+                >
                   Join SAInT <ArrowRight className="w-4 h-4" />
                 </Link>
-                <a href="#events" className="btn-outline">View Events</a>
+                <a
+                  href="#events"
+                  className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 ${
+                    doomsdayMode
+                      ? 'border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'
+                      : 'border border-blue-600 text-blue-600 hover:bg-blue-50'
+                  }`}
+                >
+                  View Events
+                </a>
               </div>
             </div>
 
@@ -186,8 +219,12 @@ export default function HomePage() {
           </div>
 
           {eventsLoading ? (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <EventCardSkeleton count={3} />
+            <EventCardSkeleton count={3} />
+          ) : eventsError ? (
+            <div className="card text-center py-12 border-dashed border-red-300 dark:border-red-900/50 bg-red-50/30 dark:bg-red-950/10">
+              <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+              <p className="text-red-600 dark:text-red-400 font-medium">Unable to load upcoming events</p>
+              <p className="text-slate-400 text-sm mt-1">Please check your connection or refresh the page.</p>
             </div>
           ) : events.length === 0 ? (
             <div className="card text-center py-16 border-dashed">

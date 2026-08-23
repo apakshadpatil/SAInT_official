@@ -10,7 +10,7 @@ import { subscribeUserTasks } from '../../services/taskService';
 import { subscribeMeetings, getUpcomingMeetings } from '../../services/meetingService';
 import type { EventRecord, TaskRecord, MeetingRecord } from '../../types';
 import { isCoreMember } from '../../utils/permissions';
-import { StatGridSkeleton, TaskItemSkeleton, CardSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
+import { StatGridSkeleton, TaskItemSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
 
 const PRIORITY_CONFIG = {
   urgent: { label: 'Urgent', color: '#ef4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.2)' },

@@ -260,7 +260,7 @@ export default function AccessControlPage() {
                       {group.items.map((item) => (
                         <Toggle
                           key={item.key}
-                          checked={editedPerms[item.key as keyof SidebarPermissions]}
+                          checked={Boolean(editedPerms[item.key as keyof SidebarPermissions])}
                           onChange={(val) => handleTogglePerm(item.key as keyof SidebarPermissions, val)}
                           label={item.label}
                         />

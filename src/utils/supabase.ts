@@ -53,6 +53,33 @@ export async function uploadFileToSupabase(
   return `${supabaseUrl}/storage/v1/object/public/${encodeURIComponent(targetBucket)}/${encodeURIComponent(safePath)}`;
 }
 
+// ─── Upload Blob to Supabase Storage ──────────────────────────────────────────
+/**
+ * Upload a raw Blob (e.g. generated certificate PNG) to Supabase Storage.
+ */
+export async function uploadBlobToSupabase(
+  blob: Blob,
+  destPath: string,
+  contentType = 'image/png',
+  targetBucket: string = SUPABASE_BUCKET
+): Promise<string> {
+  const safePath = destPath.replace(/\s+/g, '_');
+
+  const { error } = await supabase.storage
+    .from(targetBucket)
+    .upload(safePath, blob, { contentType, cacheControl: '3600', upsert: true });
+
+  if (error) {
+    console.error(`[Supabase] Blob upload error to bucket "${targetBucket}":`, error.message);
+    throw new Error(`Upload failed: ${error.message}`);
+  }
+
+  const { data } = supabase.storage.from(targetBucket).getPublicUrl(safePath);
+  if (data?.publicUrl) return data.publicUrl;
+
+  return `${supabaseUrl}/storage/v1/object/public/${encodeURIComponent(targetBucket)}/${encodeURIComponent(safePath)}`;
+}
+
 // ─── Upload Base64 Data URL to Supabase Storage ───────────────────────────────
 /**
  * Convert a base64 Data URL to a File and upload it to Supabase Storage.

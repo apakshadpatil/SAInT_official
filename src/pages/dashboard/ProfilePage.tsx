@@ -94,7 +94,7 @@ export default function ProfilePage() {
     if (!file || !profile) return;
     try {
       const dest = `avatars/${profile.uid}_${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-      const url = await uploadFileToSupabase(file, dest, 'banners');
+      const url = await uploadFileToSupabase(file, dest);
       setPhotoURL(url);
       setError('');
       showToast('Avatar uploaded successfully.', 'success');
