@@ -17,13 +17,10 @@ import {
   CheckCircle2,
   Edit3,
   Users2,
-  Layers,
-  QrCode,
   ToggleLeft,
   ToggleRight,
   Sparkles,
   Check,
-  ArrowRight,
 } from 'lucide-react';
 import { uploadDataUrlToSupabase, SUPABASE_BUCKET } from '../../utils/supabase';
 import { sendDirectEmail, openWebMailClient, validateEmail } from '../../services/emailService';

@@ -140,7 +140,7 @@ export async function getPositionHolders(forceRefresh = false): Promise<{ positi
         // If no explicit position assignments exist yet, show approved core/admin/superadmin members as committee members
         if (list.length === 0) {
           const coreUsers = allUsers.filter(
-            (u) => u.status === 'approved' && (u.role === 'core' || u.role === 'superadmin' || u.role === 'admin')
+            (u) => u.status === 'approved' && (['core', 'superadmin', 'admin'] as string[]).includes(u.role || '')
           );
           if (coreUsers.length > 0) {
             return coreUsers.map((u) => ({

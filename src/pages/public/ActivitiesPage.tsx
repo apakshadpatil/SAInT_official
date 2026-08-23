@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, MapPin, Users, Award, Tag, Ticket, ArrowRight } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, MapPin, Users, Award, Ticket, ArrowRight } from 'lucide-react';
 import { subscribePublishedActivities } from '../../services/eventService';
 import type { EventRecord } from '../../types';
 import { EventCardSkeleton } from '../../components/ui/skeleton';
@@ -90,13 +90,13 @@ export default function ActivitiesPage() {
                       <div className="flex flex-wrap items-center gap-2.5 mb-3">
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
                           <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                          {formatDate(activity.date, activity.endDate)}
+                          {formatDate(activity.date, (activity as any).endDate)}
                         </span>
 
-                        {(activity.time || activity.startTime) && (
+                        {((activity as any).time || activity.startTime) && (
                           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
                             <Clock className="w-3.5 h-3.5 text-slate-500" />
-                            {activity.time || (activity.endTime ? `${activity.startTime} - ${activity.endTime}` : activity.startTime)}
+                            {(activity as any).time || (activity.endTime ? `${activity.startTime} - ${activity.endTime}` : activity.startTime)}
                           </span>
                         )}
 

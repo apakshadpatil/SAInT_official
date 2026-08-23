@@ -372,7 +372,10 @@ export async function getAllUsers(forceRefresh = false): Promise<UserProfile[]> 
     async () => {
       try {
         const snap = await getDocs(collection(db, 'users'));
-        const users = snap.docs.map((d) => ({ uid: d.id, ...(d.data() as UserProfile) }));
+        const users = snap.docs.map((d) => {
+          const data = d.data() as UserProfile;
+          return { ...data, uid: d.id };
+        });
         return users.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
       } catch (err) {
         console.warn('getAllUsers error:', err);
