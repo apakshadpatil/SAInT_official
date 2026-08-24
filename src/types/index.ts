@@ -148,20 +148,39 @@ export interface TicketTier {
 
 export interface CertificateConfig {
   templateUrl?: string;
-  presetStyle?: 'navy_gold' | 'cyber_green' | 'royal_crimson' | 'clean_white';
+  templatePath?: string;
+  templateUploadedAt?: string;
+  templateOriginalName?: string;
+  templateWidth?: number;
+  templateHeight?: number;
   fontFamily?: string;
   primaryColor?: string;
   accentColor?: string;
   nameFontSize?: number;
-  nameOffsetY?: number; // relative vertical offset % or px
+  nameOffsetY?: number; // relative vertical offset px
+  nameOffsetX?: number; // relative horizontal offset px
+  nameUppercase?: boolean;
+  nameUnderline?: boolean;
   eventFontSize?: number;
   eventOffsetY?: number;
+  showEventTitle?: boolean;
   bodyText?: string;
+  bodyFontSize?: number;
+  bodyOffsetY?: number;
+  showBodyText?: boolean;
   signatoryName?: string;
   signatoryTitle?: string;
+  signatory2Name?: string;
+  signatory2Title?: string;
+  showSignatories?: boolean;
+  signatoriesOffsetY?: number;
   organizationName?: string;
+  showOrganization?: boolean;
   showDate?: boolean;
+  dateOffsetY?: number;
+  customDateText?: string;
   showCertificateId?: boolean;
+  certificateIdOffsetY?: number;
 }
 
 export interface CustomFormField {
@@ -197,6 +216,9 @@ export interface EventRecord {
   createdBy: string;
   createdByName: string;
   imageURL?: string;
+  category?: string;
+  tags?: string[];
+  maxAttendees?: number;
   createdAt: string;
   updatedAt: string;
   // Ticketing fields
@@ -222,6 +244,12 @@ export interface EventRecord {
   // Participant tracking
   participants?: EventParticipant[];
   participantBatches?: ParticipantBatch[];
+  // Team registration & orchestration
+  teams?: EventTeam[];
+  teamsEnabled?: boolean;
+  minTeamSize?: number;
+  maxTeamSize?: number;
+  requireTeamName?: boolean;
 }
 
 export interface EventWinner {
@@ -247,6 +275,33 @@ export interface TeamMemberDetail {
   department?: string;
 }
 
+export interface EventTeam {
+  id: string;
+  eventId: string;
+  teamName: string;
+  leadName: string;
+  leadEmail: string;
+  leadPhone?: string;
+  college?: string;
+  department?: string;
+  memberCount: number;
+  members: TeamMemberDetail[];
+  tierId?: string;
+  tierName?: string;
+  transactionId?: string;
+  customResponses?: Record<string, string>;
+  registeredAt: string;
+  arrived: boolean;
+  arrivedAt?: string;
+  // Certificate fields
+  memberCertificateUrls?: Record<string, string>; // member email -> cert URL
+  certificatesSent?: boolean;
+  // Admin fields
+  batchId?: string;
+  batchName?: string;
+  notes?: string;
+}
+
 export interface EventTicket {
   id: string;
   eventId: string;
@@ -256,6 +311,7 @@ export interface EventTicket {
   guestPhone?: string;
   college?: string;
   department?: string;
+  teamName?: string;
   tierId?: string;
   tierName?: string;
   teamSize?: number;
@@ -279,6 +335,7 @@ export interface EventParticipant {
   phone?: string;
   college?: string;
   department?: string;
+  teamName?: string;
   domain?: string;
   domainId?: string;
   tierId?: string;
@@ -620,9 +677,10 @@ export interface DBTelemetryRecord {
   cached: boolean;
   status: 'success' | 'error';
   errorMessage?: string;
+  durationMs?: number;
   page: string;
   timestamp: string;
-  date: string;
+  date?: string;
 }
 
 export interface DayWiseDBStats {
@@ -634,7 +692,9 @@ export interface DayWiseDBStats {
   cachedReads: number;
   cacheSavingsRate: number;
   activeUsersCount: number;
-  operations: Record<DBOperationType, number>;
+  activeUserIds?: string[];
+  operations?: Record<DBOperationType, number>;
+  fetchOperations?: Record<string, number>;
   resources: Record<string, number>;
   pages: Record<string, number>;
   hourlyDistribution: Record<string, number>;

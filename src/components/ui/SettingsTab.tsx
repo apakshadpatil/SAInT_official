@@ -1,8 +1,29 @@
 import { useState, useEffect } from 'react';
-import type { EventRecord } from '../../types';
+import type { EventRecord, TicketTier } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
-import { Archive, Send, Download, BarChart3, Boxes, Calendar, Clock, MapPin, DollarSign, Paperclip, FileText, X, CheckCircle2, Edit3 } from 'lucide-react';
+import {
+  Archive,
+  Send,
+  Download,
+  BarChart3,
+  Boxes,
+  Calendar,
+  Clock,
+  MapPin,
+  DollarSign,
+  Paperclip,
+  FileText,
+  X,
+  CheckCircle2,
+  Edit3,
+  Users2,
+  ToggleLeft,
+  ToggleRight,
+  Sparkles,
+  Check,
+} from 'lucide-react';
 import { uploadDataUrlToSupabase, SUPABASE_BUCKET } from '../../utils/supabase';
+import { sendDirectEmail, openWebMailClient, validateEmail } from '../../services/emailService';
 
 interface SettingsTabProps {
   event: EventRecord;
@@ -13,6 +34,7 @@ interface SettingsTabProps {
 export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsTabProps) {
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [sendingBulkEmail, setSendingBulkEmail] = useState(false);
 
   // Event Details State
   const [title, setTitle] = useState(event.title || '');
@@ -25,12 +47,23 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
   const [budget, setBudget] = useState(event.budget ? String(event.budget) : '');
   const [status, setStatus] = useState<EventRecord['status']>(event.status || 'published');
   const [imageURL, setImageURL] = useState(event.imageURL || '');
+  const [enableDomainSelection, setEnableDomainSelection] = useState(event.enableDomainSelection || false);
+  const [autoAllocateByDomain, setAutoAllocateByDomain] = useState(event.autoAllocateByDomain || false);
 
-  // Bulk Email State
-  const [emailSubject, setEmailSubject] = useState(`Updates regarding ${event.title}`);
-  const [emailBody, setEmailBody] = useState(`Dear Participants,\n\nWe are writing to share important updates and materials for ${event.title}.\n\nPlease review the attached document and guidelines before arriving at the venue.\n\nWarm regards,\nSAInT Organizing Team`);
+  // Team Event Orchestration State
+  const [teamsEnabled, setTeamsEnabled] = useState(event.teamsEnabled || false);
+  const [minTeamSize, setMinTeamSize] = useState<number>(event.minTeamSize || 2);
+  const [maxTeamSize, setMaxTeamSize] = useState<number>(event.maxTeamSize || 4);
+  const [requireTeamName, setRequireTeamName] = useState<boolean>(event.requireTeamName !== false);
+  const [savingTeamsConfig, setSavingTeamsConfig] = useState(false);
+
+  // Email State
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
   const [attachedFile, setAttachedFile] = useState<{ name: string; url: string; size?: number } | null>(null);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
+
+  const participants = event.participants || [];
 
   useEffect(() => {
     setTitle(event.title || '');
@@ -43,7 +76,104 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
     setBudget(event.budget ? String(event.budget) : '');
     setStatus(event.status || 'published');
     setImageURL(event.imageURL || '');
+    setEnableDomainSelection(event.enableDomainSelection || false);
+    setAutoAllocateByDomain(event.autoAllocateByDomain || false);
+    setTeamsEnabled(event.teamsEnabled || false);
+    setMinTeamSize(event.minTeamSize || 2);
+    setMaxTeamSize(event.maxTeamSize || 4);
+    setRequireTeamName(event.requireTeamName !== false);
   }, [event]);
+
+  const handleSaveTeamsConfig = async (explicitEnable?: boolean) => {
+    const isEnabling = explicitEnable !== undefined ? explicitEnable : teamsEnabled;
+    const min = Math.max(2, Number(minTeamSize) || 2);
+    const max = Math.max(min, Number(maxTeamSize) || min);
+
+    if (isEnabling && min < 2) {
+      showToast('Minimum team size must be at least 2 members', 'error');
+      return;
+    }
+    if (isEnabling && max < min) {
+      showToast('Maximum team size cannot be less than minimum team size', 'error');
+      return;
+    }
+
+    setSavingTeamsConfig(true);
+    try {
+      // 1. Synchronize ticket tiers for each team size between min and max
+      const existingTiers = event.ticketTiers || [];
+      const updatedTiers: TicketTier[] = [];
+
+      for (let size = min; size <= max; size++) {
+        const existing = existingTiers.find((t) => t.teamSize === size);
+        let tierLabel = '';
+        if (size === 2) tierLabel = 'Duo (2 Members)';
+        else if (size === 3) tierLabel = 'Trio (3 Members)';
+        else if (size === 4) tierLabel = 'Squad (4 Members)';
+        else tierLabel = `Team of ${size} Members`;
+
+        if (existing) {
+          updatedTiers.push({
+            ...existing,
+            teamSize: size,
+            name: existing.name || tierLabel,
+          });
+        } else {
+          updatedTiers.push({
+            id: `tier_team_${size}_${Date.now()}`,
+            name: tierLabel,
+            teamSize: size,
+            price: 0,
+            description: `Registration pass for a ${size}-member team.`,
+          });
+        }
+      }
+
+      // 2. Ensure "Team Name" is injected into custom form builder if not present
+      const existingFields = event.customFields || [];
+      const hasTeamNameField = existingFields.some(
+        (f) => f.label.toLowerCase().includes('team name') || f.id === 'field_team_name'
+      );
+      const nextFields = hasTeamNameField
+        ? existingFields
+        : [
+            {
+              id: 'field_team_name',
+              label: 'Team Name',
+              type: 'text' as const,
+              required: true,
+              placeholder: 'e.g. CyberKnights / CodeCrafters',
+            },
+            ...existingFields,
+          ];
+
+      await onUpdate({
+        teamsEnabled: isEnabling,
+        minTeamSize: min,
+        maxTeamSize: max,
+        requireTeamName,
+        enableTieredTicketing: isEnabling ? true : event.enableTieredTicketing,
+        ticketingEnabled: isEnabling ? true : event.ticketingEnabled,
+        ticketTiers: isEnabling ? updatedTiers : event.ticketTiers,
+        customFields: isEnabling ? nextFields : event.customFields,
+      });
+
+      setTeamsEnabled(isEnabling);
+      setMinTeamSize(min);
+      setMaxTeamSize(max);
+
+      showToast(
+        isEnabling
+          ? `Team Event mode activated! Orchestrated ${updatedTiers.length} tier(s) (${min}-${max} members), registration form, and ticketing.`
+          : 'Team Event mode turned off.',
+        'success'
+      );
+    } catch (err) {
+      showToast('Failed to update team event configuration', 'error');
+    } finally {
+      setSavingTeamsConfig(false);
+    }
+  };
 
   if (!isSuperAdmin) {
     return (
@@ -77,6 +207,8 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
         budget: budget ? Number(budget) : undefined,
         status,
         imageURL: imageURL.trim() || undefined,
+        enableDomainSelection,
+        autoAllocateByDomain
       });
       showToast('Event details and schedule saved successfully!', 'success');
     } catch (err) {
@@ -91,24 +223,14 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
     try {
       const reader = new FileReader();
       reader.onload = async (e) => {
-        const dataUrl = e.target?.result as string;
         try {
-          const dest = `events/attachments/${event.id}_${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+          const dataUrl = e.target?.result as string;
+          const dest = `attachments/${event.id}_${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
           const publicUrl = await uploadDataUrlToSupabase(dataUrl, dest, file.name, SUPABASE_BUCKET);
-          setAttachedFile({
-            name: file.name,
-            url: publicUrl,
-            size: file.size,
-          });
-          showToast(`Attached ${file.name}! Download link added to message.`, 'success');
+          setAttachedFile({ name: file.name, url: publicUrl, size: file.size });
+          showToast(`Attached ${file.name} successfully!`, 'success');
         } catch (uploadErr) {
-          // Fallback to data URL
-          setAttachedFile({
-            name: file.name,
-            url: dataUrl,
-            size: file.size,
-          });
-          showToast(`Attached ${file.name} (Local)`, 'info');
+          showToast('Failed to upload file to storage', 'error');
         } finally {
           setUploadingAttachment(false);
         }
@@ -116,7 +238,7 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
       reader.readAsDataURL(file);
     } catch (err) {
       setUploadingAttachment(false);
-      showToast('Failed to process attachment file', 'error');
+      showToast('Failed to process file', 'error');
     }
   };
 
@@ -126,22 +248,47 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
       return;
     }
 
-    const participants = event.participants || [];
-    const recipientEmails = participants.map((p) => p.email).filter(Boolean);
+    const recipientEmails = participants.map((p) => p.email).filter(validateEmail);
 
     if (recipientEmails.length === 0) {
       showToast('No registered participant emails found', 'error');
       return;
     }
 
-    let fullBody = emailBody;
-    if (attachedFile) {
-      fullBody += `\n\n---------------------------------------\nATTACHED DOCUMENT / RESOURCE:\nFile: ${attachedFile.name}\nDownload Link: ${attachedFile.url}\n---------------------------------------`;
-    }
+    setSendingBulkEmail(true);
+    try {
+      let fullBody = emailBody;
+      if (attachedFile) {
+        fullBody += `\n\n---------------------------------------\nATTACHED DOCUMENT / RESOURCE:\nFile: ${attachedFile.name}\nDownload Link: ${attachedFile.url}\n---------------------------------------`;
+      }
 
-    const mailtoLink = `mailto:${recipientEmails.join(',')}?subject=${encodeURIComponent(emailSubject || `Updates: ${event.title}`)}&body=${encodeURIComponent(fullBody)}`;
-    window.location.href = mailtoLink;
-    showToast(`Opening default email composer for ${recipientEmails.length} participants`, 'success');
+      const subject = emailSubject || `Updates: ${event.title}`;
+
+      // Try direct API dispatch
+      const apiResult = await sendDirectEmail({
+        to: recipientEmails[0],
+        bcc: recipientEmails.slice(1),
+        subject,
+        body: fullBody,
+        attachmentUrls: attachedFile ? [attachedFile.url] : undefined,
+      });
+
+      if (apiResult.success) {
+        showToast(`Email dispatched to ${recipientEmails.length} participants!`, 'success');
+      } else {
+        openWebMailClient({
+          bcc: recipientEmails,
+          subject,
+          body: fullBody,
+          client: 'default',
+        });
+        showToast(`Prepared email for ${recipientEmails.length} participants`, 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to dispatch email', 'error');
+    } finally {
+      setSendingBulkEmail(false);
+    }
   };
 
   const handleCopyAllEmails = () => {
@@ -207,7 +354,6 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
     }
   };
 
-  const participants = event.participants || [];
   const checkedIn = participants.filter((p) => p.arrived).length;
 
   return (
@@ -370,6 +516,153 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
         </div>
       </form>
 
+      {/* 2. Team Event Mode & Dynamic Orchestration */}
+      <div
+        className="rounded-2xl border p-6 space-y-4"
+        style={{
+          borderColor: teamsEnabled ? 'rgba(59, 130, 246, 0.4)' : 'var(--dash-border)',
+          background: teamsEnabled
+            ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.06), var(--dash-card))'
+            : 'var(--dash-card)',
+        }}
+      >
+        <div
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b"
+          style={{ borderColor: 'var(--dash-border)' }}
+        >
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className="font-bold text-base flex items-center gap-2" style={{ color: 'var(--dash-text)' }}>
+                <Users2 className="w-5 h-5 text-blue-500" />
+                Team Event Mode &amp; Orchestrator
+              </h4>
+              {teamsEnabled && (
+                <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  <Sparkles className="w-3 h-3" />
+                  Active
+                </span>
+              )}
+            </div>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--dash-muted)' }}>
+              Turn this event into a team competition. Automatically orchestrates ticket tiers, team registration forms, QR payments, and certificate generation.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleSaveTeamsConfig(!teamsEnabled)}
+            disabled={savingTeamsConfig}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
+              teamsEnabled
+                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-500/20'
+                : 'border border-slate-700 text-slate-300 hover:bg-slate-800'
+            }`}
+          >
+            {teamsEnabled ? (
+              <>
+                <ToggleRight className="w-5 h-5 text-white" />
+                Team Event: Enabled
+              </>
+            ) : (
+              <>
+                <ToggleLeft className="w-5 h-5 text-slate-400" />
+                Turn On Team Event
+              </>
+            )}
+          </button>
+        </div>
+
+        {teamsEnabled && (
+          <div className="space-y-4 pt-2">
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                  Minimum Team Size (Members) *
+                </label>
+                <input
+                  type="number"
+                  min="2"
+                  max="50"
+                  value={minTeamSize}
+                  onChange={(e) => setMinTeamSize(Math.max(2, parseInt(e.target.value) || 2))}
+                  className="input-field w-full text-xs font-bold"
+                />
+                <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
+                  Smallest group size permitted (e.g. 2 for Duo).
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                  Maximum Team Size (Members) *
+                </label>
+                <input
+                  type="number"
+                  min={minTeamSize}
+                  max="50"
+                  value={maxTeamSize}
+                  onChange={(e) => setMaxTeamSize(Math.max(minTeamSize, parseInt(e.target.value) || minTeamSize))}
+                  className="input-field w-full text-xs font-bold"
+                />
+                <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
+                  Largest group size permitted (e.g. 4 for Squad).
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="checkbox"
+                id="requireTeamNameCheck"
+                checked={requireTeamName}
+                onChange={(e) => setRequireTeamName(e.target.checked)}
+                className="rounded border-slate-700 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="requireTeamNameCheck" className="text-xs font-medium cursor-pointer" style={{ color: 'var(--dash-text)' }}>
+                Require Team Name during registration
+              </label>
+            </div>
+
+            {/* Orchestration Summary Banner */}
+            <div
+              className="rounded-xl border p-3.5 space-y-2"
+              style={{ borderColor: 'rgba(59, 130, 246, 0.2)', background: 'rgba(59, 130, 246, 0.03)' }}
+            >
+              <p className="text-xs font-bold flex items-center gap-1.5 text-blue-400">
+                <Sparkles className="w-3.5 h-3.5" />
+                Interlinked Orchestration Capabilities:
+              </p>
+              <ul className="text-[11px] space-y-1.5" style={{ color: 'var(--dash-muted)' }}>
+                <li className="flex items-center gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <strong>Ticketing Studio:</strong> Automatically creates {Math.max(1, maxTeamSize - minTeamSize + 1)} team tier passes ({minTeamSize} to {maxTeamSize} members) with individual QR code upload and custom pricing.
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <strong>Registration Form:</strong> Automatically gathers Team Name and individual details (Name, Email, Phone, College, Dept) for each member.
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <strong>Teams Studio:</strong> Enables group check-ins, roster management, CSV exports, and team-branded credential generation.
+                </li>
+              </ul>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => handleSaveTeamsConfig(true)}
+                disabled={savingTeamsConfig}
+                className="btn-primary !text-xs !py-2 !px-5 flex items-center gap-2 cursor-pointer shadow-md shadow-blue-500/20"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                {savingTeamsConfig ? 'Synchronizing All Modules...' : 'Save & Synchronize All Modules'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 2. Bulk Email with Document Attachments */}
       <div className="rounded-2xl border p-6 space-y-4" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b" style={{ borderColor: 'var(--dash-border)' }}>
@@ -471,11 +764,11 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
 
           <button
             onClick={handleBulkEmail}
-            disabled={loading || !emailBody.trim()}
-            className="btn-primary w-full !py-2.5 font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer"
+            disabled={loading || sendingBulkEmail || !emailBody.trim()}
+            className="btn-primary w-full !py-2.5 font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="w-4 h-4" />
-            Send Email with Attachment to {participants.length} Participants
+            {sendingBulkEmail ? 'Dispatching Emails...' : `Send Email with Attachment to ${participants.length} Participants`}
           </button>
         </div>
       </div>

@@ -3,22 +3,21 @@ import { Link } from 'react-router-dom';
 import { Calendar, Users, Sparkles, ArrowRight, ChevronRight, MapPin, Ticket, Zap, AlertCircle } from 'lucide-react';
 import { getSiteMembers, getFacultyCoordinator, getHomeImagesConfig, subscribeSiteSettings } from '../../services/applicationService';
 import { getPositionHolders } from '../../services/positionService';
-import { getPublishedUpcomingEvents } from '../../services/eventService';
+import { subscribePublishedUpcomingEvents } from '../../services/eventService';
 import type { EventRecord } from '../../types';
 import Lightning from '../../components/animation/Lightning';
-import { EventCardSkeleton, CardSkeleton } from '../../components/ui/skeleton';
+import { EventCardSkeleton } from '../../components/ui/skeleton';
 
 export default function HomePage() {
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
-  const [membersLoading, setMembersLoading] = useState(true);
   const [members, setMembers] = useState<{ id: string; name: string; role: string; photoURL?: string }[]>([]);
   const [faculty, setFaculty] = useState<{ name: string; designation: string; email?: string; photoURL?: string } | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [showHomeImages, setShowHomeImages] = useState<boolean>(true);
   const [positions, setPositions] = useState<{ position: { title: string }; users: { displayName: string; photoURL?: string }[] }[]>([]);
-  
+
   // Instantaneous read from localStorage
   const [doomsdayMode, setDoomsdayMode] = useState<boolean>(() => {
     try {
@@ -38,37 +37,46 @@ export default function HomePage() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadEvents() {
-      try {
-        setEventsLoading(true);
-        setEventsError(null);
-        const data = await getPublishedUpcomingEvents();
-        if (isMounted) {
-          setEvents(data);
-        }
-      } catch (err) {
-        if (isMounted) {
-          console.error('Failed to load upcoming events:', err);
-          setEventsError(err instanceof Error ? err.message : 'Failed to load upcoming events');
-        }
-      } finally {
-        if (isMounted) {
-          setEventsLoading(false);
-        }
-      }
-    }
+    setEventsLoading(true);
+    setEventsError(null);
 
-    void loadEvents();
-    getSiteMembers().then((m: unknown[]) => { if (m.length) setMembers(m as typeof members); setMembersLoading(false); }).catch(() => setMembersLoading(false));
-    getFacultyCoordinator().then((f: unknown) => f && setFaculty(f as typeof faculty)).catch(() => {});
-    getHomeImagesConfig().then((config) => {
-      setImages(config.images || []);
-      setShowHomeImages(config.showHomeImages !== false);
-    }).catch(() => {});
-    getPositionHolders().then((p) => setPositions(p as typeof positions)).catch(() => {});
+    const unsubEvents = subscribePublishedUpcomingEvents((data) => {
+      if (isMounted) {
+        setEvents(data);
+        setEventsLoading(false);
+      }
+    });
+
+    getSiteMembers()
+      .then((m: unknown[]) => {
+        if (m.length && isMounted) setMembers(m as typeof members);
+      })
+      .catch(() => { });
+
+    getFacultyCoordinator()
+      .then((f: unknown) => {
+        if (f && isMounted) setFaculty(f as typeof faculty);
+      })
+      .catch(() => { });
+
+    getHomeImagesConfig()
+      .then((config) => {
+        if (isMounted) {
+          setImages(config.images || []);
+          setShowHomeImages(config.showHomeImages !== false);
+        }
+      })
+      .catch(() => { });
+
+    getPositionHolders()
+      .then((p) => {
+        if (isMounted) setPositions(p as typeof positions);
+      })
+      .catch(() => { });
 
     return () => {
       isMounted = false;
+      unsubEvents();
     };
   }, []);
 
@@ -110,11 +118,10 @@ export default function HomePage() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32 z-10">
           <div className={`grid ${hasImagesToDisplay ? 'lg:grid-cols-2' : 'max-w-4xl mx-auto text-center'} gap-12 items-center`}>
             <div className="animate-fade-in-up">
-              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold mb-6 ${
-                doomsdayMode
-                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
-                  : 'bg-blue-100 text-blue-700'
-              } ${!hasImagesToDisplay ? 'mx-auto' : ''}`}>
+              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold mb-6 ${doomsdayMode
+                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
+                : 'bg-blue-100 text-blue-700'
+                } ${!hasImagesToDisplay ? 'mx-auto' : ''}`}>
                 {doomsdayMode ? <Zap className="w-4 h-4 text-emerald-400 animate-pulse" /> : <Sparkles className="w-4 h-4" />}
                 {doomsdayMode ? 'DOOMSDAY PROTOCOL ACTIVE — RSCOE IT' : "JSPM's RSCOE — IT Department"}
               </div>
@@ -142,46 +149,56 @@ export default function HomePage() {
                 </h1>
               )}
 
-              <p className={`text-lg leading-relaxed mb-8 ${hasImagesToDisplay ? 'max-w-xl' : 'max-w-2xl mx-auto'} ${
-                doomsdayMode ? 'text-emerald-100/90' : 'text-slate-600'
-              }`}>
+              <p className={`text-lg leading-relaxed mb-8 ${hasImagesToDisplay ? 'max-w-xl' : 'max-w-2xl mx-auto'} ${doomsdayMode ? 'text-emerald-100/90' : 'text-slate-600'
+                }`}>
                 {doomsdayMode
                   ? 'The high-voltage cyber protocol is active across all department networks, registrations, and quantum channels.'
                   : 'The Student Association of Information Technology — a student-led association fostering innovation, collaboration, and excellence in the IT department at JSPM\'s Rajarshi Shahu College of Engineering.'}
               </p>
 
               <div className={`flex flex-wrap gap-4 ${!hasImagesToDisplay ? 'justify-center' : ''}`}>
-                <Link to="/apply" className="btn-primary">
+                <Link
+                  to="/apply"
+                  className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 shadow-md ${doomsdayMode
+                    ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/20'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/25'
+                    }`}
+                >
                   Join SAInT <ArrowRight className="w-4 h-4" />
                 </Link>
-                <a href="#events" className="btn-outline">View Events</a>
+                <a
+                  href="#events"
+                  className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 ${doomsdayMode
+                    ? 'border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'
+                    : 'border border-blue-600 text-blue-600 hover:bg-blue-50'
+                    }`}
+                >
+                  View Events
+                </a>
               </div>
             </div>
 
             {/* Landing Images Showcase Gallery (Multiple Images Support) */}
             {hasImagesToDisplay && (
               <div className="animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-                <div className={`grid gap-4 ${
-                  images.length === 1
-                    ? 'grid-cols-1'
-                    : images.length === 2
+                <div className={`grid gap-4 ${images.length === 1
+                  ? 'grid-cols-1'
+                  : images.length === 2
                     ? 'grid-cols-2'
                     : 'grid-cols-2 sm:grid-cols-2'
-                }`}>
+                  }`}>
                   {images.map((img, i) => (
                     <div
                       key={i}
-                      className={`group relative rounded-2xl overflow-hidden shadow-xl border transition-all duration-500 hover:scale-[1.02] ${
-                        doomsdayMode
-                          ? 'border-emerald-500/40 shadow-[0_0_25px_rgba(16,185,129,0.2)] bg-black/60'
-                          : 'border-white/50 bg-white/10'
-                      } ${
-                        images.length > 2 && i === 0
+                      className={`group relative rounded-2xl overflow-hidden shadow-xl border transition-all duration-500 hover:scale-[1.02] ${doomsdayMode
+                        ? 'border-emerald-500/40 shadow-[0_0_25px_rgba(16,185,129,0.2)] bg-black/60'
+                        : 'border-white/50 bg-white/10'
+                        } ${images.length > 2 && i === 0
                           ? 'col-span-2 h-52'
                           : images.length === 1
-                          ? 'h-80'
-                          : 'h-40'
-                      }`}
+                            ? 'h-80'
+                            : 'h-40'
+                        }`}
                     >
                       <img
                         src={img}
@@ -213,8 +230,12 @@ export default function HomePage() {
           </div>
 
           {eventsLoading ? (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <EventCardSkeleton count={3} />
+            <EventCardSkeleton count={3} />
+          ) : eventsError ? (
+            <div className="card text-center py-12 border-dashed border-red-300 dark:border-red-900/50 bg-red-50/30 dark:bg-red-950/10">
+              <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+              <p className="text-red-600 dark:text-red-400 font-medium">Unable to load upcoming events</p>
+              <p className="text-slate-400 text-sm mt-1">Please check your connection or refresh the page.</p>
             </div>
           ) : eventsError ? (
             <div className="card text-center py-12 border-dashed border-red-300 dark:border-red-900/50 bg-red-50/30 dark:bg-red-950/10">
@@ -292,29 +313,29 @@ export default function HomePage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-9">
                 {positions.length > 0
                   ? positions.flatMap(({ position, users }) =>
-                      users.map((u) => (
-                        <div key={`${position.title}-${u?.displayName}`} className="text-center">
-                          {u?.photoURL ? (
-                            <img src={u.photoURL} alt="" className="w-20 h-20 rounded-full mx-auto mb-3 object-cover ring-4 ring-blue-100" />
-                          ) : (
-                            <div className="w-20 h-20 rounded-full mx-auto mb-3 bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-2xl ring-4 ring-blue-50">
-                              {u?.displayName?.[0]}
-                            </div>
-                          )}
-                          <h4 className="font-bold text-slate-900">{u?.displayName}</h4>
-                          <p className="text-sm text-blue-600 font-medium mt-1">{position.title}</p>
-                        </div>
-                      ))
-                    )
-                  : members.map((m) => (
-                      <div key={m.id} className="text-center">
-                        <div className="w-20 h-20 rounded-full mx-auto mb-3 bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-2xl ring-4 ring-blue-50">
-                          {m.name[0]}
-                        </div>
-                        <h4 className="font-bold text-slate-900">{m.name}</h4>
-                        <p className="text-sm text-blue-600 font-medium mt-1">{m.role}</p>
+                    users.map((u) => (
+                      <div key={`${position.title}-${u?.displayName}`} className="text-center">
+                        {u?.photoURL ? (
+                          <img src={u.photoURL} alt="" className="w-20 h-20 rounded-full mx-auto mb-3 object-cover ring-4 ring-blue-100" />
+                        ) : (
+                          <div className="w-20 h-20 rounded-full mx-auto mb-3 bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-2xl ring-4 ring-blue-50">
+                            {u?.displayName?.[0]}
+                          </div>
+                        )}
+                        <h4 className="font-bold text-slate-900">{u?.displayName}</h4>
+                        <p className="text-sm text-blue-600 font-medium mt-1">{position.title}</p>
                       </div>
-                    ))}
+                    ))
+                  )
+                  : members.map((m) => (
+                    <div key={m.id} className="text-center">
+                      <div className="w-20 h-20 rounded-full mx-auto mb-3 bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-2xl ring-4 ring-blue-50">
+                        {m.name[0]}
+                      </div>
+                      <h4 className="font-bold text-slate-900">{m.name}</h4>
+                      <p className="text-sm text-blue-600 font-medium mt-1">{m.role}</p>
+                    </div>
+                  ))}
               </div>
             </div>
           )}

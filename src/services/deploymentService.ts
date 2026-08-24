@@ -1,10 +1,9 @@
-import { doc, getDoc, collection, limit, getDocs, query } from 'firebase/firestore';
+import { collection, limit, getDocs, query } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { supabase } from '../utils/supabase';
 import type { DeploymentHealthReport } from '../types';
 
 export async function runSystemDiagnostics(): Promise<DeploymentHealthReport> {
-  const startTime = performance.now();
   const checks: DeploymentHealthReport['checks'] = [];
 
   // 1. Check Firestore Read Latency
@@ -15,7 +14,7 @@ export async function runSystemDiagnostics(): Promise<DeploymentHealthReport> {
   try {
     const fsStart = performance.now();
     if (db) {
-      const snap = await getDocs(query(collection(db, 'events'), limit(1)));
+      await getDocs(query(collection(db, 'events'), limit(1)));
       firestoreLatency = Math.round(performance.now() - fsStart);
       firestoreConnected = true;
       firestoreStatus = firestoreLatency > 800 ? 'slow' : 'operational';

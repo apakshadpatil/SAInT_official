@@ -2,13 +2,14 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { completeProfileSetup } from '../../services/authService';
-import { uploadFileToSupabase } from '../../utils/supabase';
+import { uploadFileToSupabase, SUPABASE_BUCKET } from '../../utils/supabase';
 import { isCoreMember } from '../../utils/permissions';
 
 export default function ProfileSetupPage() {
   const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [error, setError] = useState('');
 
   const [firstName, setFirstName] = useState(profile?.firstName || '');
@@ -23,13 +24,29 @@ export default function ProfileSetupPage() {
   const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please select a valid image file.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Photo must be smaller than 5MB.');
+      return;
+    }
+
+    setPhotoUploading(true);
+    setError('');
+
     try {
-      const dest = `avatars/${user.uid}_${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-      const url = await uploadFileToSupabase(file, dest);
+      const ext = file.name.split('.').pop() || 'jpg';
+      const storagePath = `avatars/${user.uid}_${Date.now()}.${ext}`;
+      const url = await uploadFileToSupabase(file, storagePath, SUPABASE_BUCKET);
       setPhotoURL(url);
-      setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload photo');
+      setError(err instanceof Error ? err.message : 'Failed to upload photo to Supabase Storage');
+    } finally {
+      setPhotoUploading(false);
     }
   };
 
@@ -72,9 +89,9 @@ export default function ProfileSetupPage() {
             ) : (
               <div className="w-20 h-20 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-600 font-bold text-2xl">?</div>
             )}
-            <label className="btn-outline !py-2 !px-4 cursor-pointer">
-              Upload Photo
-              <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
+            <label className={`btn-outline !py-2 !px-4 cursor-pointer ${photoUploading ? 'opacity-60 pointer-events-none' : ''}`}>
+              {photoUploading ? 'Uploading...' : 'Upload Photo'}
+              <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} disabled={photoUploading} />
             </label>
           </div>
 
@@ -123,8 +140,8 @@ export default function ProfileSetupPage() {
             </>
           )}
 
-          <button type="submit" className="btn-primary w-full !py-3" disabled={loading}>
-            {loading ? 'Saving...' : 'Save & Continue'}
+          <button type="submit" className="btn-primary w-full !py-3" disabled={loading || photoUploading}>
+            {loading ? 'Saving...' : photoUploading ? 'Uploading photo...' : 'Save & Continue'}
           </button>
         </form>
       </div>

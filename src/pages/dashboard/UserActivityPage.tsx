@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import { Search, Eye, Filter, Calendar, Activity, Users, ShieldAlert, Award } from 'lucide-react';
 import RightPanel from '../../components/ui/RightPanel';
-import { StatGridSkeleton, TableSkeleton, ChartSkeleton } from '../../components/ui/skeleton';
+import { StatGridSkeleton } from '../../components/ui/skeleton';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
 

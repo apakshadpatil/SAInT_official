@@ -107,10 +107,24 @@ export default function PublicLayout() {
             </nav>
 
             <div className="hidden md:flex items-center gap-3">
-              <Link to="/login" className="btn-outline !py-2 !px-4">
+              <Link
+                to="/login"
+                className={`inline-flex items-center justify-center px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+                  doomsdayMode
+                    ? 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'
+                    : 'border-blue-600 text-blue-600 hover:bg-blue-50'
+                }`}
+              >
                 Login
               </Link>
-              <Link to="/login?mode=signup" className="btn-primary !py-2 !px-4">
+              <Link
+                to="/login?mode=signup"
+                className={`inline-flex items-center justify-center px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                  doomsdayMode
+                    ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/20'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20'
+                }`}
+              >
                 Sign Up
               </Link>
             </div>
@@ -133,8 +147,26 @@ export default function PublicLayout() {
               </Link>
             ))}
             <div className="flex gap-2 pt-2">
-              <Link to="/login" className="btn-outline flex-1 text-center">Login</Link>
-              <Link to="/login?mode=signup" className="btn-primary flex-1 text-center">Sign Up</Link>
+              <Link
+                to="/login"
+                className={`flex-1 text-center py-2.5 rounded-xl text-xs font-bold border transition-all ${
+                  doomsdayMode
+                    ? 'border-emerald-500/40 text-emerald-400'
+                    : 'border-blue-600 text-blue-600'
+                }`}
+              >
+                Login
+              </Link>
+              <Link
+                to="/login?mode=signup"
+                className={`flex-1 text-center py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  doomsdayMode
+                    ? 'bg-emerald-500 text-black font-bold'
+                    : 'bg-blue-600 text-white'
+                }`}
+              >
+                Sign Up
+              </Link>
             </div>
           </div>
         )}

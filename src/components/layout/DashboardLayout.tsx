@@ -302,12 +302,12 @@ function SidebarNav({
                 className="w-7 h-7 flex items-center justify-center text-white font-bold text-xs flex-shrink-0"
                 style={{ borderRadius: '6px', background: accentColor }}
               >
-                {profile.firstName?.[0] || profile.displayName[0]}
+                {profile.firstName?.[0] || profile.displayName?.[0] || profile.email?.[0]?.toUpperCase() || 'U'}
               </div>
             )}
             <div className="flex-1 min-w-0">
               <p className="text-[12px] font-semibold truncate" style={{ color: 'var(--dash-text)' }}>
-                {profile.displayName}
+                {profile.displayName || profile.firstName || profile.email || 'User'}
               </p>
               <p className="text-[10px] truncate" style={{ color: 'var(--dash-muted)' }}>
                 {getRoleBadge(profile)}
@@ -545,12 +545,12 @@ export default function DashboardLayout() {
                       background: isSuperAdminUser ? '#dc2626' : 'var(--dash-accent)',
                     }}
                   >
-                    {profile.firstName?.[0] || profile.displayName[0]}
+                    {profile.firstName?.[0] || profile.displayName?.[0] || profile.email?.[0]?.toUpperCase() || 'U'}
                   </div>
                 )}
                 <div className="hidden sm:block">
                   <p className="text-xs font-semibold leading-none" style={{ color: 'var(--dash-text)' }}>
-                    {profile.firstName || profile.displayName.split(' ')[0]}
+                    {profile.firstName || profile.displayName?.split(' ')[0] || profile.email || 'User'}
                   </p>
                   <div className="flex items-center gap-1 mt-0.5">
                     <span className={`w-1.5 h-1.5 rounded-full ${profile.isOnline ? 'bg-emerald-500' : 'bg-slate-500'}`} />

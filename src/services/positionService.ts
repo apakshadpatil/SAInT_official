@@ -13,7 +13,7 @@ import { db } from '../firebase/config';
 import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
 import { trackDBOperation } from './dbTrackingService';
 import type { PositionRecord, UserProfile } from '../types';
-import { getAllUsers, getUserProfile, updateUserProfile } from './authService';
+import { getAllUsers, updateUserProfile } from './authService';
 
 function now() {
   return new Date().toISOString();
@@ -57,11 +57,17 @@ export async function getPositions(forceRefresh = false): Promise<PositionRecord
   return cachedFetch<PositionRecord[]>(
     'positions:all',
     async () => {
-      const snap = await getDocs(query(collection(db, 'positions'), orderBy('order', 'asc')));
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PositionRecord));
+      try {
+        const snap = await getDocs(collection(db, 'positions'));
+        const positions = snap.docs.map((d) => ({ id: d.id, ...d.data() } as PositionRecord));
+        return positions.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      } catch (err) {
+        console.warn('getPositions error:', err);
+        return [];
+      }
     },
     {
-      ttlMs: 120 * 1000,
+      ttlMs: 60 * 1000,
       resource: 'positions',
       action: 'get_positions',
       forceRefresh,
@@ -118,18 +124,52 @@ export async function getPositionHolders(forceRefresh = false): Promise<{ positi
   return cachedFetch(
     'positions:holders',
     async () => {
-      const [positions, allUsers] = await Promise.all([
-        getPositions(forceRefresh),
-        getAllUsers(forceRefresh),
-      ]);
-      const userMap = new Map<string, UserProfile>(allUsers.map((u) => [u.uid, u]));
-      return positions.map((position) => ({
-        position,
-        users: position.holderIds.map((id) => userMap.get(id)).filter((u): u is UserProfile => Boolean(u)),
-      }));
+      try {
+        const [positions, allUsers] = await Promise.all([
+          getPositions(forceRefresh),
+          getAllUsers(forceRefresh),
+        ]);
+        const userMap = new Map<string, UserProfile>(allUsers.map((u) => [u.uid, u]));
+        const list = positions
+          .map((position) => ({
+            position,
+            users: (position.holderIds || []).map((id) => userMap.get(id)).filter((u): u is UserProfile => Boolean(u)),
+          }))
+          .filter((p) => p.users.length > 0);
+
+        // If no explicit position assignments exist yet, show approved core/admin/superadmin members as committee members
+        if (list.length === 0) {
+          const coreUsers = allUsers.filter(
+            (u) => u.status === 'approved' && (['core', 'superadmin', 'admin'] as string[]).includes(u.role || '')
+          );
+          if (coreUsers.length > 0) {
+            return coreUsers.map((u) => ({
+              position: {
+                id: u.uid,
+                title:
+                  u.positionTitle ||
+                  (u.role === 'superadmin'
+                    ? 'President / Lead'
+                    : u.role === 'core'
+                    ? 'Core Committee Member'
+                    : 'Committee Member'),
+                description: '',
+                holderIds: [u.uid],
+                order: 0,
+                createdAt: '',
+              },
+              users: [u],
+            }));
+          }
+        }
+        return list;
+      } catch (err) {
+        console.warn('getPositionHolders error:', err);
+        return [];
+      }
     },
     {
-      ttlMs: 90 * 1000,
+      ttlMs: 30 * 1000,
       resource: 'positions',
       action: 'get_position_holders',
       forceRefresh,

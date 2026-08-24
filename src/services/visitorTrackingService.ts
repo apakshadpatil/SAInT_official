@@ -1,4 +1,4 @@
-import { doc, setDoc, getDocs, collection, query, orderBy, limit, where } from 'firebase/firestore';
+import { doc, setDoc, getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { VisitorInteraction, VisitorStatsOverview, UserProfile } from '../types';
 
