@@ -183,15 +183,13 @@ export default function ActivitiesPage() {
                       )}
 
                       {/* Register Link / Action */}
-                      <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                        <span className="text-xs text-slate-400">
-                          Event ID: <span className="font-mono">{activity.id}</span>
-                        </span>
+                      <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end">
                         <Link
                           to={`/events/${activity.id}/register`}
                           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
                         >
-                          <Ticket className="w-3.5 h-3.5" /> Event Portal <ArrowRight className="w-3.5 h-3.5" />
+                          <Ticket className="w-3.5 h-3.5" /> Event Portal
+                          <ArrowRight className="w-3.5 h-3.5" />
                         </Link>
                       </div>
                     </div>

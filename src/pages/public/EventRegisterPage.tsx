@@ -51,8 +51,8 @@ export default function EventRegisterPage() {
               prev.length > 0
                 ? prev
                 : Array.from({ length: initialTeamSize - 1 }, () => ({
-                    name: '', email: '', phone: '', college: '', department: '',
-                  }))
+                  name: '', email: '', phone: '', college: '', department: '',
+                }))
             );
           }
         } else if (e.teamsEnabled) {
@@ -62,8 +62,8 @@ export default function EventRegisterPage() {
             prev.length > 0
               ? prev
               : Array.from({ length: minMembers }, () => ({
-                  name: '', email: '', phone: '', college: '', department: '',
-                }))
+                name: '', email: '', phone: '', college: '', department: '',
+              }))
           );
         }
         setLoading(false);
@@ -199,9 +199,9 @@ export default function EventRegisterPage() {
       const calculatedTeamSize = selectedTier
         ? selectedTier.teamSize
         : isTeam
-        ? 1 + teamMembers.length
-        : 1;
-
+          ? 1 + teamMembers.length
+          : 1;
+      console.log('[Ticket] Starting registration...', { eventId });
       const { ticket: newTicket } = await registerParticipantForEvent(eventId, {
         name: guestName,
         email: email.trim() || undefined,
@@ -219,11 +219,22 @@ export default function EventRegisterPage() {
         registrationSource: 'public',
       });
 
+
+      console.log('[Ticket] Registration successful:', newTicket);
+
+      console.log('[Ticket] Generating QR...');
       const qr = await QRCode.toDataURL(newTicket.qrPayload, { width: 300, margin: 2 });
+      console.log('[Ticket] QR generated');
+
       setTicket(newTicket);
       setQrDataUrl(qr);
       sessionStorage.setItem(ticketStorageKey, JSON.stringify(newTicket));
+
+      console.log('[Ticket] Starting ticket download...');
+
       await downloadTicketImage(event, newTicket, qr);
+
+      console.log('[Ticket] Ticket download completed');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {
@@ -234,6 +245,7 @@ export default function EventRegisterPage() {
   const handleDownload = async () => {
     if (!ticket || !qrDataUrl || !event) return;
     await downloadTicketImage(event, ticket, qrDataUrl);
+
   };
 
   if (loading) {

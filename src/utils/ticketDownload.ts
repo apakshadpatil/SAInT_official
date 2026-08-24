@@ -240,11 +240,30 @@ export function downloadTicketImage(
         ctx.fillText(ticket.ticketNumber, qrX + qrSize / 2, qrY + qrSize + 38);
       }
 
-      const a = document.createElement('a');
-      a.download = `SAInT-Ticket-${ticket.ticketNumber}.png`;
-      a.href = canvas.toDataURL('image/png');
-      a.click();
-      resolve();
+      try {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error('Failed to generate ticket image'));
+            return;
+          }
+
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+
+          a.href = url;
+          a.download = `SAInT-Ticket-${ticket.ticketNumber}.png`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+
+          // Give Chrome time to start the download before releasing the URL
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+          resolve();
+        }, 'image/png');
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error('Failed to download ticket'));
+      }
     };
     qrImg.src = qrDataUrl;
   });

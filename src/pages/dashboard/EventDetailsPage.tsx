@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { subscribeEventById, updateEvent, deleteEvent } from '../../services/eventService';
-import type { EventRecord } from '../../types';
+import { subscribeEventById, subscribeEventTickets, mergeEventWithTickets, updateEvent, deleteEvent } from '../../services/eventService';
+import type { EventRecord, EventTicket } from '../../types';
 import { isSuperAdmin, isCoreMember } from '../../utils/permissions';
 import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award, Users2 } from 'lucide-react';
 import TicketingTab from '../../components/ui/TicketingTab';
@@ -46,21 +46,39 @@ export default function EventDetailsPage() {
     }
 
     setLoading(true);
-    const unsubscribe = subscribeEventById(eventId, (eventData) => {
+    let currentEvent: EventRecord | null = null;
+    let currentTickets: EventTicket[] = [];
+
+    const syncCombinedEvent = () => {
+      if (!currentEvent) return;
+      const combined = mergeEventWithTickets(currentEvent, currentTickets);
+      setEvent(combined);
+      if (!isEditing) {
+        setEditTitle(combined.title);
+        setEditDesc(combined.description);
+      }
+      setLoading(false);
+    };
+
+    const unsubscribeEvent = subscribeEventById(eventId, (eventData) => {
       if (!eventData) {
         showToast('Event not found', 'error');
         navigate('/dashboard/events');
         return;
       }
-      setEvent(eventData);
-      if (!isEditing) {
-        setEditTitle(eventData.title);
-        setEditDesc(eventData.description);
-      }
-      setLoading(false);
+      currentEvent = eventData;
+      syncCombinedEvent();
     });
 
-    return () => unsubscribe();
+    const unsubscribeTickets = subscribeEventTickets(eventId, (ticketsData) => {
+      currentTickets = ticketsData;
+      syncCombinedEvent();
+    });
+
+    return () => {
+      unsubscribeEvent();
+      unsubscribeTickets();
+    };
   }, [eventId, isEditing, navigate, showToast]);
 
   const handleSaveChanges = async () => {

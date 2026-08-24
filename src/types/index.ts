@@ -311,6 +311,8 @@ export interface EventTicket {
   guestPhone?: string;
   college?: string;
   department?: string;
+  domain?: string;
+  domainId?: string;
   teamName?: string;
   tierId?: string;
   tierName?: string;

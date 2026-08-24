@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { subscribeEvents, updateEvent } from '../../services/eventService';
-import type { EventRecord, EventWinner } from '../../types';
+import { subscribeEvents, subscribeEventTickets, mergeEventWithTickets, updateEvent } from '../../services/eventService';
+import type { EventRecord, EventTicket, EventWinner } from '../../types';
 import { isCoreMember } from '../../utils/permissions';
 import { Plus, Trash2, ArrowRight, Award } from 'lucide-react';
 
@@ -16,6 +16,7 @@ export default function WinnersPage() {
   const { showToast } = useToast();
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [selectedEventId, setSelectedEventId] = useState('');
+  const [tickets, setTickets] = useState<EventTicket[]>([]);
   const [participantId, setParticipantId] = useState('');
   const [manualName, setManualName] = useState('');
   const [position, setPosition] = useState('Winner');
@@ -24,10 +25,24 @@ export default function WinnersPage() {
   const [domainId, setDomainId] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const selectedEvent = useMemo(
+  const rawSelectedEvent = useMemo(
     () => events.find((event) => event.id === selectedEventId) ?? events[0] ?? null,
     [events, selectedEventId]
   );
+
+  useEffect(() => {
+    if (!rawSelectedEvent?.id) {
+      setTickets([]);
+      return;
+    }
+    const unsub = subscribeEventTickets(rawSelectedEvent.id, setTickets);
+    return () => unsub();
+  }, [rawSelectedEvent?.id]);
+
+  const selectedEvent = useMemo(() => {
+    if (!rawSelectedEvent) return null;
+    return mergeEventWithTickets(rawSelectedEvent, tickets);
+  }, [rawSelectedEvent, tickets]);
 
   useEffect(() => {
     const unsubscribe = subscribeEvents((allEvents) => {

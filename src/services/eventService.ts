@@ -13,7 +13,7 @@ import {
   deleteDoc,
   onSnapshot,
 } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { db, auth } from '../firebase/config';
 import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
 import { trackDBOperation } from './dbTrackingService';
 import type { EventRecord, EventTicket, EventParticipant, EventTeam } from '../types';
@@ -223,6 +223,9 @@ export async function createTicket(
     registrationSource?: 'public' | 'manual';
     college?: string;
     department?: string;
+    domain?: string;
+    domainId?: string;
+    teamName?: string;
     tierId?: string;
     tierName?: string;
     teamSize?: number;
@@ -248,6 +251,9 @@ export async function createTicket(
     guestPhone: options.guestPhone || null,
     college: options.college || null,
     department: options.department || null,
+    domain: options.domain || null,
+    domainId: options.domainId || null,
+    teamName: options.teamName || options.customResponses?.teamName || options.customResponses?.['Team Name'] || null,
     tierId: options.tierId || null,
     tierName: options.tierName || null,
     teamSize: options.teamSize || null,
@@ -272,6 +278,9 @@ export async function createTicket(
     guestPhone: options.guestPhone,
     college: options.college,
     department: options.department,
+    domain: options.domain,
+    domainId: options.domainId,
+    teamName: options.teamName || options.customResponses?.teamName || options.customResponses?.['Team Name'],
     tierId: options.tierId,
     tierName: options.tierName,
     teamSize: options.teamSize,
@@ -312,20 +321,15 @@ export async function registerParticipantForEvent(
     registrationSource: participantData.registrationSource || 'public',
     college: participantData.college,
     department: participantData.department,
+    domain: participantData.domain,
+    domainId: participantData.domainId,
+    teamName: participantData.customResponses?.teamName || participantData.customResponses?.['Team Name'],
     tierId: participantData.tierId,
     tierName: participantData.tierName,
     teamSize: participantData.teamSize,
     teamMembers: participantData.teamMembers,
     transactionId: participantData.transactionId,
     customResponses: participantData.customResponses,
-  });
-
-  const existingParticipants = event.participants || [];
-  const normalizedEmail = participantData.email?.trim().toLowerCase();
-  const existingIndex = existingParticipants.findIndex((participant) => {
-    if (participant.ticketId === ticket.id) return true;
-    if (!normalizedEmail) return false;
-    return participant.email?.trim().toLowerCase() === normalizedEmail;
   });
 
   const rawParticipant: EventParticipant = {
@@ -349,64 +353,211 @@ export async function registerParticipantForEvent(
     createdAt: ticket.createdAt,
   };
 
-  const nextParticipants = [...existingParticipants];
-  if (existingIndex >= 0) {
-    nextParticipants[existingIndex] = rawParticipant;
-  } else {
-    nextParticipants.push(rawParticipant);
-  }
+  // Only update the parent event document if the user is authenticated (e.g. admin performing manual registration)
+  // For unauthenticated public registrations, the ticket subcollection document is the secure, authoritative persistence.
+  if (auth.currentUser) {
+    try {
+      const existingParticipants = event.participants || [];
+      const normalizedEmail = participantData.email?.trim().toLowerCase();
+      const existingIndex = existingParticipants.findIndex((participant) => {
+        if (participant.ticketId === ticket.id) return true;
+        if (!normalizedEmail) return false;
+        return participant.email?.trim().toLowerCase() === normalizedEmail;
+      });
 
-  const participantIds = Array.from(new Set([...(event.participantIds || []), ticket.id]));
+      const nextParticipants = [...existingParticipants];
+      if (existingIndex >= 0) {
+        nextParticipants[existingIndex] = rawParticipant;
+      } else {
+        nextParticipants.push(rawParticipant);
+      }
 
-  // If this is a team event or multi-member registration, also record it in event.teams
-  const existingTeams = event.teams || [];
-  let nextTeams = existingTeams;
-  const isTeamRegistration =
-    Boolean(event.teamsEnabled) ||
-    (participantData.teamMembers && participantData.teamMembers.length > 0) ||
-    (participantData.teamSize && participantData.teamSize > 1);
+      const participantIds = Array.from(new Set([...(event.participantIds || []), ticket.id]));
 
-  if (isTeamRegistration) {
-    const rawTeamName =
-      participantData.customResponses?.teamName ||
-      participantData.customResponses?.['Team Name'] ||
-      `Team ${participantData.name}`;
+      const isTeamRegistration =
+        Boolean(event.teamsEnabled) ||
+        (participantData.teamMembers && participantData.teamMembers.length > 0) ||
+        (participantData.teamSize && participantData.teamSize > 1);
 
-    const newTeam: EventTeam = {
-      id: `team_${ticket.id}`,
-      eventId,
-      teamName: rawTeamName.trim(),
-      leadName: participantData.name.trim(),
-      leadEmail: (participantData.email || '').trim().toLowerCase(),
-      leadPhone: participantData.phone?.trim(),
-      college: participantData.college?.trim(),
-      department: participantData.department?.trim(),
-      memberCount: (participantData.teamMembers?.length || 0) + 1,
-      members: participantData.teamMembers || [],
-      tierId: participantData.tierId,
-      tierName: participantData.tierName,
-      transactionId: participantData.transactionId,
-      customResponses: participantData.customResponses,
-      registeredAt: ticket.createdAt,
-      arrived: false,
-    };
+      let nextTeams = event.teams || [];
+      if (isTeamRegistration) {
+        const rawTeamName =
+          participantData.customResponses?.teamName ||
+          participantData.customResponses?.['Team Name'] ||
+          `Team ${participantData.name}`;
 
-    const teamIndex = existingTeams.findIndex((t) => t.id === newTeam.id || t.leadEmail === newTeam.leadEmail);
-    if (teamIndex >= 0) {
-      nextTeams = [...existingTeams];
-      nextTeams[teamIndex] = newTeam;
-    } else {
-      nextTeams = [newTeam, ...existingTeams];
+        const newTeam: EventTeam = {
+          id: `team_${ticket.id}`,
+          eventId,
+          teamName: rawTeamName.trim(),
+          leadName: participantData.name.trim(),
+          leadEmail: (participantData.email || '').trim().toLowerCase(),
+          leadPhone: participantData.phone?.trim(),
+          college: participantData.college?.trim(),
+          department: participantData.department?.trim(),
+          memberCount: (participantData.teamMembers?.length || 0) + 1,
+          members: participantData.teamMembers || [],
+          tierId: participantData.tierId,
+          tierName: participantData.tierName,
+          transactionId: participantData.transactionId,
+          customResponses: participantData.customResponses,
+          registeredAt: ticket.createdAt,
+          arrived: false,
+        };
+
+        const existingTeams = event.teams || [];
+        const teamIndex = existingTeams.findIndex((t) => t.id === newTeam.id || t.leadEmail === newTeam.leadEmail);
+        if (teamIndex >= 0) {
+          nextTeams = [...existingTeams];
+          nextTeams[teamIndex] = newTeam;
+        } else {
+          nextTeams = [newTeam, ...existingTeams];
+        }
+      }
+
+      await updateEvent(eventId, {
+        participants: nextParticipants,
+        participantIds,
+        ...(isTeamRegistration ? { teams: nextTeams } : {}),
+      });
+    } catch (err) {
+      console.warn('[Register] Non-fatal: could not update parent event document:', err);
     }
   }
 
-  await updateEvent(eventId, {
-    participants: nextParticipants,
-    participantIds,
-    ...(isTeamRegistration ? { teams: nextTeams } : {}),
+  return { ticket, participant: rawParticipant };
+}
+
+export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]): EventRecord {
+  if (!tickets || tickets.length === 0) return event;
+
+  const existingParticipants = [...(event.participants || [])];
+  const participantMap = new Map<string, EventParticipant>();
+
+  // First populate with existing participants from event doc
+  existingParticipants.forEach((p) => {
+    const key = p.ticketId || (p.email ? p.email.toLowerCase() : p.id);
+    participantMap.set(key, p);
   });
 
-  return { ticket, participant: rawParticipant };
+  // Then merge tickets from subcollection
+  tickets.forEach((ticket) => {
+    const key = ticket.id;
+    const emailKey = ticket.guestEmail ? ticket.guestEmail.toLowerCase() : null;
+
+    const participant: EventParticipant = {
+      id: ticket.id,
+      eventId: ticket.eventId,
+      name: ticket.guestName,
+      email: ticket.guestEmail || '',
+      phone: ticket.guestPhone,
+      college: ticket.college,
+      department: ticket.department,
+      domain: ticket.domain,
+      domainId: ticket.domainId,
+      tierId: ticket.tierId,
+      tierName: ticket.tierName,
+      teamSize: ticket.teamSize,
+      teamMembers: ticket.teamMembers,
+      teamName: ticket.teamName || ticket.customResponses?.teamName || ticket.customResponses?.['Team Name'],
+      transactionId: ticket.transactionId,
+      customResponses: ticket.customResponses,
+      arrived: Boolean(ticket.checkedIn),
+      arrivedAt: ticket.checkedInAt,
+      ticketId: ticket.id,
+      createdAt: ticket.createdAt,
+    };
+
+    // If an existing entry exists by email or ticketId, merge while preserving admin allocations
+    if (emailKey && participantMap.has(emailKey)) {
+      const existing = participantMap.get(emailKey)!;
+      participantMap.set(emailKey, {
+        ...participant,
+        allocatedLab: existing.allocatedLab,
+        allocatedClassroom: existing.allocatedClassroom,
+        batchId: existing.batchId,
+        batchName: existing.batchName,
+        certificateUrl: existing.certificateUrl,
+        certificateSent: existing.certificateSent,
+      });
+    } else if (participantMap.has(key)) {
+      const existing = participantMap.get(key)!;
+      participantMap.set(key, {
+        ...participant,
+        allocatedLab: existing.allocatedLab,
+        allocatedClassroom: existing.allocatedClassroom,
+        batchId: existing.batchId,
+        batchName: existing.batchName,
+        certificateUrl: existing.certificateUrl,
+        certificateSent: existing.certificateSent,
+      });
+    } else {
+      participantMap.set(key, participant);
+    }
+  });
+
+  const mergedParticipants = Array.from(participantMap.values());
+  const mergedParticipantIds = Array.from(new Set([...(event.participantIds || []), ...tickets.map((t) => t.id)]));
+
+  // Construct merged teams
+  const existingTeams = [...(event.teams || [])];
+  const teamMap = new Map<string, EventTeam>();
+  existingTeams.forEach((t) => teamMap.set(t.id || t.leadEmail?.toLowerCase(), t));
+
+  tickets
+    .filter((t) => (t.teamMembers && t.teamMembers.length > 0) || (t.teamSize && t.teamSize > 1) || t.teamName)
+    .forEach((ticket) => {
+      const teamId = `team_${ticket.id}`;
+      const leadEmail = (ticket.guestEmail || '').toLowerCase();
+      const rawTeamName =
+        ticket.teamName ||
+        ticket.customResponses?.teamName ||
+        ticket.customResponses?.['Team Name'] ||
+        `Team ${ticket.guestName}`;
+
+      const newTeam: EventTeam = {
+        id: teamId,
+        eventId: ticket.eventId,
+        teamName: rawTeamName.trim(),
+        leadName: ticket.guestName,
+        leadEmail,
+        leadPhone: ticket.guestPhone,
+        college: ticket.college,
+        department: ticket.department,
+        memberCount: (ticket.teamMembers?.length || 0) + 1,
+        members: ticket.teamMembers || [],
+        tierId: ticket.tierId,
+        tierName: ticket.tierName,
+        transactionId: ticket.transactionId,
+        customResponses: ticket.customResponses,
+        registeredAt: ticket.createdAt,
+        arrived: Boolean(ticket.checkedIn),
+        arrivedAt: ticket.checkedInAt,
+      };
+
+      if (leadEmail && teamMap.has(leadEmail)) {
+        const existing = teamMap.get(leadEmail)!;
+        teamMap.set(leadEmail, {
+          ...newTeam,
+          memberCertificateUrls: existing.memberCertificateUrls,
+          certificatesSent: existing.certificatesSent,
+          batchId: existing.batchId,
+          batchName: existing.batchName,
+          notes: existing.notes,
+        });
+      } else {
+        teamMap.set(teamId, newTeam);
+      }
+    });
+
+  const mergedTeams = Array.from(teamMap.values());
+
+  return {
+    ...event,
+    participants: mergedParticipants,
+    participantIds: mergedParticipantIds,
+    teams: mergedTeams,
+  };
 }
 
 export async function addParticipant(eventId: string, userId: string) {
