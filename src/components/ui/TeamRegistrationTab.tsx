@@ -30,6 +30,7 @@ import {
   sendTeamCertificates,
   type BulkCertificateProgress,
 } from '../../services/emailService';
+import { updateTeamArrivalStatus } from '../../services/eventService';
 
 interface TeamRegistrationTabProps {
   event: EventRecord;
@@ -232,15 +233,17 @@ export default function TeamRegistrationTab({
 
   // Toggle Arrival
   const handleToggleArrival = async (t: EventTeam) => {
+    const targetArrived = !t.arrived;
     try {
       const updated = teams.map((team) =>
         team.id === t.id
-          ? { ...team, arrived: !team.arrived, arrivedAt: !team.arrived ? new Date().toISOString() : undefined }
+          ? { ...team, arrived: targetArrived, arrivedAt: targetArrived ? new Date().toISOString() : undefined }
           : team
       );
       await onUpdate({ teams: updated });
+      await updateTeamArrivalStatus(event.id, t.id, targetArrived);
       showToast(
-        !t.arrived ? `Marked Team "${t.teamName}" as arrived!` : `Marked Team "${t.teamName}" as pending.`,
+        targetArrived ? `Marked Team "${t.teamName}" as arrived!` : `Marked Team "${t.teamName}" as pending.`,
         'success'
       );
     } catch (err: any) {

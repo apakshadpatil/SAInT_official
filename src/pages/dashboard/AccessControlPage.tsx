@@ -114,6 +114,7 @@ export default function AccessControlPage() {
         { key: 'tasks', label: 'Tasks' },
         { key: 'explore', label: 'Explore' },
         { key: 'qrScanner', label: 'QR Scanner' },
+        { key: 'supportTickets', label: 'Support Tickets' },
       ],
     },
     {

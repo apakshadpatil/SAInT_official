@@ -66,6 +66,7 @@ export default function PublicLayout() {
     { to: '/about', label: 'About' },
     { to: '/activities', label: 'Activities' },
     { to: '/apply', label: 'Apply' },
+    { to: '/support', label: 'Support' },
   ];
 
   return (

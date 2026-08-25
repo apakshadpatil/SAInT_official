@@ -5,6 +5,8 @@ export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
 export type ApplySection = string;
 
+export * from './supportTicket';
+
 export interface SidebarPermissions {
   dashboard: boolean;
   events: boolean;
@@ -14,6 +16,7 @@ export interface SidebarPermissions {
   explore: boolean;
   qrScanner: boolean;
   profile: boolean;
+  supportTickets?: boolean;
   analytics: boolean;
   teams: boolean;
   files: boolean;
@@ -601,6 +604,7 @@ export const DEFAULT_MEMBER_PERMISSIONS: SidebarPermissions = {
   explore: true,
   qrScanner: true,
   profile: true,
+  supportTickets: true,
   analytics: false,
   teams: false,
   files: false,
@@ -623,6 +627,7 @@ export const DEFAULT_MEMBER_PERMISSIONS: SidebarPermissions = {
 
 export const DEFAULT_CORE_PERMISSIONS: SidebarPermissions = {
   ...DEFAULT_MEMBER_PERMISSIONS,
+  supportTickets: true,
   analytics: true,
   teams: true,
   files: true,
@@ -644,6 +649,7 @@ export const DEFAULT_SUPERADMIN_PERMISSIONS: SidebarPermissions = {
   explore: true,
   qrScanner: true,
   profile: true,
+  supportTickets: true,
   analytics: true,
   teams: true,
   files: true,

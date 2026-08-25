@@ -374,6 +374,28 @@ export default function HomePage() {
         </div>
       </section>
 
+      <section className="py-12 sm:py-16">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+          <div className="rounded-2xl border border-blue-200 bg-white p-5 shadow-sm sm:p-8" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-blue-100 p-2.5 text-blue-700">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">Need help?</p>
+                  <h2 className="mt-2 text-2xl font-black text-slate-900">Contact the SAInT support desk</h2>
+                </div>
+              </div>
+              <Link to="/support" className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700">
+                Raise a support ticket
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* CTA */}
       <section className="py-16 bg-blue-600">
         <div className="max-w-4xl mx-auto px-4 text-center">

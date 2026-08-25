@@ -807,19 +807,183 @@ export async function checkInByTicketNumberOrId(inputStr: string, scannerUid: st
   throw new Error(`Ticket "${cleanInput}" not found`);
 }
 
-async function syncParticipantArrival(eventId: string, ticketId: string, checkedInAt: string) {
+async function syncParticipantArrival(eventId: string, ticketId: string, arrived: boolean, checkedInAt?: string) {
   const event = await getEvent(eventId);
   if (!event?.participants?.length) return;
 
   const participants = event.participants.map((participant) =>
     participant.ticketId === ticketId || participant.id === ticketId
-      ? { ...participant, arrived: true, arrivedAt: checkedInAt }
+      ? { ...participant, arrived, arrivedAt: arrived ? (checkedInAt || now()) : undefined }
       : participant
   );
 
   if (participants.some((p, i) => p.arrived !== event.participants![i].arrived)) {
     await updateEvent(eventId, { participants });
   }
+}
+
+export async function updateParticipantArrivalStatus(
+  eventId: string,
+  participantIdOrTicketId: string,
+  arrived: boolean,
+  userUid?: string
+): Promise<void> {
+  const checkedInAt = arrived ? now() : null;
+  const currentUid = userUid || 'manual_studio';
+
+  // 1. Try to update ticket document if it exists in subcollection
+  try {
+    const directTicketRef = doc(db, 'events', eventId, 'tickets', participantIdOrTicketId);
+    const snap = await getDoc(directTicketRef);
+    if (snap.exists()) {
+      await updateDoc(directTicketRef, removeUndefinedFields({
+        checkedIn: arrived,
+        checkedInAt: arrived ? checkedInAt : null,
+        checkedInBy: arrived ? currentUid : null,
+      }));
+    } else {
+      // Find ticket by matching id or email
+      const ticketsSnap = await getDocs(collection(db, 'events', eventId, 'tickets'));
+      const matchingTicket = ticketsSnap.docs.find(d => {
+        const data = d.data() as EventTicket;
+        return d.id === participantIdOrTicketId ||
+          data.guestEmail?.toLowerCase() === participantIdOrTicketId.toLowerCase() ||
+          data.ticketNumber === participantIdOrTicketId;
+      });
+
+      if (matchingTicket) {
+        await updateDoc(matchingTicket.ref, removeUndefinedFields({
+          checkedIn: arrived,
+          checkedInAt: arrived ? checkedInAt : null,
+          checkedInBy: arrived ? currentUid : null,
+        }));
+      }
+    }
+  } catch (err) {
+    console.warn('Ticket subcollection update error:', err);
+  }
+
+  // 2. Update event participants array in event doc
+  const event = await getEvent(eventId);
+  if (event) {
+    let updatedParticipants = (event.participants || []).map((p) => {
+      const match = p.id === participantIdOrTicketId ||
+        p.ticketId === participantIdOrTicketId ||
+        p.email?.toLowerCase() === participantIdOrTicketId.toLowerCase();
+      if (match) {
+        return {
+          ...p,
+          arrived,
+          arrivedAt: arrived ? (checkedInAt || now()) : undefined,
+        };
+      }
+      return p;
+    });
+
+    // Also update teams array if team exists
+    let updatedTeams = (event.teams || []).map((t) => {
+      const match = t.id === participantIdOrTicketId ||
+        t.leadEmail?.toLowerCase() === participantIdOrTicketId.toLowerCase();
+      if (match) {
+        return {
+          ...t,
+          arrived,
+          arrivedAt: arrived ? (checkedInAt || now()) : undefined,
+        };
+      }
+      return t;
+    });
+
+    await updateEvent(eventId, {
+      participants: updatedParticipants,
+      teams: updatedTeams,
+    });
+  }
+}
+
+export async function batchUpdateParticipantsArrival(
+  eventId: string,
+  participantIds: string[],
+  arrived: boolean,
+  userUid?: string
+): Promise<void> {
+  const idsSet = new Set(participantIds);
+  const checkedInAt = arrived ? now() : null;
+  const currentUid = userUid || 'manual_studio';
+
+  // 1. Update matching tickets
+  try {
+    const ticketsSnap = await getDocs(collection(db, 'events', eventId, 'tickets'));
+    const promises = ticketsSnap.docs
+      .filter((d) => idsSet.has(d.id) || idsSet.has((d.data() as EventTicket).guestEmail || ''))
+      .map((d) =>
+        updateDoc(d.ref, removeUndefinedFields({
+          checkedIn: arrived,
+          checkedInAt: arrived ? checkedInAt : null,
+          checkedInBy: arrived ? currentUid : null,
+        }))
+      );
+    await Promise.all(promises);
+  } catch (err) {
+    console.warn('Batch ticket subcollection update error:', err);
+  }
+
+  // 2. Update event participants array
+  const event = await getEvent(eventId);
+  if (event?.participants) {
+    const updatedParticipants = event.participants.map((p) => {
+      if (idsSet.has(p.id) || (p.ticketId && idsSet.has(p.ticketId)) || (p.email && idsSet.has(p.email))) {
+        return {
+          ...p,
+          arrived,
+          arrivedAt: arrived ? (checkedInAt || now()) : undefined,
+        };
+      }
+      return p;
+    });
+    await updateEvent(eventId, { participants: updatedParticipants });
+  }
+}
+
+export async function updateTeamArrivalStatus(
+  eventId: string,
+  teamId: string,
+  arrived: boolean,
+  userUid?: string
+): Promise<void> {
+  const event = await getEvent(eventId);
+  if (!event) return;
+
+  const targetTeam = (event.teams || []).find((t) => t.id === teamId);
+  const checkedInAt = arrived ? now() : undefined;
+
+  const updatedTeams = (event.teams || []).map((t) =>
+    t.id === teamId ? { ...t, arrived, arrivedAt: checkedInAt } : t
+  );
+
+  // If this team has associated tickets, update them
+  if (targetTeam?.leadEmail) {
+    try {
+      const ticketsSnap = await getDocs(collection(db, 'events', eventId, 'tickets'));
+      const matchingTickets = ticketsSnap.docs.filter((d) => {
+        const data = d.data() as EventTicket;
+        return data.guestEmail?.toLowerCase() === targetTeam.leadEmail.toLowerCase();
+      });
+      await Promise.all(
+        matchingTickets.map((d) =>
+          updateDoc(d.ref, removeUndefinedFields({
+            checkedIn: arrived,
+            checkedInAt: arrived ? now() : null,
+            checkedInBy: arrived ? (userUid || 'manual_studio') : null,
+          }))
+        )
+      );
+    } catch (err) {
+      console.warn('Error syncing team ticket arrival:', err);
+    }
+  }
+
+  await updateEvent(eventId, { teams: updatedTeams });
 }
 
 async function checkInTicket(ticketRef: ReturnType<typeof doc>, scannerUid: string) {
@@ -842,7 +1006,7 @@ async function checkInTicket(ticketRef: ReturnType<typeof doc>, scannerUid: stri
     })
   );
 
-  await syncParticipantArrival(ticket.eventId, ticket.id, checkedInAt);
+  await syncParticipantArrival(ticket.eventId, ticket.id, true, checkedInAt);
 
   return {
     ticket: { ...ticket, checkedIn: true, checkedInAt, checkedInBy: scannerUid },

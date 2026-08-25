@@ -4,7 +4,7 @@ import {
   User, LogOut, Moon, Sun, BarChart3, FileText, Wallet, PieChart,
   Settings, Shield, UserCheck, KeyRound, Menu, X, ClipboardList,
   Upload, Activity, FileCheck, Briefcase, Trophy, Archive, ImagePlus,
-  ChevronRight, Zap, Database, Server, Globe,
+  ChevronRight, Zap, Database, Server, Globe, LifeBuoy,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -30,7 +30,7 @@ interface NavItem {
   superOnly?: boolean;
   coreOnly?: boolean;
   settingsGroup?: boolean;
-  group?: 'main' | 'management' | 'finance' | 'settings';
+  group?: 'main' | 'management' | 'finance' | 'support' | 'settings';
 }
 
 const ALL_NAV: NavItem[] = [
@@ -53,6 +53,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/dashboard/interview-allocations', label: 'Final Allocations',     icon: Trophy,          tab: 'interviewPanels',    group: 'management' },
   { to: '/dashboard/finance',              label: 'Manage Financials',     icon: Wallet,          tab: 'finance',            financeOnly: true, group: 'finance' },
   { to: '/dashboard/financial-analytics',  label: 'Financial Analytics',   icon: PieChart,        tab: 'financialAnalytics', financeOnly: true, group: 'finance' },
+  { to: '/dashboard/support',              label: 'Support Tickets',       icon: LifeBuoy,        tab: 'supportTickets',     group: 'support' },
   { to: '/dashboard/system-stats',         label: 'System Stats',          icon: Database,        tab: 'systemStats',        superOnly: true,   group: 'settings', settingsGroup: true },
   { to: '/dashboard/deployment-stats',     label: 'Deployment Stats',      icon: Server,          tab: 'deploymentStats',    superOnly: true,   group: 'settings', settingsGroup: true },
   { to: '/dashboard/user-interactions',    label: 'User Interactions',     icon: Globe,           tab: 'userInteractions',   superOnly: true,   group: 'settings', settingsGroup: true },
@@ -72,6 +73,7 @@ const GROUP_LABELS: Record<string, string> = {
   main: 'Main',
   management: 'Management',
   finance: 'Finance',
+  support: 'Support',
   settings: 'Admin',
 };
 
@@ -115,7 +117,7 @@ function SidebarNav({
 
   // Group nav items (exclude profile which has no group)
   const itemsWithGroup = navItems.filter((i) => i.group);
-  const groupOrder: Array<NavItem['group']> = ['main', 'management', 'finance', 'settings'];
+  const groupOrder: Array<NavItem['group']> = ['main', 'management', 'finance', 'support', 'settings'];
   const grouped = groupOrder.reduce<Record<string, NavItem[]>>((acc, g) => {
     const items = itemsWithGroup.filter((i) => i.group === g);
     if (items.length) acc[g!] = items;

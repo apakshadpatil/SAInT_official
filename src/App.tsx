@@ -47,9 +47,11 @@ import GDPanelsPage from './pages/dashboard/GDPanelsPage';
 import HomeImagesPage from './pages/dashboard/HomeImagesPage';
 import WinnersPage from './pages/dashboard/WinnersPage';
 import PublicEventsPage from './pages/public/PublicEventsPage';
+import PublicSupportPage from './pages/public/PublicSupportPage';
 import DeploymentStatsPage from './pages/dashboard/DeploymentStatsPage';
 import UserInteractionsPage from './pages/dashboard/UserInteractionsPage';
 import SystemStatsPage from './pages/dashboard/SystemStatsPage';
+import SupportPage from './pages/dashboard/SupportPage';
 
 export default function App() {
   return (
@@ -70,6 +72,7 @@ export default function App() {
             <Route path="/activities" element={<ActivitiesPage />} />
             <Route path="/apply" element={<ApplyPage />} />
             <Route path="/about" element={<AboutPage />} />
+            <Route path="/support" element={<PublicSupportPage />} />
             <Route path="/events/:eventId/register" element={<EventRegisterPage />} />
           </Route>
 
@@ -128,6 +131,7 @@ export default function App() {
             <Route path="documentation" element={<DocumentationPage />} />
             <Route path="finance" element={<FinancePage />} />
             <Route path="financial-analytics" element={<FinancialAnalyticsPage />} />
+            <Route path="support" element={<SupportPage />} />
             <Route path="control-centre" element={<ControlCentrePage />} />
             <Route path="positions" element={<PositionsPage />} />
             <Route path="user-approvals" element={<UserApprovalsPage />} />
