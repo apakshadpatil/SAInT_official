@@ -3,11 +3,24 @@ import { Menu, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { subscribeSiteSettings } from '../../services/applicationService';
 import { trackVisitorPageView } from '../../services/visitorTrackingService';
+import { subscribeGalleryConfig } from '../../services/galleryService';
+
+const GALLERY_VISIBILITY_CACHE_KEY = 'saint_gallery_visibility';
+
+function getCachedGalleryVisibility() {
+  try {
+    const cached = localStorage.getItem(GALLERY_VISIBILITY_CACHE_KEY);
+    return cached === null ? true : cached === 'true';
+  } catch {
+    return true;
+  }
+}
 
 export default function PublicLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [logoUnavailable, setLogoUnavailable] = useState(false);
+  const [galleryVisible, setGalleryVisible] = useState(getCachedGalleryVisibility);
   
   // Instantaneous synchronous read from localStorage for 0ms initial load
   const [doomsdayMode, setDoomsdayMode] = useState<boolean>(() => {
@@ -42,6 +55,11 @@ export default function PublicLayout() {
     return () => unsub();
   }, []);
 
+  useEffect(() => subscribeGalleryConfig((config) => {
+    setGalleryVisible(config.visible);
+    try { localStorage.setItem(GALLERY_VISIBILITY_CACHE_KEY, String(config.visible)); } catch {}
+  }), []);
+
   useEffect(() => {
     if (doomsdayMode) {
       document.documentElement.setAttribute('data-doomsday', 'true');
@@ -63,6 +81,7 @@ export default function PublicLayout() {
   const navLinks = [
     { to: '/', label: 'Home' },
     { to: '/events', label: 'Events' },
+    ...(galleryVisible ? [{ to: '/gallery', label: 'Gallery' }] : []),
     { to: '/about', label: 'About' },
     { to: '/activities', label: 'Activities' },
     { to: '/apply', label: 'Apply' },
@@ -173,7 +192,7 @@ export default function PublicLayout() {
         )}
       </header>
 
-      <main className="pt-20 relative z-10">
+      <main className="pt-[72px] relative z-10">
         <Outlet />
       </main>
 

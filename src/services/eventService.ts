@@ -16,7 +16,7 @@ import {
 import { db, auth } from '../firebase/config';
 import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
 import { trackDBOperation } from './dbTrackingService';
-import type { EventRecord, EventTicket, EventParticipant, EventTeam } from '../types';
+import type { EventRecord, EventTicket, EventParticipant, EventTeam, EventRuleAgreement } from '../types';
 import { buildQRPayload, parseQRPayload } from '../utils/qrScan';
 import { extractSupabasePathFromPublicUrl, removeFileFromSupabase, uploadFileToSupabase } from '../utils/supabase';
 import { uploadFileToStorage } from '../utils/fileUtils';
@@ -203,6 +203,31 @@ export function subscribeEventById(eventId: string, callback: (event: EventRecor
     if (item) setCachedData(`event:${eventId}`, item);
     callback(item);
   });
+}
+
+export async function createRuleAgreement(
+  eventId: string,
+  data: Pick<EventRuleAgreement, 'attendeeName' | 'attendeeEmail' | 'sessionId'>,
+) {
+  const agreementRef = doc(collection(db, 'events', eventId, 'rule_agreements'));
+  const agreement: EventRuleAgreement = {
+    id: agreementRef.id,
+    eventId,
+    attendeeName: data.attendeeName.trim(),
+    attendeeEmail: data.attendeeEmail.trim().toLowerCase(),
+    sessionId: data.sessionId,
+    agreedAt: now(),
+  };
+  await setDoc(agreementRef, removeUndefinedFields(agreement));
+  return agreement;
+}
+
+export function subscribeRuleAgreements(eventId: string, callback: (agreements: EventRuleAgreement[]) => void) {
+  return onSnapshot(
+    query(collection(db, 'events', eventId, 'rule_agreements'), orderBy('agreedAt', 'desc')),
+    (snapshot) => callback(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as EventRuleAgreement))),
+    () => callback([]),
+  );
 }
 
 export function subscribeEvents(callback: (events: EventRecord[]) => void) {

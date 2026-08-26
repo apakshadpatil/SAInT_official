@@ -7,9 +7,10 @@ interface LightningProps {
   speed?: number;
   intensity?: number;
   size?: number;
+  branching?: boolean;
 }
 
-const Lightning = ({ hue = 125, xOffset = 0, speed = 1, intensity = 1.2, size = 1 }: LightningProps) => {
+const Lightning = ({ hue = 125, xOffset = 0, speed = 1, intensity = 1.2, size = 1, branching = false }: LightningProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -45,6 +46,7 @@ const Lightning = ({ hue = 125, xOffset = 0, speed = 1, intensity = 1.2, size = 
       uniform float uSpeed;
       uniform float uIntensity;
       uniform float uSize;
+      uniform float uBranching;
       
       #define OCTAVE_COUNT 10
 
@@ -96,6 +98,31 @@ const Lightning = ({ hue = 125, xOffset = 0, speed = 1, intensity = 1.2, size = 
           return value;
       }
 
+      float segmentDistance(vec2 p, vec2 a, vec2 b) {
+          vec2 pa = p - a;
+          vec2 ba = b - a;
+          float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+          return length(pa - ba * h);
+      }
+
+      float branchingBolt(vec2 p, float time) {
+          float cycle = floor(time * 0.46);
+          float seed = hash11(cycle + 5.7);
+          float sway = 0.075 * sin(p.y * 15.0 + time * 2.1) + 0.04 * sin(p.y * 37.0 - time * 1.4);
+          float trunk = abs(p.x + sway);
+
+          float directionA = mix(-1.0, 1.0, step(0.5, seed));
+          float directionB = -directionA;
+          vec2 branchStartA = vec2(0.015, mix(0.35, 0.62, hash11(seed * 17.0)));
+          vec2 branchEndA = branchStartA + vec2(directionA * mix(0.20, 0.46, hash11(seed * 31.0)), -mix(0.15, 0.33, hash11(seed * 11.0)));
+          vec2 branchStartB = vec2(-0.01, mix(-0.05, 0.25, hash11(seed * 43.0)));
+          vec2 branchEndB = branchStartB + vec2(directionB * mix(0.16, 0.38, hash11(seed * 29.0)), -mix(0.12, 0.28, hash11(seed * 7.0)));
+
+          float branchA = segmentDistance(p, branchStartA, branchEndA);
+          float branchB = segmentDistance(p, branchStartB, branchEndB);
+          return min(trunk, min(branchA * 0.9, branchB * 1.05));
+      }
+
       void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
           vec2 uv = fragCoord / iResolution.xy;
           uv = 2.0 * uv - 1.0;
@@ -104,9 +131,10 @@ const Lightning = ({ hue = 125, xOffset = 0, speed = 1, intensity = 1.2, size = 
           
           uv += 2.0 * fbm(uv * uSize + 0.8 * iTime * uSpeed) - 1.0;
           
-          float dist = abs(uv.x);
+          float dist = mix(abs(uv.x), branchingBolt(uv, iTime * uSpeed), uBranching);
           vec3 baseColor = hsv2rgb(vec3(uHue / 360.0, 0.85, 0.95));
-          vec3 col = baseColor * pow(mix(0.0, 0.07, hash11(iTime * uSpeed)) / dist, 1.0) * uIntensity;
+          float flash = mix(0.045, 0.11, hash11(floor(iTime * uSpeed * 1.8)));
+          vec3 col = baseColor * pow(flash / max(dist, 0.002), 1.0) * uIntensity;
           col = pow(col, vec3(1.0));
           float a = clamp(max(col.r, max(col.g, col.b)), 0.0, 1.0);
           fragColor = vec4(col, a);
@@ -161,6 +189,7 @@ const Lightning = ({ hue = 125, xOffset = 0, speed = 1, intensity = 1.2, size = 
     const uSpeedLocation = gl.getUniformLocation(program, 'uSpeed');
     const uIntensityLocation = gl.getUniformLocation(program, 'uIntensity');
     const uSizeLocation = gl.getUniformLocation(program, 'uSize');
+    const uBranchingLocation = gl.getUniformLocation(program, 'uBranching');
 
     let animationFrameId: number;
     const startTime = performance.now();
@@ -175,6 +204,7 @@ const Lightning = ({ hue = 125, xOffset = 0, speed = 1, intensity = 1.2, size = 
       gl.uniform1f(uSpeedLocation, speed);
       gl.uniform1f(uIntensityLocation, intensity);
       gl.uniform1f(uSizeLocation, size);
+      gl.uniform1f(uBranchingLocation, branching ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       animationFrameId = requestAnimationFrame(render);
     };
@@ -184,7 +214,7 @@ const Lightning = ({ hue = 125, xOffset = 0, speed = 1, intensity = 1.2, size = 
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', resizeCanvas);
     };
-  }, [hue, xOffset, speed, intensity, size]);
+  }, [hue, xOffset, speed, intensity, size, branching]);
 
   return <canvas ref={canvasRef} className="lightning-container" />;
 };

@@ -1,9 +1,27 @@
-import { doc, setDoc, getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
+import { doc, setDoc, getDocs, collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { VisitorInteraction, VisitorStatsOverview, UserProfile } from '../types';
 
 const VISITOR_SESSION_KEY = 'saint_visitor_session_id';
 const LOCAL_VISITS_KEY = 'saint_local_visitor_logs';
+const TOTAL_VISITS_HIGH_WATER_KEY = 'saint_total_visits_high_water_mark';
+
+export function getStoredTotalVisitCount(): number {
+  try {
+    const parsed = Number.parseInt(localStorage.getItem(TOTAL_VISITS_HIGH_WATER_KEY) || '0', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function storeTotalVisitCount(total: number) {
+  try {
+    localStorage.setItem(TOTAL_VISITS_HIGH_WATER_KEY, String(total));
+  } catch {
+    // The live Firestore value still works when browser storage is unavailable.
+  }
+}
 
 function getOrCreateSessionId(): string {
   try {
@@ -116,6 +134,21 @@ export async function trackVisitorPageView(profile?: UserProfile | null): Promis
   } catch (err) {
     console.debug('Visitor tracking record bypassed', err);
   }
+}
+
+/** A lightweight live count for the public landing-page statistic. */
+export function subscribeTotalVisitCount(callback: (total: number) => void) {
+  return onSnapshot(collection(db, 'visitor_interactions'), (snapshot) => {
+    // Total visits must never visually decrease during a transient offline/cache
+    // snapshot. Store the highest confirmed count and only advance it.
+    const total = Math.max(snapshot.size, getStoredTotalVisitCount());
+    storeTotalVisitCount(total);
+    callback(total);
+  }, (error) => {
+    // Keep the last confirmed statistic on screen during reconnects; do not
+    // overwrite it with zero when Firestore temporarily cannot respond.
+    console.warn('Live visit statistic is temporarily unavailable', error);
+  });
 }
 
 // Generate seeded initial visitor history if database is clean

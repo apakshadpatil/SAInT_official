@@ -253,6 +253,29 @@ export interface EventRecord {
   minTeamSize?: number;
   maxTeamSize?: number;
   requireTeamName?: boolean;
+  // Rules & post-registration actions
+  rules?: string[];
+  rulebookUrl?: string;
+  whatsappGroupUrl?: string;
+}
+
+export interface EventRuleAgreement {
+  id: string;
+  eventId: string;
+  attendeeName: string;
+  attendeeEmail: string;
+  agreedAt: string;
+  sessionId?: string;
+}
+
+export interface GalleryImage {
+  id: string;
+  url: string;
+  storagePath: string;
+  alt?: string;
+  uploadedAt: string;
+  uploadedBy: string;
+  uploadedByName: string;
 }
 
 export interface EventWinner {

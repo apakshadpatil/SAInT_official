@@ -5,7 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { subscribeEventById, subscribeEventTickets, mergeEventWithTickets, updateEvent, deleteEvent } from '../../services/eventService';
 import type { EventRecord, EventTicket } from '../../types';
 import { isSuperAdmin, isCoreMember } from '../../utils/permissions';
-import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award, Users2 } from 'lucide-react';
+import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award, Users2, ClipboardCheck } from 'lucide-react';
 import TicketingTab from '../../components/ui/TicketingTab';
 import ScanTicketTab from '../../components/ui/ScanTicketTab';
 import TicketDesignTab from '../../components/ui/TicketDesignTab';
@@ -17,8 +17,9 @@ import DomainsTab from '../../components/ui/DomainsTab';
 import EventAnalyticsTab from '../../components/ui/EventAnalyticsTab';
 import CertificateTab from '../../components/ui/CertificateTab';
 import TeamRegistrationTab from '../../components/ui/TeamRegistrationTab';
+import RulesTab from '../../components/ui/RulesTab';
 
-type TabType = 'overview' | 'ticketing' | 'scan' | 'design' | 'form' | 'certificates' | 'participants' | 'teams' | 'allocation' | 'domains' | 'analytics' | 'settings';
+type TabType = 'overview' | 'ticketing' | 'scan' | 'design' | 'form' | 'rules' | 'certificates' | 'participants' | 'teams' | 'allocation' | 'domains' | 'analytics' | 'settings';
 
 export default function EventDetailsPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -143,6 +144,7 @@ export default function EventDetailsPage() {
     { id: 'scan', label: 'Scan Ticket', icon: QrCode },
     { id: 'design', label: 'Ticket Design', icon: ImageIcon },
     { id: 'form', label: 'Form Builder', icon: FormInput },
+    { id: 'rules', label: 'Rules & Rulebook', icon: ClipboardCheck },
     { id: 'certificates', label: 'Certificates', icon: Award },
     { id: 'participants', label: 'Participants', icon: Users },
     { id: 'teams', label: 'Teams', icon: Users2 },
@@ -340,6 +342,10 @@ export default function EventDetailsPage() {
             onUpdate={handleEventUpdate}
             canEdit={canEdit}
           />
+        )}
+
+        {activeTab === 'rules' && (
+          <RulesTab event={event} canEdit={canEdit} onUpdate={handleEventUpdate} />
         )}
 
         {activeTab === 'certificates' && (

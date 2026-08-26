@@ -52,6 +52,8 @@ import DeploymentStatsPage from './pages/dashboard/DeploymentStatsPage';
 import UserInteractionsPage from './pages/dashboard/UserInteractionsPage';
 import SystemStatsPage from './pages/dashboard/SystemStatsPage';
 import SupportPage from './pages/dashboard/SupportPage';
+import GalleryPage from './pages/public/GalleryPage';
+import GalleryManagementPage from './pages/dashboard/GalleryPage';
 
 export default function App() {
   return (
@@ -69,6 +71,7 @@ export default function App() {
           >
             <Route path="/" element={<HomePage />} />
             <Route path="/events" element={<PublicEventsPage />} />
+            <Route path="/gallery" element={<GalleryPage />} />
             <Route path="/activities" element={<ActivitiesPage />} />
             <Route path="/apply" element={<ApplyPage />} />
             <Route path="/about" element={<AboutPage />} />
@@ -144,6 +147,7 @@ export default function App() {
             <Route path="interview-allocations" element={<InterviewAllocationsPage />} />
             <Route path="winners" element={<WinnersPage />} />
             <Route path="home-images" element={<HomeImagesPage />} />
+            <Route path="gallery" element={<GalleryManagementPage />} />
             <Route path="system-stats" element={<SystemStatsPage />} />
             <Route path="deployment-stats" element={<DeploymentStatsPage />} />
             <Route path="user-interactions" element={<UserInteractionsPage />} />

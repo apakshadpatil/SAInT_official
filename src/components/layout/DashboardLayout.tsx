@@ -63,6 +63,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/dashboard/user-approvals',       label: 'User Approvals',        icon: UserCheck,       tab: 'userApprovals',      superOnly: true,   group: 'settings', settingsGroup: true },
   { to: '/dashboard/access-control',       label: 'Access Control',        icon: KeyRound,        tab: 'accessControl',      superOnly: true,   group: 'settings', settingsGroup: true },
   { to: '/dashboard/home-images',           label: 'Landing Images',        icon: ImagePlus,       tab: 'homeImages',         superOnly: true,   group: 'settings', settingsGroup: true },
+  { to: '/dashboard/gallery',               label: 'Gallery',               icon: ImagePlus,       tab: 'homeImages',         superOnly: true,   group: 'settings', settingsGroup: true },
   { to: '/dashboard/profile',              label: 'Profile',               icon: User,            tab: 'profile' },
 ];
 

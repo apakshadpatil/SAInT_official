@@ -1,12 +1,47 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Users, Sparkles, ArrowRight, ChevronRight, MapPin, Ticket, Zap, AlertCircle } from 'lucide-react';
+import { Calendar, Users, Sparkles, ArrowRight, ChevronRight, MapPin, Ticket, Zap, AlertCircle, Eye, History } from 'lucide-react';
 import { getSiteMembers, getFacultyCoordinator, getHomeImagesConfig, subscribeSiteSettings } from '../../services/applicationService';
 import { getPositionHolders } from '../../services/positionService';
-import { subscribePublishedUpcomingEvents } from '../../services/eventService';
+import { getPastEvents, subscribeEvents, subscribePublishedUpcomingEvents } from '../../services/eventService';
+import { getStoredTotalVisitCount, subscribeTotalVisitCount } from '../../services/visitorTrackingService';
 import type { EventRecord } from '../../types';
 import Lightning from '../../components/animation/Lightning';
 import { EventCardSkeleton } from '../../components/ui/skeleton';
+
+function AnimatedStatisticValue({ value, loading }: { value: number; loading: boolean }) {
+  const [displayValue, setDisplayValue] = useState(0);
+  const displayedValueRef = useRef(0);
+
+  useEffect(() => {
+    if (loading) {
+      displayedValueRef.current = 0;
+      setDisplayValue(0);
+      return;
+    }
+
+    const startValue = displayedValueRef.current;
+    const difference = value - startValue;
+    const duration = 850;
+    const startTime = performance.now();
+    let frameId = 0;
+
+    const animate = (timestamp: number) => {
+      const progress = Math.min((timestamp - startTime) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const nextValue = Math.round(startValue + difference * eased);
+      displayedValueRef.current = nextValue;
+      setDisplayValue(nextValue);
+      if (progress < 1) frameId = requestAnimationFrame(animate);
+    };
+
+    frameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frameId);
+  }, [loading, value]);
+
+  if (loading) return <span className="block h-8 w-16 rounded-lg bg-slate-200/80 animate-pulse" aria-label="Loading statistic" />;
+  return <span className="text-2xl font-black tabular-nums" aria-live="polite">{displayValue.toLocaleString('en-IN')}</span>;
+}
 
 export default function HomePage() {
   const [events, setEvents] = useState<EventRecord[]>([]);
@@ -17,6 +52,10 @@ export default function HomePage() {
   const [images, setImages] = useState<string[]>([]);
   const [showHomeImages, setShowHomeImages] = useState<boolean>(true);
   const [positions, setPositions] = useState<{ position: { title: string }; users: { displayName: string; photoURL?: string }[] }[]>([]);
+  const [totalVisits, setTotalVisits] = useState(getStoredTotalVisitCount);
+  const [conductedEvents, setConductedEvents] = useState(0);
+  const [visitsLoading, setVisitsLoading] = useState(true);
+  const [conductedEventsLoading, setConductedEventsLoading] = useState(true);
 
   // Instantaneous read from localStorage
   const [doomsdayMode, setDoomsdayMode] = useState<boolean>(() => {
@@ -32,6 +71,21 @@ export default function HomePage() {
       setDoomsdayMode(Boolean(settings?.doomsdayMode));
     });
     return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribeVisits = subscribeTotalVisitCount((count) => {
+      setTotalVisits((current) => Math.max(current, count));
+      setVisitsLoading(false);
+    });
+    const unsubscribeAllEvents = subscribeEvents((allEvents) => {
+      setConductedEvents(getPastEvents(allEvents).length);
+      setConductedEventsLoading(false);
+    });
+    return () => {
+      unsubscribeVisits();
+      unsubscribeAllEvents();
+    };
   }, []);
 
   useEffect(() => {
@@ -88,26 +142,16 @@ export default function HomePage() {
       <section id="home" className="relative overflow-hidden">
         {doomsdayMode ? (
           <>
-            {/* Deep Pitch Black Background */}
-            <div className="absolute inset-0 bg-gradient-to-br from-[#000000] via-[#030804] to-[#000000]" />
-
-            {/* Green Smoke / Eerie Atmospheric Mist Fog Layers */}
-            <div className="doomsday-green-smoke">
+            <div className="doomsday-hero-background absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "linear-gradient(rgba(0, 10, 5, 0.34), rgba(0, 10, 5, 0.58)), url('/images/doomsday-impact-background.jpeg')" }} />
+            <div className="doomsday-green-smoke" aria-hidden="true">
               <div className="smoke-cloud-1" />
               <div className="smoke-cloud-2" />
               <div className="smoke-cloud-3" />
             </div>
-
-            {/* Multiple Small Green Lightning Canvas Bolts in Background */}
-            <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-70 z-0">
-              <div className="absolute -top-12 left-[15%] w-72 h-[420px] opacity-80">
-                <Lightning hue={125} xOffset={-0.35} speed={1.3} intensity={1.4} size={0.7} />
-              </div>
-              <div className="absolute top-8 right-[20%] w-80 h-[480px] opacity-75">
-                <Lightning hue={122} xOffset={0.25} speed={1.1} intensity={1.5} size={0.85} />
-              </div>
-              <div className="absolute bottom-0 left-[45%] w-96 h-[400px] opacity-55">
-                <Lightning hue={128} xOffset={0.0} speed={0.95} intensity={1.2} size={0.65} />
+            {/* One bolt only: layered over the artwork but behind the hero content. */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-[2] opacity-90">
+              <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-[min(82vw,43rem)] h-[40rem]">
+                <Lightning hue={125} xOffset={0} speed={1.08} intensity={1.38} size={0.68} branching />
               </div>
             </div>
           </>
@@ -129,15 +173,15 @@ export default function HomePage() {
               {doomsdayMode ? (
                 /* DIRECT IMPACT x DOOMSDAY TITLE */
                 <h1
-                  className="text-4xl sm:text-6xl lg:text-7xl font-black uppercase leading-none py-2 tracking-wider text-transparent bg-clip-text mb-6"
+                  className="doomsday-hero-text whitespace-nowrap text-[clamp(1.3rem,7.4vw,4.5rem)] font-black uppercase leading-none py-2 text-transparent bg-clip-text mb-6"
                   style={{
                     fontFamily: "'Orbitron', 'Montserrat', 'Syne', sans-serif",
                     backgroundImage: 'linear-gradient(135deg, #ffffff 0%, #a7f3d0 35%, #22c55e 75%, #15803d 100%)',
                     textShadow: '0 0 35px rgba(34, 197, 94, 0.6), 0 0 75px rgba(34, 197, 94, 0.3)',
-                    letterSpacing: '0.12em',
+                    letterSpacing: '0.055em',
                   }}
                 >
-                  IMPACT <span className="text-emerald-400 font-light mx-2">x</span> DOOMSDAY
+                  IMPACT <span className="text-emerald-400 font-light">x</span> DOOMSDAY
                 </h1>
               ) : (
                 /* DEFAULT WELCOME TO SAINT TITLE */
@@ -212,6 +256,21 @@ export default function HomePage() {
               </div>
             )}
           </div>
+        </div>
+      </section>
+
+      <section className={`relative py-7 sm:py-9 ${doomsdayMode ? 'bg-black/70' : 'bg-white/80'}`}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-5">
+          {[
+            { label: 'Visits', value: totalVisits, loading: visitsLoading, icon: Eye, color: 'text-blue-600' },
+            { label: 'Upcoming events', value: events.length, loading: eventsLoading, icon: Calendar, color: 'text-indigo-600' },
+            { label: 'Events conducted', value: conductedEvents, loading: conductedEventsLoading, icon: History, color: 'text-emerald-600' },
+          ].map(({ label, value, loading, icon: Icon, color }) => (
+            <div key={label} className={`rounded-2xl px-5 py-4 flex items-center gap-4 ${doomsdayMode ? 'bg-black/60' : 'border border-slate-200 bg-white shadow-sm'}`}>
+              <div className={`p-3 rounded-xl bg-slate-100 ${color}`}><Icon className="w-5 h-5" /></div>
+              <div className={doomsdayMode ? 'text-white' : 'text-slate-900'}><AnimatedStatisticValue value={value} loading={loading} /><p className={`text-xs font-semibold uppercase tracking-wider ${doomsdayMode ? 'text-emerald-200/80' : 'text-slate-500'}`}>{label}</p></div>
+            </div>
+          ))}
         </div>
       </section>
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Calendar, Clock, MapPin, Download, CheckCircle, Ticket, ArrowLeft, Loader2, CreditCard, Users, Plus, Trash2 } from 'lucide-react';
-import { getEvent, subscribeEventById, registerParticipantForEvent } from '../../services/eventService';
+import { Calendar, Clock, MapPin, Download, CheckCircle, Ticket, ArrowLeft, Loader2, CreditCard, Users, Plus, Trash2, ClipboardCheck, ExternalLink, MessageCircle } from 'lucide-react';
+import { createRuleAgreement, getEvent, subscribeEventById, registerParticipantForEvent } from '../../services/eventService';
 import type { EventRecord, EventTicket, TicketTier, TeamMemberDetail } from '../../types';
 import { downloadTicketImage } from '../../utils/ticketDownload';
 import QRCode from 'qrcode';
@@ -29,6 +29,11 @@ export default function EventRegisterPage() {
   const [selectedTierId, setSelectedTierId] = useState<string>('');
   const [teamMembers, setTeamMembers] = useState<TeamMemberDetail[]>([]);
   const [error, setError] = useState('');
+  const [rulesAccepted, setRulesAccepted] = useState(false);
+  const [termsName, setTermsName] = useState('');
+  const [termsEmail, setTermsEmail] = useState('');
+  const [termsChecked, setTermsChecked] = useState(false);
+  const [agreeingToTerms, setAgreeingToTerms] = useState(false);
 
   const ticketStorageKey = eventId ? `saint-event-ticket:${eventId}` : '';
 
@@ -96,6 +101,18 @@ export default function EventRegisterPage() {
       } catch {
         sessionStorage.removeItem(ticketStorageKey);
       }
+    }
+
+    const storedAgreement = eventId ? sessionStorage.getItem(`saint-event-rules-agreed:${eventId}`) : null;
+    if (storedAgreement) {
+      try {
+        const agreement = JSON.parse(storedAgreement) as { name?: string; email?: string };
+        setTermsName(agreement.name || '');
+        setTermsEmail(agreement.email || '');
+        setName(agreement.name || '');
+        setEmail(agreement.email || '');
+        setRulesAccepted(true);
+      } catch { sessionStorage.removeItem(`saint-event-rules-agreed:${eventId}`); }
     }
 
     return () => unsub();
@@ -248,6 +265,35 @@ export default function EventRegisterPage() {
 
   };
 
+  const handleAcceptRules = async () => {
+    if (!eventId) return;
+    if (!termsName.trim() || !termsEmail.trim()) {
+      setError('Enter your name and email before accepting the rules.');
+      return;
+    }
+    if (!termsChecked) {
+      setError('You must agree to all rules and terms before registration.');
+      return;
+    }
+    setAgreeingToTerms(true);
+    setError('');
+    try {
+      let sessionId = '';
+      try {
+        sessionId = sessionStorage.getItem('saint-rule-session') || `rules_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        sessionStorage.setItem('saint-rule-session', sessionId);
+      } catch { /* storage is optional for the audit record */ }
+      await createRuleAgreement(eventId, { attendeeName: termsName, attendeeEmail: termsEmail, sessionId });
+      const stored = { name: termsName.trim(), email: termsEmail.trim() };
+      try { sessionStorage.setItem(`saint-event-rules-agreed:${eventId}`, JSON.stringify(stored)); } catch { /* consent remains valid for this visit */ }
+      setName(stored.name);
+      setEmail(stored.email);
+      setRulesAccepted(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not record your agreement. Please try again.');
+    } finally { setAgreeingToTerms(false); }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#0f172a,#1e3a8a)' }}>
@@ -378,6 +424,11 @@ export default function EventRegisterPage() {
               Download Ticket Image
             </button>
 
+            <div className="grid sm:grid-cols-2 gap-3 max-w-md mx-auto">
+              {event.rulebookUrl && <a href={event.rulebookUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-400/40 px-4 py-3 text-sm font-semibold text-blue-200 hover:bg-blue-500/10"><ExternalLink className="w-4 h-4" /> Access Rulebook</a>}
+              {event.whatsappGroupUrl && <a href={event.whatsappGroupUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-400/40 px-4 py-3 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/10"><MessageCircle className="w-4 h-4" /> Join WhatsApp Group</a>}
+            </div>
+
             <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
               Show this QR code at the event gate for instant check-in.
             </p>
@@ -392,6 +443,16 @@ export default function EventRegisterPage() {
             <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>
               This event is not accepting registrations at the moment.
             </p>
+          </div>
+        ) : !rulesAccepted ? (
+          <div className="rounded-2xl p-6 sm:p-8 space-y-6 animate-fade-in-up" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(59,130,246,0.3)', backdropFilter: 'blur(24px)' }}>
+            <div className="text-center"><div className="w-14 h-14 rounded-2xl bg-blue-500/15 text-blue-300 grid place-items-center mx-auto mb-3"><ClipboardCheck className="w-7 h-7" /></div><h2 className="text-2xl font-bold text-white">Rules & terms</h2><p className="text-sm mt-2 text-slate-300">Review and accept every term to unlock the registration form.</p></div>
+            <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">{(event.rules?.length ? event.rules : ['Provide accurate registration details and carry your QR pass to the event.', 'Follow the event schedule, venue instructions, and organizing team directions.', 'Maintain respectful conduct throughout the event.']).map((rule, index) => <div key={index} className="flex gap-3 text-sm text-slate-200"><span className="shrink-0 text-blue-300 font-bold">{index + 1}.</span><p>{rule}</p></div>)}</div>
+            {event.rulebookUrl && <a href={event.rulebookUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-blue-300 hover:text-blue-200"><ExternalLink className="w-4 h-4" /> Read the full rulebook</a>}
+            {error && <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
+            <div className="grid sm:grid-cols-2 gap-4"><label className="text-sm text-slate-300">Full name<input value={termsName} onChange={(item) => setTermsName(item.target.value)} className="w-full mt-1.5 px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400" placeholder="Your full name" /></label><label className="text-sm text-slate-300">Email address<input type="email" value={termsEmail} onChange={(item) => setTermsEmail(item.target.value)} className="w-full mt-1.5 px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400" placeholder="you@example.com" /></label></div>
+            <label className="flex items-start gap-3 rounded-xl border border-blue-400/20 bg-blue-500/5 p-4 cursor-pointer"><input type="checkbox" checked={termsChecked} onChange={(item) => setTermsChecked(item.target.checked)} className="mt-0.5 w-4 h-4 accent-blue-500" /><span className="text-sm text-slate-200">I agree to all rules, terms and conditions for <strong className="text-white">{event.title}</strong>.</span></label>
+            <button onClick={handleAcceptRules} disabled={agreeingToTerms} className="w-full py-3.5 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>{agreeingToTerms ? <><Loader2 className="w-4 h-4 animate-spin" /> Recording agreement…</> : <><CheckCircle className="w-4 h-4" /> Agree & continue to registration</>}</button>
           </div>
         ) : (
           /* Registration Form */

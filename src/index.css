@@ -20,6 +20,31 @@
   --site-input-placeholder: #64748b;
 }
 
+/* Responsive guardrails shared by public pages and the dashboard. */
+html, body, #root {
+  min-width: 320px;
+  overflow-x: clip;
+}
+
+img, video, canvas {
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  .public-header .btn-ghost {
+    min-height: 44px;
+  }
+
+  .dash-card,
+  [class*="rounded-3xl"] {
+    border-radius: 1rem;
+  }
+
+  input, select, textarea, button {
+    font-size: max(16px, 1em);
+  }
+}
+
 [data-theme="light"] {
   --bg-primary: rgba(255, 255, 255, 0.68);
   --bg-secondary: rgba(241, 245, 249, 0.58);
@@ -178,6 +203,92 @@
 }
 [data-doomsday="true"] .card.doomsday-card-chairman .label-muted {
   color: rgba(148, 163, 184, 0.9) !important;
+}
+
+/* ── Public-site doomsday surface system ──
+   Some public pages use non-section wrappers and component-level light utility
+   classes. These rules make every public route use the same obsidian canvas. */
+[data-doomsday="true"] {
+  --bg-primary: #020503;
+  --bg-secondary: #030705;
+  --bg-accent: #07110d;
+  --text-primary: #f0fdf4;
+  --text-secondary: #d1fae5;
+  --text-muted: #94a3b8;
+  --border-color: rgba(52, 211, 153, 0.2);
+  --nav-bg: #020503;
+  --site-input-bg: #07110d;
+  --site-input-border: rgba(52, 211, 153, 0.3);
+  --site-input-text: #f0fdf4;
+  --site-input-placeholder: #94a3b8;
+}
+
+[data-doomsday="true"] main,
+[data-doomsday="true"] .public-footer,
+[data-doomsday="true"] .public-bg-blobs {
+  background-color: #020503 !important;
+}
+
+[data-doomsday="true"] .public-bg-blobs {
+  display: none !important;
+}
+
+/* Covers light utility surfaces used in Gallery, Activities, Apply, Support,
+   About, and all future public pages without changing their normal theme. */
+[data-doomsday="true"] main [class*="bg-white"],
+[data-doomsday="true"] main [class*="bg-slate-"],
+[data-doomsday="true"] main [class*="bg-gray-"],
+[data-doomsday="true"] main [class*="bg-blue-50"],
+[data-doomsday="true"] main [class*="bg-blue-100"],
+[data-doomsday="true"] main [class*="bg-indigo-50"],
+[data-doomsday="true"] main [class*="bg-amber-50"],
+[data-doomsday="true"] main [class*="bg-rose-50"] {
+  background-color: #07110d !important;
+  background-image: none !important;
+  border-color: rgba(52, 211, 153, 0.22) !important;
+}
+
+[data-doomsday="true"] main [class*="bg-gradient-to-"] {
+  background-color: #07110d !important;
+  background-image: none !important;
+}
+
+[data-doomsday="true"] main input:not([type="checkbox"]):not([type="radio"]),
+[data-doomsday="true"] main select,
+[data-doomsday="true"] main textarea {
+  background: #07110d !important;
+  color: #f0fdf4 !important;
+  border-color: rgba(52, 211, 153, 0.3) !important;
+}
+
+[data-doomsday="true"] main input::placeholder,
+[data-doomsday="true"] main textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+[data-doomsday="true"] main select option {
+  background: #07110d;
+  color: #f0fdf4;
+}
+
+/* The selected Support priority needs a saturated, readable state rather than
+   the normal light blue selection surface. */
+[data-doomsday="true"] main button[class*="ring-blue-600"] {
+  background: #047857 !important;
+  border-color: #34d399 !important;
+  box-shadow: 0 0 0 1px #34d399, 0 0 18px rgba(16, 185, 129, 0.32) !important;
+}
+
+[data-doomsday="true"] main button[class*="ring-blue-600"] span {
+  color: #ffffff !important;
+}
+
+/* Keep the supplied image centred and fully cover every viewport without a
+   visible seam at the fixed navigation edge. */
+.doomsday-hero-background {
+  background-size: cover !important;
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
 }
 
 /* Green Smoke Particle Keyframes */
