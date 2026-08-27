@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { Calendar, Clock, MapPin, Download, CheckCircle, Ticket, ArrowLeft, Loader2, CreditCard, Users, Plus, Trash2, ClipboardCheck, ExternalLink, MessageCircle } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Calendar, Clock, MapPin, Download, CheckCircle, Ticket, ArrowLeft, Loader2, CreditCard, Users, Plus, Trash2, ClipboardCheck, ExternalLink, MessageCircle, Sparkles, X } from 'lucide-react';
 import { createRuleAgreement, getEvent, subscribeEventById, registerParticipantForEvent } from '../../services/eventService';
 import type { EventRecord, EventTicket, TicketTier, TeamMemberDetail } from '../../types';
 import { downloadTicketImage } from '../../utils/ticketDownload';
@@ -8,11 +8,13 @@ import QRCode from 'qrcode';
 
 export default function EventRegisterPage() {
   const { eventId } = useParams<{ eventId: string }>();
+  const navigate = useNavigate();
   const [event, setEvent] = useState<EventRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [ticket, setTicket] = useState<EventTicket | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const [showParticipantPrompt, setShowParticipantPrompt] = useState(false);
 
   // Form Fields
   const [teamName, setTeamName] = useState('');
@@ -245,7 +247,12 @@ export default function EventRegisterPage() {
 
       setTicket(newTicket);
       setQrDataUrl(qr);
+      setShowParticipantPrompt(true);
       sessionStorage.setItem(ticketStorageKey, JSON.stringify(newTicket));
+      sessionStorage.setItem('saint-participant-registration', JSON.stringify({
+        name: newTicket.guestName,
+        email: newTicket.guestEmail || '',
+      }));
 
       console.log('[Ticket] Starting ticket download...');
 
@@ -423,6 +430,13 @@ export default function EventRegisterPage() {
               <Download className="w-4 h-4" />
               Download Ticket Image
             </button>
+
+            <div className="mt-5 rounded-2xl border border-violet-400/30 bg-violet-500/10 p-4 max-w-md mx-auto text-left">
+              <div className="flex items-start gap-3">
+                <Sparkles className="w-5 h-5 text-violet-300 mt-0.5 shrink-0" />
+                <div><p className="font-bold text-sm text-white">Keep this pass in your participant space</p><p className="text-xs mt-1 text-violet-100/75">Create a username and password to view this QR, download the ticket, and manage your team anytime.</p><div className="flex gap-3 mt-3"><button onClick={() => navigate('/participant-auth?mode=signup')} className="text-xs font-bold text-violet-200 hover:text-white">Create account →</button><button onClick={() => navigate('/participant-auth')} className="text-xs font-bold text-blue-200 hover:text-white">I already have one →</button></div></div>
+              </div>
+            </div>
 
             <div className="grid sm:grid-cols-2 gap-3 max-w-md mx-auto">
               {event.rulebookUrl && <a href={event.rulebookUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-400/40 px-4 py-3 text-sm font-semibold text-blue-200 hover:bg-blue-500/10"><ExternalLink className="w-4 h-4" /> Access Rulebook</a>}
@@ -827,6 +841,19 @@ export default function EventRegisterPage() {
           </div>
         )}
       </div>
+      {showParticipantPrompt && ticket && (
+        <div className="participant-modal-backdrop" role="dialog" aria-modal="true" aria-label="Create participant account">
+          <div className="participant-qr-modal text-center">
+            <button className="participant-modal-close" onClick={() => setShowParticipantPrompt(false)} aria-label="Close"><X className="w-4 h-4" /></button>
+            <Sparkles className="mx-auto text-violet-600 w-7 h-7" />
+            <p className="mt-3">YOUR PASS IS READY</p>
+            <h2>Make it yours.</h2>
+            <span className="!block !mb-6">Create a participant username and password to keep <b>{ticket.ticketNumber}</b>, its QR code, and your team details in one place.</span>
+            <button className="participant-submit" onClick={() => navigate('/participant-auth?mode=signup')}>Create participant account</button>
+            <button onClick={() => navigate('/participant-auth')} className="mt-4 text-xs font-bold text-violet-700 hover:text-violet-900">I already have an account</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

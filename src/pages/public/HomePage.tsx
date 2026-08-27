@@ -193,28 +193,36 @@ export default function HomePage() {
                 </h1>
               )}
 
-              <p className={`text-lg leading-relaxed mb-8 ${hasImagesToDisplay ? 'max-w-xl' : 'max-w-2xl mx-auto'} ${doomsdayMode ? 'text-emerald-100/90' : 'text-slate-600'
-                }`}>
+              <p className={`text-lg leading-relaxed mb-8 ${hasImagesToDisplay ? 'max-w-xl' : 'max-w-2xl mx-auto'} ${doomsdayMode ? 'text-emerald-100/90' : 'text-slate-600'}`}>
                 {doomsdayMode
                   ? 'The high-voltage cyber protocol is active across all department networks, registrations, and quantum channels.'
                   : 'The Student Association of Information Technology — a student-led association fostering innovation, collaboration, and excellence in the IT department at JSPM\'s Rajarshi Shahu College of Engineering.'}
               </p>
 
-              <div className={`flex flex-wrap gap-4 ${!hasImagesToDisplay ? 'justify-center' : ''}`}>
+              <div className={`flex flex-wrap gap-3.5 ${!hasImagesToDisplay ? 'justify-center' : ''}`}>
                 <Link
                   to="/apply"
-                  className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 shadow-md ${doomsdayMode
+                  className={`inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all duration-200 shadow-md ${doomsdayMode
                     ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/20'
                     : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/25'
                     }`}
                 >
                   Join SAInT <ArrowRight className="w-4 h-4" />
                 </Link>
+                <Link
+                  to="/participant-auth"
+                  className={`inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all duration-200 shadow-md ${doomsdayMode
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 hover:bg-amber-500/30'
+                    : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-500/25'
+                    }`}
+                >
+                  🎟️ Login as Participant
+                </Link>
                 <a
                   href="#events"
-                  className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 ${doomsdayMode
+                  className={`inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all duration-200 ${doomsdayMode
                     ? 'border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'
-                    : 'border border-blue-600 text-blue-600 hover:bg-blue-50'
+                    : 'border border-slate-300 text-slate-700 bg-white/80 hover:bg-white'
                     }`}
                 >
                   View Events

@@ -126,16 +126,27 @@ export default function PublicLayout() {
               ))}
             </nav>
 
-            <div className="hidden md:flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-2.5">
               <Link
-                to="/login"
-                className={`inline-flex items-center justify-center px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+                to="/participant-auth"
+                className={`inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${
                   doomsdayMode
-                    ? 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'
-                    : 'border-blue-600 text-blue-600 hover:bg-blue-50'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                    : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 hover:text-indigo-900'
                 }`}
               >
-                Login
+                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                Login as Participant
+              </Link>
+              <Link
+                to="/login"
+                className={`inline-flex items-center justify-center px-3.5 py-2 rounded-xl text-xs font-bold border transition-all ${
+                  doomsdayMode
+                    ? 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'
+                    : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                Member Login
               </Link>
               <Link
                 to="/login?mode=signup"
@@ -166,27 +177,35 @@ export default function PublicLayout() {
                 {link.label}
               </Link>
             ))}
-            <div className="flex gap-2 pt-2">
+            <div className="pt-2">
               <Link
-                to="/login"
-                className={`flex-1 text-center py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                  doomsdayMode
-                    ? 'border-emerald-500/40 text-emerald-400'
-                    : 'border-blue-600 text-blue-600'
-                }`}
+                to="/participant-auth"
+                className="w-full block text-center py-2.5 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-md mb-2"
               >
-                Login
+                🎟️ Login as Participant (Passes & Teams)
               </Link>
-              <Link
-                to="/login?mode=signup"
-                className={`flex-1 text-center py-2.5 rounded-xl text-xs font-bold transition-all ${
-                  doomsdayMode
-                    ? 'bg-emerald-500 text-black font-bold'
-                    : 'bg-blue-600 text-white'
-                }`}
-              >
-                Sign Up
-              </Link>
+              <div className="flex gap-2">
+                <Link
+                  to="/login"
+                  className={`flex-1 text-center py-2 rounded-xl text-xs font-bold border transition-all ${
+                    doomsdayMode
+                      ? 'border-emerald-500/40 text-emerald-400'
+                      : 'border-slate-300 text-slate-700'
+                  }`}
+                >
+                  Member Login
+                </Link>
+                <Link
+                  to="/login?mode=signup"
+                  className={`flex-1 text-center py-2 rounded-xl text-xs font-bold transition-all ${
+                    doomsdayMode
+                      ? 'bg-emerald-500 text-black font-bold'
+                      : 'bg-blue-600 text-white'
+                  }`}
+                >
+                  Sign Up
+                </Link>
+              </div>
             </div>
           </div>
         )}
@@ -201,7 +220,7 @@ export default function PublicLayout() {
           <div className="grid md:grid-cols-3 gap-8">
             <div>
               <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden">
                   {logoUnavailable ? (
                     <span className="text-[10px] font-bold text-blue-600">SAInT</span>
                   ) : (

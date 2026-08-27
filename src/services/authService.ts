@@ -1,3 +1,4 @@
+
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -14,6 +15,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
   collection,
   getDocs,
   query,
@@ -45,6 +47,18 @@ function resolveRole(email: string): UserRole {
     return 'superadmin';
   }
   return 'pending';
+}
+
+function participantAuthEmail(username: string) {
+  return `participant.${username.toLowerCase()}@accounts.saint.local`;
+}
+
+export function normalizeParticipantUsername(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '');
+}
+
+export function isParticipantProfile(profile: UserProfile | null | undefined) {
+  return profile?.role === 'participant';
 }
 
 async function getSuperadminProfile(): Promise<UserProfile | null> {
@@ -143,6 +157,63 @@ export async function signUpWithEmail(email: string, password: string) {
   const result = await createUserWithEmailAndPassword(auth, email, password);
   const profile = await ensureUserProfile(result.user);
   await logActivity(profile.uid, profile.displayName, profile.email, 'register', 'Registered a new account');
+  return result.user;
+}
+
+/**
+ * Participant credentials intentionally use a private Firebase email derived from
+ * the username. The contact email is stored in the profile and matched to tickets.
+ */
+export async function signUpParticipant(data: {
+  username: string;
+  password: string;
+  name: string;
+  registrationEmail: string;
+}) {
+  const username = normalizeParticipantUsername(data.username);
+  if (!/^[a-z0-9][a-z0-9_.-]{2,29}$/.test(username)) {
+    throw new Error('Choose 3–30 characters: letters, numbers, dots, underscores, or hyphens.');
+  }
+  const registrationEmail = data.registrationEmail.trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(registrationEmail)) {
+    throw new Error('Enter the email address used for your event registration.');
+  }
+
+  await setPersistence(auth, browserLocalPersistence);
+  const result = await createUserWithEmailAndPassword(auth, participantAuthEmail(username), data.password);
+  const baseProfile = await ensureUserProfile(result.user);
+  const [firstName, ...rest] = data.name.trim().split(/\s+/);
+  const profile: UserProfile = {
+    ...baseProfile,
+    email: participantAuthEmail(username),
+    firstName: firstName || username,
+    lastName: rest.join(' '),
+    displayName: data.name.trim() || username,
+    role: 'participant',
+    status: 'approved',
+    participantUsername: username,
+    participantEmail: registrationEmail,
+    permissions: getDefaultPermissions('participant'),
+    updatedAt: now(),
+  };
+  await setDoc(doc(db, 'users', result.user.uid), profile);
+  setCachedData(`user:${result.user.uid}`, profile);
+  invalidateCache('users:');
+  await logActivity(profile.uid, profile.displayName, registrationEmail, 'register', 'Registered a participant account');
+  return result.user;
+}
+
+export async function signInParticipant(username: string, password: string) {
+  const normalized = normalizeParticipantUsername(username);
+  if (!normalized) throw new Error('Enter your participant username.');
+  await setPersistence(auth, browserLocalPersistence);
+  const result = await signInWithEmailAndPassword(auth, participantAuthEmail(normalized), password);
+  const profile = await ensureUserProfile(result.user);
+  if (profile.role !== 'participant') {
+    await signOut(auth);
+    throw new Error('This is not a participant account. Please use your email on the main login.');
+  }
+  await logActivity(profile.uid, profile.displayName, profile.participantEmail || profile.email, 'login', 'Logged in to participant portal');
   return result.user;
 }
 
@@ -291,7 +362,7 @@ export async function removeUser(uid: string) {
   trackDBOperation({ operation: 'update', action: 'remove_user', resource: 'users', documentCount: 1 });
 }
 
-export async function updateUserRole(uid: string, role: 'member' | 'core' | 'superadmin') {
+export async function updateUserRole(uid: string, role: Exclude<UserRole, 'pending'>) {
   const profile = await getUserProfile(uid);
   if (!profile) throw new Error('User not found');
 
@@ -338,7 +409,6 @@ export async function followUser(currentUid: string, targetUid: string) {
   const followers = target.followers.includes(currentUid)
     ? target.followers
     : [...target.followers, currentUid];
-
   await updateDoc(doc(db, 'users', currentUid), { following, updatedAt: now() });
   await updateDoc(doc(db, 'users', targetUid), { followers, updatedAt: now() });
   invalidateCache(`user:${currentUid}`);
@@ -416,3 +486,92 @@ export async function getPendingUsers(forceRefresh = false): Promise<UserProfile
   );
 }
 
+export async function getParticipantUsers(forceRefresh = false): Promise<UserProfile[]> {
+  return cachedFetch<UserProfile[]>(
+    'users:participants',
+    async () => {
+      try {
+        const snap = await getDocs(
+          query(collection(db, 'users'), where('role', '==', 'participant'), orderBy('createdAt', 'desc'))
+        );
+        return snap.docs.map((d) => ({ ...(d.data() as UserProfile), uid: d.id }));
+      } catch {
+        const users = await getAllUsers(forceRefresh);
+        return users.filter((u) => u.role === 'participant' || Boolean(u.participantUsername));
+      }
+    },
+    {
+      ttlMs: 30 * 1000,
+      resource: 'users',
+      action: 'get_participant_users',
+      forceRefresh,
+    }
+  );
+}
+
+export async function updateParticipantAccount(
+  uid: string,
+  updates: Partial<UserProfile>
+) {
+  const ref = doc(db, 'users', uid);
+  await updateDoc(ref, {
+    ...updates,
+    updatedAt: now(),
+  });
+  invalidateCache(`user:${uid}`);
+  invalidateCache('users:');
+  invalidateCache('users:participants');
+  trackDBOperation({ operation: 'update', action: 'update_participant_account', resource: 'users', documentCount: 1 });
+}
+
+export async function deleteParticipantAccount(uid: string) {
+  const ref = doc(db, 'users', uid);
+  await deleteDoc(ref);
+  invalidateCache(`user:${uid}`);
+  invalidateCache('users:');
+  invalidateCache('users:participants');
+  trackDBOperation({ operation: 'delete', action: 'delete_participant_account', resource: 'users', documentCount: 1 });
+}
+
+export async function createParticipantAccountAdmin(data: {
+  username: string;
+  name: string;
+  registrationEmail: string;
+  status?: 'approved' | 'rejected' | 'pending';
+}) {
+  const username = normalizeParticipantUsername(data.username);
+  if (!/^[a-z0-9][a-z0-9_.-]{2,29}$/.test(username)) {
+    throw new Error('Choose 3–30 characters: letters, numbers, dots, underscores, or hyphens.');
+  }
+  const email = data.registrationEmail.trim().toLowerCase();
+  const [firstName, ...rest] = data.name.trim().split(/\s+/);
+  const uid = `part_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const profile: UserProfile = {
+    uid,
+    email: participantAuthEmail(username),
+    firstName: firstName || username,
+    lastName: rest.join(' '),
+    displayName: data.name.trim() || username,
+    role: 'participant',
+    status: data.status || 'approved',
+    participantUsername: username,
+    participantEmail: email,
+    teamIds: [],
+    teamNames: [],
+    hasFinanceAccess: false,
+    taskScore: 0,
+    completedTaskCount: 0,
+    permissions: getDefaultPermissions('participant'),
+    followers: [],
+    following: [],
+    isOnline: false,
+    createdAt: now(),
+    updatedAt: now(),
+  };
+
+  await setDoc(doc(db, 'users', uid), profile);
+  invalidateCache('users:');
+  invalidateCache('users:participants');
+  trackDBOperation({ operation: 'write', action: 'create_participant_admin', resource: 'users', documentCount: 1 });
+  return profile;
+}

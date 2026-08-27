@@ -16,7 +16,7 @@ import {
 import { db, auth } from '../firebase/config';
 import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
 import { trackDBOperation } from './dbTrackingService';
-import type { EventRecord, EventTicket, EventParticipant, EventTeam, EventRuleAgreement } from '../types';
+import type { EventRecord, EventTicket, EventParticipant, EventTeam, EventRuleAgreement, TeamMemberDetail } from '../types';
 import { buildQRPayload, parseQRPayload } from '../utils/qrScan';
 import { extractSupabasePathFromPublicUrl, removeFileFromSupabase, uploadFileToSupabase } from '../utils/supabase';
 import { uploadFileToStorage } from '../utils/fileUtils';
@@ -610,6 +610,25 @@ export function subscribeEventTickets(eventId: string, callback: (tickets: Event
   return onSnapshot(collection(db, 'events', eventId, 'tickets'), (snap) => {
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventTicket)));
   });
+}
+
+export async function updateParticipantTicketTeam(
+  eventId: string,
+  ticketId: string,
+  teamName: string | undefined,
+  teamMembers: TeamMemberDetail[]
+) {
+  const ref = doc(db, 'events', eventId, 'tickets', ticketId);
+  await updateDoc(ref, removeUndefinedFields({
+    teamName: teamName?.trim() || null,
+    teamMembers: teamMembers.map((member) => removeUndefinedFields({
+      name: member.name.trim(),
+      email: member.email?.trim() || null,
+      phone: member.phone?.trim() || null,
+      college: member.college?.trim() || null,
+      department: member.department?.trim() || null,
+    })),
+  }));
 }
 
 export async function getPublishedUpcomingEvents(forceRefresh = false): Promise<EventRecord[]> {

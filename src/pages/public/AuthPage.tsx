@@ -1,7 +1,7 @@
 import { useState, type CSSProperties, type FormEvent, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Lock, Mail, Sparkles, AlertCircle } from 'lucide-react';
-import { signInWithGoogle, signInWithEmail, signUpWithEmail, logoutUser } from '../../services/authService';
+import { signInWithGoogle, signInWithEmail, signInParticipant, signUpWithEmail, logoutUser } from '../../services/authService';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function AuthPage() {
@@ -26,6 +26,11 @@ export default function AuthPage() {
     if (profile.status === 'rejected') {
       logoutUser();
       setError('Your access has been revoked by an administrator. Please contact the admin.');
+      return;
+    }
+
+    if (profile.role === 'participant') {
+      navigate('/participant');
       return;
     }
 
@@ -62,7 +67,11 @@ export default function AuthPage() {
       if (mode === 'signup') {
         await signUpWithEmail(email, password);
       } else {
-        await signInWithEmail(email, password);
+        if (!email.includes('@')) {
+          await signInParticipant(email, password);
+        } else {
+          await signInWithEmail(email, password);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Authentication failed');
@@ -177,7 +186,7 @@ export default function AuthPage() {
 
           <form onSubmit={handleEmail} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Email</label>
+              <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Email or participant username</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'rgba(255,255,255,0.3)' }} />
                 <input
@@ -187,11 +196,11 @@ export default function AuthPage() {
                     border: '1px solid rgba(148, 163, 184, 0.22)',
                     color: 'white',
                   }}
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  placeholder="you@example.com"
+                  placeholder="you@example.com or arya.codes"
                 />
               </div>
             </div>
@@ -244,6 +253,9 @@ export default function AuthPage() {
             >
               {mode === 'login' ? 'Sign Up' : 'Login'}
             </button>
+          </p>
+          <p className="text-center text-xs mt-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            Registered for an event? <Link to="/participant-auth" className="text-violet-300 hover:text-violet-200 font-semibold">Open participant space</Link>
           </p>
         </div>
       </div>

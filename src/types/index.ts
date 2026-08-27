@@ -1,4 +1,4 @@
-export type UserRole = 'pending' | 'member' | 'core' | 'superadmin';
+export type UserRole = 'pending' | 'participant' | 'member' | 'core' | 'superadmin';
 
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
@@ -35,6 +35,10 @@ export interface SidebarPermissions {
   systemStats: boolean;
   deploymentStats?: boolean;
   userInteractions?: boolean;
+  participants?: boolean;
+  winners?: boolean;
+  gallery?: boolean;
+  support?: boolean;
 }
 
 export interface UserProfile {
@@ -48,6 +52,9 @@ export interface UserProfile {
   description?: string;
   batchYear?: string;
   role: UserRole;
+  /** Participant accounts use a username for sign-in; their registration email stays private. */
+  participantUsername?: string;
+  participantEmail?: string;
   status: 'pending' | 'approved' | 'rejected';
   positionId?: string;
   positionTitle?: string;
@@ -348,6 +355,8 @@ export interface EventTicket {
   customResponses?: Record<string, string>;
   qrPayload: string;
   registrationSource: 'public' | 'manual';
+  /** Set when a participant account claims this ticket. */
+  participantUid?: string;
   checkedIn: boolean;
   checkedInAt?: string;
   checkedInBy?: string;

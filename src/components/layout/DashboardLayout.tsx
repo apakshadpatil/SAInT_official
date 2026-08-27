@@ -1,7 +1,7 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Calendar, CalendarDays, ListTodo, Users, QrCode,
-  User, LogOut, Moon, Sun, BarChart3, FileText, Wallet, PieChart,
+  LogOut, Moon, Sun, BarChart3, FileText, Wallet, PieChart,
   Settings, Shield, UserCheck, KeyRound, Menu, X, ClipboardList,
   Upload, Activity, FileCheck, Briefcase, Trophy, Archive, ImagePlus,
   ChevronRight, Zap, Database, Server, Globe, LifeBuoy,
@@ -42,6 +42,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/dashboard/explore',                label: 'Explore',               icon: Users,           tab: 'explore',            group: 'main' },
   { to: '/dashboard/qr-scanner',            label: 'QR Scanner',            icon: QrCode,          tab: 'qrScanner',          group: 'main' },
   { to: '/dashboard/analytics',             label: 'Analytics Hub',         icon: BarChart3,       tab: 'analytics',          group: 'management' },
+  { to: '/dashboard/participants',          label: 'Manage Participants',   icon: UserCheck,       tab: 'participants',       group: 'management', superOnly: true },
   { to: '/dashboard/teams',                 label: 'Manage Teams',          icon: Users,           tab: 'teams',              group: 'management' },
   { to: '/dashboard/files',                 label: 'Upload Files',          icon: Upload,          tab: 'files',              group: 'management' },
   { to: '/dashboard/documentation',         label: 'Documentation',         icon: FileText,        tab: 'documentation',      group: 'management' },
@@ -49,27 +50,21 @@ const ALL_NAV: NavItem[] = [
   { to: '/dashboard/archived-applications', label: 'Archived Applications', icon: Archive,         tab: 'manageApplications', group: 'management' },
   { to: '/dashboard/interview-panels',      label: 'Interview Panels',      icon: Briefcase,       tab: 'interviewPanels',    group: 'management' },
   { to: '/dashboard/gd-panels',             label: 'GD Panels',             icon: Users,           tab: 'gdPanels',           group: 'management' },
-  { to: '/dashboard/winners',               label: 'Winners',               icon: Trophy,          tab: 'events',             coreOnly: true,     group: 'management' },
-  { to: '/dashboard/interview-allocations', label: 'Final Allocations',     icon: Trophy,          tab: 'interviewPanels',    group: 'management' },
-  { to: '/dashboard/finance',              label: 'Manage Financials',     icon: Wallet,          tab: 'finance',            financeOnly: true, group: 'finance' },
-  { to: '/dashboard/financial-analytics',  label: 'Financial Analytics',   icon: PieChart,        tab: 'financialAnalytics', financeOnly: true, group: 'finance' },
-  { to: '/dashboard/support',              label: 'Support Tickets',       icon: LifeBuoy,        tab: 'supportTickets',     group: 'support' },
-  { to: '/dashboard/system-stats',         label: 'System Stats',          icon: Database,        tab: 'systemStats',        superOnly: true,   group: 'settings', settingsGroup: true },
-  { to: '/dashboard/deployment-stats',     label: 'Deployment Stats',      icon: Server,          tab: 'deploymentStats',    superOnly: true,   group: 'settings', settingsGroup: true },
-  { to: '/dashboard/user-interactions',    label: 'User Interactions',     icon: Globe,           tab: 'userInteractions',   superOnly: true,   group: 'settings', settingsGroup: true },
-  { to: '/dashboard/monitor-activity',     label: 'Monitor Activity',      icon: Activity,        tab: 'monitorActivity',    superOnly: true,   group: 'settings', settingsGroup: true },
-  { to: '/dashboard/control-centre',       label: 'Control Centre',        icon: Settings,        tab: 'controlCentre',      superOnly: true,   group: 'settings', settingsGroup: true },
-  { to: '/dashboard/positions',            label: 'Positions',             icon: Shield,          tab: 'positions',          superOnly: true,   group: 'settings', settingsGroup: true },
-  { to: '/dashboard/user-approvals',       label: 'User Approvals',        icon: UserCheck,       tab: 'userApprovals',      superOnly: true,   group: 'settings', settingsGroup: true },
-  { to: '/dashboard/access-control',       label: 'Access Control',        icon: KeyRound,        tab: 'accessControl',      superOnly: true,   group: 'settings', settingsGroup: true },
-  { to: '/dashboard/home-images',           label: 'Landing Images',        icon: ImagePlus,       tab: 'homeImages',         superOnly: true,   group: 'settings', settingsGroup: true },
-  { to: '/dashboard/gallery',               label: 'Gallery',               icon: ImagePlus,       tab: 'homeImages',         superOnly: true,   group: 'settings', settingsGroup: true },
-  { to: '/dashboard/profile',              label: 'Profile',               icon: User,            tab: 'profile' },
+  { to: '/dashboard/finance',               label: 'Finance',               icon: Wallet,          tab: 'finance',            group: 'finance',    financeOnly: true },
+  { to: '/dashboard/financial-analytics',   label: 'Financial Analytics',   icon: PieChart,        tab: 'finance',            group: 'finance',    financeOnly: true },
+  { to: '/dashboard/winners',               label: 'Winners',               icon: Trophy,          tab: 'winners',            group: 'management' },
+  { to: '/dashboard/gallery',               label: 'Gallery',               icon: ImagePlus,       tab: 'gallery',            group: 'management' },
+  { to: '/dashboard/home-images',           label: 'Home Images',           icon: ImagePlus,       tab: 'homeImages',         group: 'management', coreOnly: true },
+  { to: '/dashboard/support',               label: 'Support',               icon: LifeBuoy,        tab: 'support',            group: 'support' },
+  { to: '/dashboard/user-approvals',        label: 'User Approvals',        icon: UserCheck,       tab: 'userApprovals',      group: 'settings',   superOnly: true },
+  { to: '/dashboard/access-control',        label: 'Access Control',        icon: KeyRound,        tab: 'accessControl',      group: 'settings',   superOnly: true },
+  { to: '/dashboard/positions',             label: 'Positions',             icon: Shield,          tab: 'positions',          group: 'settings',   superOnly: true },
+  { to: '/dashboard/monitor-activity',      label: 'User Activity',         icon: Activity,        tab: 'monitorActivity',    group: 'settings',   superOnly: true },
+  { to: '/dashboard/user-interactions',     label: 'User Interactions',     icon: Globe,           tab: 'userInteractions',   group: 'settings',   superOnly: true },
+  { to: '/dashboard/system-stats',          label: 'System Stats',          icon: Server,          tab: 'systemStats',        group: 'settings',   superOnly: true },
+  { to: '/dashboard/deployment-stats',      label: 'Deployment Stats',      icon: Database,        tab: 'deploymentStats',    group: 'settings',   superOnly: true },
+  { to: '/dashboard/control-centre',        label: 'Control Centre',        icon: Settings,        tab: 'controlCentre',      group: 'settings',   superOnly: true },
 ];
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   GROUP LABELS
-───────────────────────────────────────────────────────────────────────────── */
 const GROUP_LABELS: Record<string, string> = {
   main: 'Main',
   management: 'Management',
@@ -375,10 +370,17 @@ export default function DashboardLayout() {
 
   const navItems = ALL_NAV.filter((item) => {
     if (item.to === '/dashboard/profile') return false;
-    if (item.coreOnly && !isCoreMember(profile)) return false;
-    if (hasTabAccess(profile, item.tab)) return true;
-    if (item.superOnly && !isSuperAdmin(profile)) return false;
+    // Superadmin sees everything — no further checks needed
+    if (isSuperAdmin(profile)) return true;
+    // superOnly items are hidden from non-superadmins
+    if (item.superOnly) return false;
+    // financeOnly items require finance access
     if (item.financeOnly && !hasFinanceAccess(profile)) return false;
+    // coreOnly items require core membership
+    if (item.coreOnly && !isCoreMember(profile)) return false;
+    // Check explicit tab permission grants
+    if (hasTabAccess(profile, item.tab)) return true;
+    // Core-member tabs visible to all core members
     if (
       item.tab === 'teams' ||
       item.tab === 'analytics' ||
@@ -386,10 +388,13 @@ export default function DashboardLayout() {
       item.tab === 'documentation' ||
       item.tab === 'manageApplications' ||
       item.tab === 'interviewPanels' ||
-      item.tab === 'gdPanels'
+      item.tab === 'gdPanels' ||
+      item.tab === 'winners' ||
+      item.tab === 'gallery'
     ) {
       return isCoreMember(profile);
     }
+    // Everyone sees dashboard
     return item.tab === 'dashboard';
   });
 

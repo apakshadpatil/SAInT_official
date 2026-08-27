@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -11,7 +11,6 @@ import {
   MessageCircle,
   Phone,
   Search,
-  UserPlus,
   X,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -182,7 +181,7 @@ export default function SupportPage() {
         authorId: profile?.uid || 'system',
         authorName: actorName,
         authorRole: profile?.role || 'member',
-        authorPhoto: profile?.photoURL,
+        authorPhoto: profile?.photoURL ?? undefined,
         message: newComment.trim(),
         isInternal: canManage ? internalNote : false,
       });
