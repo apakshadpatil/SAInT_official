@@ -28,9 +28,41 @@ import {
 } from '../../utils/certificateGenerator';
 import {
   sendTeamCertificates,
+  sendSingleTeamMemberCertificate,
   type BulkCertificateProgress,
 } from '../../services/emailService';
 import { updateTeamArrivalStatus } from '../../services/eventService';
+
+/**
+ * Robust helper to resolve a certificate URL for any team member or lead.
+ */
+export function getTeamMemberCertUrl(
+  team: EventTeam,
+  member: { name?: string; email?: string; certificateUrl?: string }
+): string {
+  if (member.certificateUrl) return member.certificateUrl;
+  if (!team.memberCertificateUrls) return '';
+
+  const urls = team.memberCertificateUrls;
+  const cleanEmail = (member.email || '').trim();
+  const lowerEmail = cleanEmail.toLowerCase();
+  const cleanName = (member.name || '').trim();
+
+  return (
+    (cleanEmail && urls[cleanEmail]) ||
+    (lowerEmail && urls[lowerEmail]) ||
+    (cleanName && urls[cleanName]) ||
+    (member.name && urls[member.name]) ||
+    ''
+  );
+}
+
+export function teamHasAnyCertificates(team: EventTeam): boolean {
+  if (team.certificatesSent) return true;
+  if (team.memberCertificateUrls && Object.keys(team.memberCertificateUrls).length > 0) return true;
+  if (team.members && team.members.some((m) => Boolean(m.certificateUrl))) return true;
+  return false;
+}
 
 interface TeamRegistrationTabProps {
   event: EventRecord;
@@ -73,6 +105,7 @@ export default function TeamRegistrationTab({
   // Processing state for certificates / ZIP
   const [processingTeamId, setProcessingTeamId] = useState<string | null>(null);
   const [teamProgress, setTeamProgress] = useState<BulkCertificateProgress | null>(null);
+  const [issuingMemberKey, setIssuingMemberKey] = useState<string | null>(null);
   const [downloadingAllZip, setDownloadingAllZip] = useState(false);
   const [allZipProgress, setAllZipProgress] = useState<{ current: number; total: number; name: string } | null>(null);
 
@@ -82,7 +115,7 @@ export default function TeamRegistrationTab({
   const totalTeams = teams.length;
   const arrivedTeams = teams.filter((t) => t.arrived).length;
   const totalMembersCount = teams.reduce((acc, t) => acc + 1 + (t.members?.length || 0), 0);
-  const teamsWithCerts = teams.filter((t) => t.certificatesSent || (t.memberCertificateUrls && Object.keys(t.memberCertificateUrls).length > 0)).length;
+  const teamsWithCerts = teams.filter((t) => teamHasAnyCertificates(t)).length;
 
   // Filtered list
   const filteredTeams = useMemo(() => {
@@ -98,7 +131,7 @@ export default function TeamRegistrationTab({
       const matchesArrival =
         filterArrival === 'all' ? true : filterArrival === 'arrived' ? t.arrived : !t.arrived;
 
-      const hasCert = Boolean(t.certificatesSent || (t.memberCertificateUrls && Object.keys(t.memberCertificateUrls).length > 0));
+      const hasCert = teamHasAnyCertificates(t);
       const matchesCerts =
         filterCerts === 'all' ? true : filterCerts === 'issued' ? hasCert : !hasCert;
 
@@ -162,10 +195,21 @@ export default function TeamRegistrationTab({
 
     setSavingTeam(true);
     try {
-      const cleanMembers = members.filter((m) => m.name.trim().length > 0);
-
       let updatedTeams: EventTeam[];
       if (editingTeamId) {
+        const existingTeam = teams.find((t) => t.id === editingTeamId);
+        const cleanMembers = members
+          .filter((m) => m.name.trim().length > 0)
+          .map((m) => {
+            const existingMem = existingTeam?.members?.find(
+              (em) => (m.email && em.email === m.email) || m.name === em.name
+            );
+            return {
+              ...m,
+              certificateUrl: m.certificateUrl || existingMem?.certificateUrl || (existingTeam ? getTeamMemberCertUrl(existingTeam, m) : undefined),
+            };
+          });
+
         updatedTeams = teams.map((t) =>
           t.id === editingTeamId
             ? {
@@ -181,11 +225,14 @@ export default function TeamRegistrationTab({
                 notes: notes.trim(),
                 memberCount: cleanMembers.length + 1,
                 members: cleanMembers,
+                memberCertificateUrls: t.memberCertificateUrls,
+                certificatesSent: t.certificatesSent,
               }
             : t
         );
         showToast(`Team "${teamName}" updated successfully!`, 'success');
       } else {
+        const cleanMembers = members.filter((m) => m.name.trim().length > 0);
         const newTeam: EventTeam = {
           id: `team_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           eventId: event.id,
@@ -265,6 +312,10 @@ export default function TeamRegistrationTab({
       const result = await sendTeamCertificates(event, t, event.certificateConfig, (prog) => {
         setTeamProgress(prog);
       });
+
+      // Synchronize parent state immediately so UI updates without page reload
+      await onUpdate({ teams: result.updatedTeams });
+
       showToast(`Generated & processed credentials for ${result.successful} members of "${t.teamName}"!`, 'success');
     } catch (err: any) {
       console.error('Team certificate issuance error:', err);
@@ -272,6 +323,33 @@ export default function TeamRegistrationTab({
     } finally {
       setProcessingTeamId(null);
       setTeamProgress(null);
+    }
+  };
+
+  // Generate & Dispatch Single Member Certificate
+  const handleIssueSingleMember = async (
+    team: EventTeam,
+    member: TeamMemberDetail,
+    isLead: boolean = false
+  ) => {
+    if (!hasTemplate) {
+      showToast('Please upload a certificate template in the Certificates tab first', 'error');
+      return;
+    }
+
+    const memberKey = `${team.id}_${isLead ? 'lead' : 'member'}_${member.name}_${member.email || ''}`;
+    setIssuingMemberKey(memberKey);
+
+    try {
+      showToast(`Generating certificate for ${member.name}...`, 'info');
+      const result = await sendSingleTeamMemberCertificate(event, team, member, event.certificateConfig);
+      await onUpdate({ teams: result.updatedTeams });
+      showToast(`Certificate generated and assigned for "${member.name}"!`, 'success');
+    } catch (err: any) {
+      console.error('Single member certificate issuance error:', err);
+      showToast(err.message || 'Failed to generate certificate', 'error');
+    } finally {
+      setIssuingMemberKey(null);
     }
   };
 
@@ -366,7 +444,7 @@ export default function TeamRegistrationTab({
     ];
 
     teams.forEach((t) => {
-      const leadCert = t.memberCertificateUrls?.[t.leadEmail || t.leadName] || '';
+      const leadCert = getTeamMemberCertUrl(t, { name: t.leadName, email: t.leadEmail });
       // Lead Row
       rows.push([
         t.teamName,
@@ -386,7 +464,7 @@ export default function TeamRegistrationTab({
 
       // Member Rows
       (t.members || []).forEach((m) => {
-        const memCert = t.memberCertificateUrls?.[m.email || m.name] || '';
+        const memCert = getTeamMemberCertUrl(t, m);
         rows.push([
           t.teamName,
           'Member',
@@ -638,7 +716,11 @@ export default function TeamRegistrationTab({
             const isExpanded = expandedTeamId === team.id;
             const isProcessingThis = processingTeamId === team.id;
             const totalRoster = 1 + (team.members?.length || 0);
-            const certsCount = team.memberCertificateUrls ? Object.keys(team.memberCertificateUrls).length : 0;
+            const allTeamMembers = [
+              { name: team.leadName, email: team.leadEmail },
+              ...(team.members || []),
+            ];
+            const certsCount = allTeamMembers.filter((m) => Boolean(getTeamMemberCertUrl(team, m))).length;
 
             return (
               <div
@@ -839,24 +921,100 @@ export default function TeamRegistrationTab({
                               {team.college || team.department ? `${team.college || ''} ${team.department ? `(${team.department})` : ''}` : '—'}
                             </td>
                             <td className="py-2.5 text-right">
-                              {team.memberCertificateUrls?.[team.leadEmail || team.leadName] ? (
-                                <a
-                                  href={team.memberCertificateUrls[team.leadEmail || team.leadName]}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-xs text-blue-400 hover:underline"
-                                >
-                                  <ExternalLink className="w-3 h-3" /> View CDN
-                                </a>
-                              ) : (
-                                <span className="text-[11px] text-slate-500">Not Issued</span>
-                              )}
+                              {(() => {
+                                const leadCertUrl = getTeamMemberCertUrl(team, { name: team.leadName, email: team.leadEmail });
+                                const isIssuingLead = issuingMemberKey === `${team.id}_lead_${team.leadName}_${team.leadEmail || ''}`;
+
+                                if (leadCertUrl) {
+                                  return (
+                                    <div className="inline-flex items-center justify-end gap-2">
+                                      <a
+                                        href={leadCertUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 font-medium hover:underline bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/20 transition-colors"
+                                        title="Open public certificate image"
+                                      >
+                                        <ExternalLink className="w-3 h-3" /> View CDN
+                                      </a>
+                                      {canEdit && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleIssueSingleMember(
+                                              team,
+                                              {
+                                                name: team.leadName,
+                                                email: team.leadEmail,
+                                                phone: team.leadPhone,
+                                                college: team.college,
+                                                department: team.department,
+                                              },
+                                              true
+                                            )
+                                          }
+                                          disabled={Boolean(issuingMemberKey) || !hasTemplate}
+                                          className="text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer disabled:opacity-40"
+                                          title="Re-generate and refresh certificate"
+                                        >
+                                          {isIssuingLead ? (
+                                            <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
+                                          ) : (
+                                            'Re-issue'
+                                          )}
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div className="inline-flex items-center justify-end gap-2">
+                                    <span className="text-[11px] text-slate-500">Not Issued</span>
+                                    {canEdit && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleIssueSingleMember(
+                                            team,
+                                            {
+                                              name: team.leadName,
+                                              email: team.leadEmail,
+                                              phone: team.leadPhone,
+                                              college: team.college,
+                                              department: team.department,
+                                            },
+                                            true
+                                          )
+                                        }
+                                        disabled={Boolean(issuingMemberKey) || !hasTemplate}
+                                        className="inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 cursor-pointer bg-amber-500/10 hover:bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/20 disabled:opacity-40 transition-colors"
+                                        title="Generate certificate for Team Leader"
+                                      >
+                                        {isIssuingLead ? (
+                                          <>
+                                            <RefreshCw className="w-3 h-3 animate-spin" />
+                                            <span>Issuing...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Award className="w-3 h-3" />
+                                            <span>Generate</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
                           </tr>
 
                           {/* Member Rows */}
                           {(team.members || []).map((m, idx) => {
-                            const certUrl = team.memberCertificateUrls?.[m.email || m.name];
+                            const certUrl = getTeamMemberCertUrl(team, m);
+                            const isIssuingMem = issuingMemberKey === `${team.id}_member_${m.name}_${m.email || ''}`;
+
                             return (
                               <tr key={idx} className="hover:bg-slate-800/20">
                                 <td className="py-2.5">
@@ -876,16 +1034,57 @@ export default function TeamRegistrationTab({
                                 </td>
                                 <td className="py-2.5 text-right">
                                   {certUrl ? (
-                                    <a
-                                      href={certUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 text-xs text-blue-400 hover:underline"
-                                    >
-                                      <ExternalLink className="w-3 h-3" /> View CDN
-                                    </a>
+                                    <div className="inline-flex items-center justify-end gap-2">
+                                      <a
+                                        href={certUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 font-medium hover:underline bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/20 transition-colors"
+                                        title="Open public certificate image"
+                                      >
+                                        <ExternalLink className="w-3 h-3" /> View CDN
+                                      </a>
+                                      {canEdit && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleIssueSingleMember(team, m, false)}
+                                          disabled={Boolean(issuingMemberKey) || !hasTemplate}
+                                          className="text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer disabled:opacity-40"
+                                          title="Re-generate and refresh certificate"
+                                        >
+                                          {isIssuingMem ? (
+                                            <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
+                                          ) : (
+                                            'Re-issue'
+                                          )}
+                                        </button>
+                                      )}
+                                    </div>
                                   ) : (
-                                    <span className="text-[11px] text-slate-500">Not Issued</span>
+                                    <div className="inline-flex items-center justify-end gap-2">
+                                      <span className="text-[11px] text-slate-500">Not Issued</span>
+                                      {canEdit && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleIssueSingleMember(team, m, false)}
+                                          disabled={Boolean(issuingMemberKey) || !hasTemplate}
+                                          className="inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 cursor-pointer bg-amber-500/10 hover:bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/20 disabled:opacity-40 transition-colors"
+                                          title="Generate certificate for this member"
+                                        >
+                                          {isIssuingMem ? (
+                                            <>
+                                              <RefreshCw className="w-3 h-3 animate-spin" />
+                                              <span>Issuing...</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Award className="w-3 h-3" />
+                                              <span>Generate</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      )}
+                                    </div>
                                   )}
                                 </td>
                               </tr>

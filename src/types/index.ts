@@ -15,6 +15,7 @@ export interface SidebarPermissions {
   tasks: boolean;
   explore: boolean;
   qrScanner: boolean;
+  sponsors?: boolean;
   profile: boolean;
   supportTickets?: boolean;
   analytics: boolean;
@@ -285,6 +286,14 @@ export interface GalleryImage {
   uploadedByName: string;
 }
 
+export interface Sponsor {
+  id: string;
+  logoUrl: string;
+  websiteUrl?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface EventWinner {
   id: string;
   eventId: string;
@@ -306,6 +315,7 @@ export interface TeamMemberDetail {
   phone?: string;
   college?: string;
   department?: string;
+  certificateUrl?: string;
 }
 
 export interface EventTeam {
@@ -635,6 +645,7 @@ export const DEFAULT_MEMBER_PERMISSIONS: SidebarPermissions = {
   tasks: true,
   explore: true,
   qrScanner: true,
+  sponsors: true,
   profile: true,
   supportTickets: true,
   analytics: false,
@@ -680,6 +691,7 @@ export const DEFAULT_SUPERADMIN_PERMISSIONS: SidebarPermissions = {
   tasks: true,
   explore: true,
   qrScanner: true,
+  sponsors: true,
   profile: true,
   supportTickets: true,
   analytics: true,

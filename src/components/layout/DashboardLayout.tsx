@@ -4,7 +4,7 @@ import {
   LogOut, Moon, Sun, BarChart3, FileText, Wallet, PieChart,
   Settings, Shield, UserCheck, KeyRound, Menu, X, ClipboardList,
   Upload, Activity, FileCheck, Briefcase, Trophy, Archive, ImagePlus,
-  ChevronRight, Zap, Database, Server, Globe, LifeBuoy,
+  ChevronRight, Zap, Database, Server, Globe, LifeBuoy, Handshake,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -41,6 +41,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/dashboard/tasks',                  label: 'Tasks',                 icon: ListTodo,        tab: 'tasks',              group: 'main' },
   { to: '/dashboard/explore',                label: 'Explore',               icon: Users,           tab: 'explore',            group: 'main' },
   { to: '/dashboard/qr-scanner',            label: 'QR Scanner',            icon: QrCode,          tab: 'qrScanner',          group: 'main' },
+  { to: '/dashboard/sponsors',              label: 'Sponsors',              icon: Handshake,       tab: 'sponsors',           group: 'main' },
   { to: '/dashboard/analytics',             label: 'Analytics Hub',         icon: BarChart3,       tab: 'analytics',          group: 'management' },
   { to: '/dashboard/participants',          label: 'Manage Participants',   icon: UserCheck,       tab: 'participants',       group: 'management', superOnly: true },
   { to: '/dashboard/teams',                 label: 'Manage Teams',          icon: Users,           tab: 'teams',              group: 'management' },

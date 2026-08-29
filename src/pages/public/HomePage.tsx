@@ -8,6 +8,7 @@ import { getStoredTotalVisitCount, subscribeTotalVisitCount } from '../../servic
 import type { EventRecord } from '../../types';
 import Lightning from '../../components/animation/Lightning';
 import { EventCardSkeleton } from '../../components/ui/skeleton';
+import SponsorsSection from '../../components/ui/SponsorsSection';
 
 function AnimatedStatisticValue({ value, loading }: { value: number; loading: boolean }) {
   const [displayValue, setDisplayValue] = useState(0);
@@ -281,6 +282,9 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* Sponsors Section — Infinite Horizontal Logo Marquee */}
+      <SponsorsSection />
 
       {/* Upcoming Events — sourced from dashboard events collection */}
       <section id="events" className="py-20 bg-gradient-to-b from-white/70 to-blue-50/40">

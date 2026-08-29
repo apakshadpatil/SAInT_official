@@ -1385,3 +1385,34 @@ main > *,
   );
 }
 
+/* ─── Seamless Infinite Sponsors Marquee ─── */
+@keyframes marqueeScroll {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.sponsors-marquee-track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: marqueeScroll 28s linear infinite;
+}
+
+.sponsors-marquee-track:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sponsors-marquee-track {
+    animation: none;
+    width: 100%;
+    overflow-x: auto;
+    justify-content: center;
+  }
+}
+
+

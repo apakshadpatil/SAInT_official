@@ -10,14 +10,14 @@ export function parseQRPayload(text: string): ParsedQRPayload | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  // 1. Try JSON payload format
+  // 1. Try JSON payload format (Primary SAInT QR format)
   try {
     const data = JSON.parse(trimmed);
-    if (data && (data.ticketId || data.ticketNumber)) {
+    if (data && typeof data === 'object' && (data.ticketId || data.ticketNumber || data.id)) {
       return {
-        eventId: data.eventId || '',
-        ticketId: data.ticketId || data.id || '',
-        ticketNumber: data.ticketNumber || data.ticketId || '',
+        eventId: typeof data.eventId === 'string' ? data.eventId.trim() : '',
+        ticketId: typeof data.ticketId === 'string' ? data.ticketId.trim() : (typeof data.id === 'string' ? data.id.trim() : ''),
+        ticketNumber: typeof data.ticketNumber === 'string' ? data.ticketNumber.trim().toUpperCase() : (typeof data.ticketId === 'string' ? data.ticketId.trim().toUpperCase() : ''),
       };
     }
   } catch {
@@ -26,33 +26,33 @@ export function parseQRPayload(text: string): ParsedQRPayload | null {
 
   // 2. Try Pipe delimiter: eventId|ticketId|ticketNumber
   if (trimmed.includes('|')) {
-    const [eventId, ticketId, ticketNumber] = trimmed.split('|');
-    if (ticketId || eventId) {
-      return {
-        eventId: eventId || '',
-        ticketId: ticketId || eventId,
-        ticketNumber: ticketNumber || ticketId || eventId,
-      };
-    }
-  }
-
-  // 3. Try Colon delimiter: eventId:ticketId:ticketNumber or ticketId:ticketNumber:guestName
-  if (trimmed.includes(':')) {
-    const parts = trimmed.split(':');
+    const parts = trimmed.split('|').map((p) => p.trim());
     if (parts.length >= 2) {
       return {
         eventId: parts[0] || '',
         ticketId: parts[1] || parts[0],
-        ticketNumber: parts[2] || parts[1] || parts[0],
+        ticketNumber: (parts[2] || parts[1] || parts[0]).toUpperCase(),
       };
     }
   }
 
-  // 4. Plain ST- ticket number or ticket ID
-  if (/^ST-[A-Z0-9]+$/i.test(trimmed) || trimmed.length > 5) {
+  // 3. Try Colon delimiter (exclude URLs like http:// or https://)
+  if (trimmed.includes(':') && !trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    const parts = trimmed.split(':').map((p) => p.trim());
+    if (parts.length >= 2 && !parts.some((p) => p.includes('/'))) {
+      return {
+        eventId: parts[0] || '',
+        ticketId: parts[1] || parts[0],
+        ticketNumber: (parts[2] || parts[1] || parts[0]).toUpperCase(),
+      };
+    }
+  }
+
+  // 4. Plain ST- ticket number or alphanumerical ticket ID
+  if (/^ST-[A-Z0-9]+$/i.test(trimmed)) {
     return {
       eventId: '',
-      ticketId: trimmed,
+      ticketId: '',
       ticketNumber: trimmed.toUpperCase(),
     };
   }

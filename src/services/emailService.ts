@@ -1,4 +1,4 @@
-import type { EventRecord, EventParticipant, CertificateConfig, EventTeam } from '../types';
+import type { EventRecord, EventParticipant, CertificateConfig, EventTeam, TeamMemberDetail } from '../types';
 import { generateAndUploadCertificate, generateAndUploadTeamMemberCertificate } from '../utils/certificateGenerator';
 import { updateEvent } from './eventService';
 
@@ -8,6 +8,7 @@ export interface EmailPayload {
   subject: string;
   body: string;
   html?: string;
+
   attachmentUrls?: string[];
 }
 
@@ -478,10 +479,11 @@ export async function sendTeamCertificates(
   successful: number;
   failed: number;
   memberUrls: Record<string, string>;
+  updatedTeams: EventTeam[];
 }> {
-  const allMembers: Array<{ name: string; email: string; phone?: string }> = [
-    { name: team.leadName, email: team.leadEmail, phone: team.leadPhone },
-    ...(team.members || []).map((m) => ({ name: m.name, email: m.email || '', phone: m.phone })),
+  const allMembers: Array<TeamMemberDetail & { isLead?: boolean }> = [
+    { name: team.leadName, email: team.leadEmail, phone: team.leadPhone, college: team.college, department: team.department, isLead: true },
+    ...(team.members || []).map((m) => ({ ...m, isLead: false })),
   ];
 
   const total = allMembers.length;
@@ -503,8 +505,19 @@ export async function sendTeamCertificates(
         });
       }
 
-      // Generate & Upload certificate for this member with team name
-      let certUrl = memberUrls[member.email || member.name];
+      // Check if certificate URL already exists for this member
+      const cleanEmail = (member.email || '').trim();
+      const lowerEmail = cleanEmail.toLowerCase();
+      const cleanName = (member.name || '').trim();
+
+      let certUrl =
+        member.certificateUrl ||
+        (cleanEmail ? memberUrls[cleanEmail] : undefined) ||
+        (lowerEmail ? memberUrls[lowerEmail] : undefined) ||
+        (cleanName ? memberUrls[cleanName] : undefined) ||
+        memberUrls[member.name];
+
+      // If certificate not yet generated, generate and upload to Supabase Storage
       if (!certUrl) {
         if (onProgress) {
           onProgress({
@@ -515,10 +528,21 @@ export async function sendTeamCertificates(
           });
         }
         certUrl = await generateAndUploadTeamMemberCertificate(event, team, member, customConfig);
-        memberUrls[member.email || member.name] = certUrl;
       }
 
-      // If member has email, attempt direct email dispatch
+      // Map certUrl across all possible lookup keys for robust retrieval
+      if (cleanEmail) {
+        memberUrls[cleanEmail] = certUrl;
+        memberUrls[lowerEmail] = certUrl;
+      }
+      if (cleanName) {
+        memberUrls[cleanName] = certUrl;
+      }
+      if (member.name) {
+        memberUrls[member.name] = certUrl;
+      }
+
+      // If member has a valid email, attempt direct email dispatch
       if (validateEmail(member.email)) {
         if (onProgress) {
           onProgress({
@@ -534,7 +558,7 @@ export async function sendTeamCertificates(
           certUrl
         );
         await sendDirectEmail({
-          to: member.email,
+          to: member.email!,
           subject,
           body: textBody,
           html: htmlBody,
@@ -568,11 +592,30 @@ export async function sendTeamCertificates(
     }
   }
 
+  // Update member-level certificateUrl on team members array
+  const updatedMembers: TeamMemberDetail[] = (team.members || []).map((m) => {
+    const cleanEmail = (m.email || '').trim();
+    const lowerEmail = cleanEmail.toLowerCase();
+    const cleanName = (m.name || '').trim();
+    const mCert =
+      m.certificateUrl ||
+      (cleanEmail ? memberUrls[cleanEmail] : undefined) ||
+      (lowerEmail ? memberUrls[lowerEmail] : undefined) ||
+      (cleanName ? memberUrls[cleanName] : undefined) ||
+      memberUrls[m.name];
+
+    return mCert ? { ...m, certificateUrl: mCert } : m;
+  });
+
   // Update team record inside event
   const updatedTeams = (event.teams || []).map((t) => {
-    if (t.id === team.id) {
+    const isTarget =
+      t.id === team.id ||
+      (team.leadEmail && t.leadEmail?.trim().toLowerCase() === team.leadEmail.trim().toLowerCase());
+    if (isTarget) {
       return {
         ...t,
+        members: updatedMembers,
         memberCertificateUrls: memberUrls,
         certificatesSent: true,
       };
@@ -587,6 +630,100 @@ export async function sendTeamCertificates(
     successful,
     failed,
     memberUrls,
+    updatedTeams,
+  };
+}
+
+/**
+ * Generate and assign certificate for a single team member or team lead.
+ */
+export async function sendSingleTeamMemberCertificate(
+  event: EventRecord,
+  team: EventTeam,
+  member: TeamMemberDetail,
+  customConfig?: Partial<CertificateConfig>
+): Promise<{
+  success: boolean;
+  certificateUrl: string;
+  memberUrls: Record<string, string>;
+  updatedTeams: EventTeam[];
+}> {
+  const memberUrls: Record<string, string> = { ...(team.memberCertificateUrls || {}) };
+  const cleanEmail = (member.email || '').trim();
+  const lowerEmail = cleanEmail.toLowerCase();
+  const cleanName = (member.name || '').trim();
+
+  let certUrl =
+    member.certificateUrl ||
+    (cleanEmail ? memberUrls[cleanEmail] : undefined) ||
+    (lowerEmail ? memberUrls[lowerEmail] : undefined) ||
+    (cleanName ? memberUrls[cleanName] : undefined) ||
+    memberUrls[member.name];
+
+  if (!certUrl) {
+    certUrl = await generateAndUploadTeamMemberCertificate(event, team, member, customConfig);
+  }
+
+  if (cleanEmail) {
+    memberUrls[cleanEmail] = certUrl;
+    memberUrls[lowerEmail] = certUrl;
+  }
+  if (cleanName) {
+    memberUrls[cleanName] = certUrl;
+  }
+  if (member.name) {
+    memberUrls[member.name] = certUrl;
+  }
+
+  // Attempt direct email dispatch if email is present
+  if (validateEmail(member.email)) {
+    try {
+      const { subject, textBody, htmlBody } = buildCertificateEmailContent(
+        event,
+        { name: member.name, email: member.email },
+        certUrl
+      );
+      await sendDirectEmail({
+        to: member.email!,
+        subject,
+        body: textBody,
+        html: htmlBody,
+        attachmentUrls: [certUrl],
+      });
+    } catch (e) {
+      console.warn('[sendSingleTeamMemberCertificate] Email dispatch failed non-fatally:', e);
+    }
+  }
+
+  const updatedMembers: TeamMemberDetail[] = (team.members || []).map((m) => {
+    const mEmail = (m.email || '').trim().toLowerCase();
+    const mName = (m.name || '').trim();
+    const isThisMember = (lowerEmail && mEmail === lowerEmail) || (cleanName && mName === cleanName);
+    return isThisMember ? { ...m, certificateUrl: certUrl } : m;
+  });
+
+  const updatedTeams = (event.teams || []).map((t) => {
+    const isTarget =
+      t.id === team.id ||
+      (team.leadEmail && t.leadEmail?.trim().toLowerCase() === team.leadEmail.trim().toLowerCase());
+    if (isTarget) {
+      return {
+        ...t,
+        members: updatedMembers,
+        memberCertificateUrls: memberUrls,
+        certificatesSent: true,
+      };
+    }
+    return t;
+  });
+
+  await updateEvent(event.id, { teams: updatedTeams });
+
+  return {
+    success: true,
+    certificateUrl: certUrl,
+    memberUrls,
+    updatedTeams,
   };
 }
 

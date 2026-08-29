@@ -527,55 +527,99 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
   // Construct merged teams
   const existingTeams = [...(event.teams || [])];
   const teamMap = new Map<string, EventTeam>();
-  existingTeams.forEach((t) => teamMap.set(t.id || t.leadEmail?.toLowerCase(), t));
+
+  // Index existing teams by both their ID and lead email
+  existingTeams.forEach((t) => {
+    if (t.id) teamMap.set(t.id, t);
+    if (t.leadEmail) teamMap.set(t.leadEmail.trim().toLowerCase(), t);
+  });
 
   tickets
     .filter((t) => (t.teamMembers && t.teamMembers.length > 0) || (t.teamSize && t.teamSize > 1) || t.teamName)
     .forEach((ticket) => {
       const teamId = `team_${ticket.id}`;
-      const leadEmail = (ticket.guestEmail || '').toLowerCase();
+      const leadEmail = (ticket.guestEmail || '').trim().toLowerCase();
       const rawTeamName =
         ticket.teamName ||
         ticket.customResponses?.teamName ||
         ticket.customResponses?.['Team Name'] ||
         `Team ${ticket.guestName}`;
 
-      const newTeam: EventTeam = {
-        id: teamId,
-        eventId: ticket.eventId,
-        teamName: rawTeamName.trim(),
-        leadName: ticket.guestName,
-        leadEmail,
-        leadPhone: ticket.guestPhone,
-        college: ticket.college,
-        department: ticket.department,
-        memberCount: (ticket.teamMembers?.length || 0) + 1,
-        members: ticket.teamMembers || [],
-        tierId: ticket.tierId,
-        tierName: ticket.tierName,
-        transactionId: ticket.transactionId,
-        customResponses: ticket.customResponses,
-        registeredAt: ticket.createdAt,
-        arrived: Boolean(ticket.checkedIn),
-        arrivedAt: ticket.checkedInAt,
+      // Find existing team by teamId, ticketId, transactionId, or leadEmail
+      const existing =
+        teamMap.get(teamId) ||
+        (leadEmail ? teamMap.get(leadEmail) : undefined) ||
+        existingTeams.find(
+          (t) =>
+            t.id === teamId ||
+            t.id === ticket.id ||
+            t.transactionId === ticket.transactionId ||
+            (leadEmail && t.leadEmail?.trim().toLowerCase() === leadEmail)
+        );
+
+      const memberCertificateUrls = {
+        ...(existing?.memberCertificateUrls || {}),
       };
 
-      if (leadEmail && teamMap.has(leadEmail)) {
-        const existing = teamMap.get(leadEmail)!;
-        teamMap.set(leadEmail, {
-          ...newTeam,
-          memberCertificateUrls: existing.memberCertificateUrls,
-          certificatesSent: existing.certificatesSent,
-          batchId: existing.batchId,
-          batchName: existing.batchName,
-          notes: existing.notes,
-        });
-      } else {
-        teamMap.set(teamId, newTeam);
+      // Merge members so individual certificateUrl and contact fields are preserved
+      const incomingMembers = ticket.teamMembers || [];
+      const existingMembers = existing?.members || [];
+      const mergedMembers: TeamMemberDetail[] = incomingMembers.map((m, idx) => {
+        const existingM = existingMembers.find(
+          (em) =>
+            (m.email && em.email && m.email.trim().toLowerCase() === em.email.trim().toLowerCase()) ||
+            (m.name && em.name && m.name.trim().toLowerCase() === em.name.trim().toLowerCase()) ||
+            idx === existingMembers.indexOf(em)
+        );
+        const certFromMap =
+          (m.email && memberCertificateUrls[m.email]) ||
+          (m.email && memberCertificateUrls[m.email.toLowerCase()]) ||
+          (m.name && memberCertificateUrls[m.name]) ||
+          (m.name && memberCertificateUrls[m.name.trim()]);
+
+        return {
+          ...m,
+          certificateUrl: m.certificateUrl || existingM?.certificateUrl || certFromMap || undefined,
+        };
+      });
+
+      const newTeam: EventTeam = {
+        id: existing?.id || teamId,
+        eventId: ticket.eventId,
+        teamName: (existing?.teamName && existing.teamName !== `Team ${ticket.guestName}` ? existing.teamName : rawTeamName).trim(),
+        leadName: existing?.leadName || ticket.guestName,
+        leadEmail: existing?.leadEmail || leadEmail,
+        leadPhone: existing?.leadPhone || ticket.guestPhone,
+        college: existing?.college || ticket.college,
+        department: existing?.department || ticket.department,
+        memberCount: mergedMembers.length + 1,
+        members: mergedMembers,
+        tierId: existing?.tierId || ticket.tierId,
+        tierName: existing?.tierName || ticket.tierName,
+        transactionId: existing?.transactionId || ticket.transactionId,
+        customResponses: existing?.customResponses || ticket.customResponses,
+        registeredAt: existing?.registeredAt || ticket.createdAt,
+        arrived: existing?.arrived ?? Boolean(ticket.checkedIn),
+        arrivedAt: existing?.arrivedAt || ticket.checkedInAt,
+        memberCertificateUrls,
+        certificatesSent: existing?.certificatesSent ?? (Object.keys(memberCertificateUrls).length > 0),
+        batchId: existing?.batchId,
+        batchName: existing?.batchName,
+        notes: existing?.notes,
+      };
+
+      teamMap.set(newTeam.id, newTeam);
+      if (newTeam.leadEmail) {
+        teamMap.set(newTeam.leadEmail.toLowerCase(), newTeam);
       }
     });
 
-  const mergedTeams = Array.from(teamMap.values());
+  // Deduplicate by team.id
+  const finalTeamsMap = new Map<string, EventTeam>();
+  teamMap.forEach((team) => {
+    finalTeamsMap.set(team.id, team);
+  });
+  const mergedTeams = Array.from(finalTeamsMap.values());
 
   return {
     ...event,
@@ -740,70 +784,52 @@ export function subscribePublishedUpcomingEvents(callback: (events: EventRecord[
 }
 
 export async function checkInEventTicket(eventId: string, rawInput: string, scannerUid: string) {
-  const cleanInput = rawInput.trim();
-  if (!cleanInput) throw new Error('Invalid ticket QR code or ticket number');
-  const parsed = parseQRPayload(cleanInput);
-
-  const searchTicketId = parsed?.ticketId || cleanInput;
-  const searchTicketNumber = (parsed?.ticketNumber || cleanInput).toUpperCase();
-
-  // 1. Try direct ticket doc path first if we have a ticketId
-  if (searchTicketId) {
-    try {
-      const ticketRef = doc(db, 'events', eventId, 'tickets', searchTicketId);
-      const ticketSnap = await getDoc(ticketRef);
-      if (ticketSnap.exists()) {
-        return await checkInTicket(ticketRef, scannerUid);
-      }
-    } catch {
-      // Continue to search below
-    }
-  }
-
-  // 2. Search tickets in this event's ticket subcollection
-  const eventTicketsSnap = await getDocs(collection(db, 'events', eventId, 'tickets'));
-  const foundDoc = eventTicketsSnap.docs.find((d) => {
-    const t = d.data() as EventTicket;
-    return (
-      d.id === searchTicketId ||
-      t.ticketNumber?.toUpperCase() === searchTicketNumber ||
-      t.ticketNumber?.toUpperCase() === `ST-${searchTicketNumber}` ||
-      t.qrPayload === cleanInput
-    );
-  });
-
-  if (foundDoc) {
-    return checkInTicket(foundDoc.ref, scannerUid);
-  }
-
-  // 3. Fallback: global search
-  return checkInByTicketNumberOrId(cleanInput, scannerUid);
+  return checkInByQRPayload(rawInput, scannerUid, eventId);
 }
 
-export async function checkInByQRPayload(qrText: string, scannerUid: string) {
-  const parsed = parseQRPayload(qrText);
+export async function checkInByQRPayload(qrText: string, scannerUid: string, targetEventId?: string) {
+  const cleanText = qrText.trim();
+  if (!cleanText) {
+    throw new Error('Invalid ticket QR code or ticket number');
+  }
 
+  const parsed = parseQRPayload(cleanText);
+
+  // 1. If parsed has eventId and ticketId, try direct ticket document fetch
   if (parsed && parsed.eventId && parsed.ticketId) {
+    // If targetEventId is provided and does not match QR's eventId
+    if (targetEventId && parsed.eventId !== targetEventId) {
+      const ticketEvent = await getEvent(parsed.eventId);
+      throw new Error(`This ticket is for "${ticketEvent?.title || 'another event'}", not for the selected event.`);
+    }
+
     try {
       const ticketRef = doc(db, 'events', parsed.eventId, 'tickets', parsed.ticketId);
       const ticketSnap = await getDoc(ticketRef);
       if (ticketSnap.exists()) {
-        return await checkInTicket(ticketRef, scannerUid);
+        return await checkInTicket(ticketRef, scannerUid, targetEventId);
       }
-    } catch {
-      // Fallback to search below
+    } catch (err) {
+      // Re-throw critical assertion errors immediately without falling back to slow search
+      if (err instanceof Error && (
+        err.message.includes('already') ||
+        err.message.includes('not for the selected event') ||
+        err.message.includes('cancelled')
+      )) {
+        throw err;
+      }
     }
   }
 
-  const searchKey = parsed?.ticketNumber || parsed?.ticketId || qrText.trim();
-  return checkInByTicketNumberOrId(searchKey, scannerUid);
+  const searchKey = parsed?.ticketNumber || parsed?.ticketId || cleanText;
+  return checkInByTicketNumberOrId(searchKey, scannerUid, targetEventId);
 }
 
-export async function checkInByTicketNumber(ticketNumber: string, scannerUid: string) {
-  return checkInByTicketNumberOrId(ticketNumber, scannerUid);
+export async function checkInByTicketNumber(ticketNumber: string, scannerUid: string, targetEventId?: string) {
+  return checkInByTicketNumberOrId(ticketNumber, scannerUid, targetEventId);
 }
 
-export async function checkInByTicketNumberOrId(inputStr: string, scannerUid: string) {
+export async function checkInByTicketNumberOrId(inputStr: string, scannerUid: string, targetEventId?: string) {
   const cleanInput = inputStr.trim();
   if (!cleanInput) {
     throw new Error('Please enter or scan a valid ticket number');
@@ -811,7 +837,30 @@ export async function checkInByTicketNumberOrId(inputStr: string, scannerUid: st
 
   const normalizedNumber = cleanInput.toUpperCase();
 
-  // Try collectionGroup query wrapped in try/catch (handles missing Firestore index gracefully)
+  // 1. If targetEventId is specified, search within that specific event's tickets first
+  if (targetEventId) {
+    try {
+      const ticketsCol = await getDocs(collection(db, 'events', targetEventId, 'tickets'));
+      const found = ticketsCol.docs.find((d) => {
+        const data = d.data() as EventTicket;
+        return (
+          d.id === cleanInput ||
+          data.ticketNumber?.toUpperCase() === normalizedNumber ||
+          data.ticketNumber?.toUpperCase() === `ST-${normalizedNumber}` ||
+          data.qrPayload === cleanInput
+        );
+      });
+      if (found) {
+        return await checkInTicket(found.ref, scannerUid, targetEventId);
+      }
+    } catch (err) {
+      if (err instanceof Error && (err.message.includes('already') || err.message.includes('not for the selected event'))) {
+        throw err;
+      }
+    }
+  }
+
+  // 2. CollectionGroup query across all events
   try {
     let ticketsSnap = await getDocs(
       query(collectionGroup(db, 'tickets'), where('ticketNumber', '==', normalizedNumber))
@@ -824,13 +873,19 @@ export async function checkInByTicketNumberOrId(inputStr: string, scannerUid: st
     }
 
     if (!ticketsSnap.empty) {
-      return await checkInTicket(ticketsSnap.docs[0].ref, scannerUid);
+      return await checkInTicket(ticketsSnap.docs[0].ref, scannerUid, targetEventId);
     }
   } catch (indexErr) {
+    if (indexErr instanceof Error && (
+      indexErr.message.includes('already') ||
+      indexErr.message.includes('not for the selected event')
+    )) {
+      throw indexErr;
+    }
     console.warn('CollectionGroup query failed (index missing in Firebase Console), falling back to event scan:', indexErr);
   }
 
-  // Reliable Fallback: Iterate events to find ticket without requiring collectionGroup index
+  // 3. Reliable Fallback: Iterate events to find ticket without requiring collectionGroup index
   const allEvents = await getDocs(collection(db, 'events'));
   for (const evDoc of allEvents.docs) {
     const ticketsCol = await getDocs(collection(db, 'events', evDoc.id, 'tickets'));
@@ -844,7 +899,7 @@ export async function checkInByTicketNumberOrId(inputStr: string, scannerUid: st
       );
     });
     if (found) {
-      return checkInTicket(found.ref, scannerUid);
+      return await checkInTicket(found.ref, scannerUid, targetEventId);
     }
   }
 
@@ -1030,7 +1085,7 @@ export async function updateTeamArrivalStatus(
   await updateEvent(eventId, { teams: updatedTeams });
 }
 
-async function checkInTicket(ticketRef: ReturnType<typeof doc>, scannerUid: string) {
+async function checkInTicket(ticketRef: ReturnType<typeof doc>, scannerUid: string, targetEventId?: string) {
   const ticketSnap = await getDoc(ticketRef);
   if (!ticketSnap.exists()) throw new Error('Ticket not found');
 
@@ -1038,7 +1093,24 @@ async function checkInTicket(ticketRef: ReturnType<typeof doc>, scannerUid: stri
   const event = await getEvent(ticket.eventId);
   if (!event) throw new Error('Event not found');
 
-  if (ticket.checkedIn) throw new Error(`Guest "${ticket.guestName}" has already been checked in`);
+  if (targetEventId && ticket.eventId !== targetEventId) {
+    throw new Error(`This ticket is for "${event.title}", not for the selected event.`);
+  }
+
+  if (event.status === 'cancelled') {
+    throw new Error(`Event "${event.title}" has been cancelled.`);
+  }
+
+  if (ticket.checkedIn) {
+    const formattedTime = ticket.checkedInAt
+      ? new Date(ticket.checkedInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+      : '';
+    const err = new Error(`Guest "${ticket.guestName}" has already been checked in${formattedTime ? ` at ${formattedTime}` : ''}.`);
+    (err as any).ticket = ticket;
+    (err as any).event = event;
+    (err as any).code = 'ALREADY_CHECKED_IN';
+    throw err;
+  }
 
   const checkedInAt = now();
   await updateDoc(

@@ -36,6 +36,7 @@ import AgendaPage from './pages/dashboard/AgendaPage';
 import TasksPage from './pages/dashboard/TasksPage';
 import ExplorePage from './pages/dashboard/ExplorePage';
 import QRScannerPage from './pages/dashboard/QRScannerPage';
+import SponsorsPage from './pages/dashboard/SponsorsPage';
 import AnalyticsPage from './pages/dashboard/AnalyticsPage';
 import ManageParticipantsPage from './pages/dashboard/ManageParticipantsPage';
 import TeamsPage from './pages/dashboard/TeamsPage';
@@ -143,6 +144,7 @@ export default function App() {
               <Route path="tasks" element={<TasksPage />} />
               <Route path="explore" element={<ExplorePage />} />
               <Route path="qr-scanner" element={<QRScannerPage />} />
+              <Route path="sponsors" element={<SponsorsPage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="participants" element={<ManageParticipantsPage />} />
               <Route path="teams" element={<TeamsPage />} />
