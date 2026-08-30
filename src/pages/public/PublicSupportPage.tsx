@@ -142,7 +142,7 @@ export default function PublicSupportPage() {
         email: email.trim(),
         userId: profile?.uid || `guest-${Date.now()}`,
         userRole: profile?.role === 'core' || profile?.role === 'superadmin' ? profile.role : 'member',
-        userPhotoURL: profile?.photoURL || undefined,
+        ...(profile?.photoURL ? { userPhotoURL: profile.photoURL } : {}),
         title: title.trim(),
         category,
         priority,

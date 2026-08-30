@@ -50,7 +50,18 @@ export async function createSupportTicket(data: {
   };
 
   const newTicket: Omit<SupportTicket, 'id'> = {
-    ...data,
+    name: data.name,
+    phone: data.phone,
+    email: data.email,
+    userId: data.userId,
+    userRole: data.userRole,
+    ...(typeof data.userPhotoURL === 'string' && data.userPhotoURL.trim() !== ''
+      ? { userPhotoURL: data.userPhotoURL.trim() }
+      : {}),
+    title: data.title,
+    category: data.category,
+    priority: data.priority,
+    description: data.description,
     ticketNumber,
     status: 'open',
     createdAt: timestamp,
@@ -265,7 +276,14 @@ export async function addTicketComment(
   const ticket = snap.data() as SupportTicket;
   const newComment: TicketComment = {
     id: `cmt_${Date.now()}`,
-    ...comment,
+    authorId: comment.authorId,
+    authorName: comment.authorName,
+    authorRole: comment.authorRole,
+    ...(typeof comment.authorPhoto === 'string' && comment.authorPhoto.trim() !== ''
+      ? { authorPhoto: comment.authorPhoto.trim() }
+      : {}),
+    message: comment.message,
+    ...(typeof comment.isInternal === 'boolean' ? { isInternal: comment.isInternal } : {}),
     createdAt: now(),
   };
 

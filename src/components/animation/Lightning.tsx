@@ -17,17 +17,36 @@ const Lightning = ({ hue = 125, xOffset = 0, speed = 1, intensity = 1.2, size = 
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const resizeCanvas = () => {
-      canvas.width = canvas.clientWidth || window.innerWidth;
-      canvas.height = canvas.clientHeight || window.innerHeight;
-    };
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-
     const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: false });
     if (!gl) {
       console.error('WebGL not supported');
       return;
+    }
+
+    let isVisible = true;
+
+    const resizeCanvas = () => {
+      const width = Math.floor(canvas.clientWidth || window.innerWidth);
+      const height = Math.floor(canvas.clientHeight || window.innerHeight);
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+      }
+    };
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas, { passive: true });
+
+    let observer: IntersectionObserver | null = null;
+    if ('IntersectionObserver' in window) {
+      observer = new IntersectionObserver(([entry]) => {
+        const wasVisible = isVisible;
+        isVisible = entry.isIntersecting;
+        if (!wasVisible && isVisible && !animationFrameId) {
+          animationFrameId = requestAnimationFrame(render);
+        }
+      }, { threshold: 0.05 });
+      observer.observe(canvas);
     }
 
     const vertexShaderSource = `
@@ -191,11 +210,13 @@ const Lightning = ({ hue = 125, xOffset = 0, speed = 1, intensity = 1.2, size = 
     const uSizeLocation = gl.getUniformLocation(program, 'uSize');
     const uBranchingLocation = gl.getUniformLocation(program, 'uBranching');
 
-    let animationFrameId: number;
+    let animationFrameId = 0;
     const startTime = performance.now();
     const render = () => {
-      resizeCanvas();
-      gl.viewport(0, 0, canvas.width, canvas.height);
+      if (!isVisible) {
+        animationFrameId = 0;
+        return;
+      }
       gl.uniform2f(iResolutionLocation, canvas.width, canvas.height);
       const currentTime = performance.now();
       gl.uniform1f(iTimeLocation, (currentTime - startTime) / 1000.0);
@@ -211,8 +232,9 @@ const Lightning = ({ hue = 125, xOffset = 0, speed = 1, intensity = 1.2, size = 
     animationFrameId = requestAnimationFrame(render);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', resizeCanvas);
+      if (observer) observer.disconnect();
     };
   }, [hue, xOffset, speed, intensity, size, branching]);
 

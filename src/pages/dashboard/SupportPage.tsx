@@ -181,7 +181,7 @@ export default function SupportPage() {
         authorId: profile?.uid || 'system',
         authorName: actorName,
         authorRole: profile?.role || 'member',
-        authorPhoto: profile?.photoURL ?? undefined,
+        ...(profile?.photoURL ? { authorPhoto: profile.photoURL } : {}),
         message: newComment.trim(),
         isInternal: canManage ? internalNote : false,
       });

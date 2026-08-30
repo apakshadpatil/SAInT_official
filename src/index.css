@@ -291,18 +291,18 @@ img, video, canvas {
   background-repeat: no-repeat !important;
 }
 
-/* Green Smoke Particle Keyframes */
+/* Green Smoke Particle Keyframes — GPU-composited transform & opacity */
 @keyframes doomsdaySmokeDrift {
   0% {
-    transform: translate(0, 0) scale(1) rotate(0deg);
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
     opacity: 0.45;
   }
   50% {
-    transform: translate(30px, -20px) scale(1.15) rotate(180deg);
+    transform: translate3d(30px, -20px, 0) scale(1.15) rotate(180deg);
     opacity: 0.75;
   }
   100% {
-    transform: translate(0, 0) scale(1) rotate(360deg);
+    transform: translate3d(0, 0, 0) scale(1) rotate(360deg);
     opacity: 0.45;
   }
 }
@@ -310,11 +310,11 @@ img, video, canvas {
 @keyframes doomsdaySmokePulse {
   0%, 100% {
     opacity: 0.5;
-    filter: blur(40px) brightness(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
   50% {
     opacity: 0.85;
-    filter: blur(55px) brightness(1.35);
+    transform: translate3d(15px, -10px, 0) scale(1.12);
   }
 }
 
@@ -324,6 +324,7 @@ img, video, canvas {
   pointer-events: none;
   overflow: hidden;
   z-index: 1;
+  contain: strict;
 }
 
 .smoke-cloud-1 {
@@ -332,8 +333,10 @@ img, video, canvas {
   left: 10%;
   width: 550px;
   height: 550px;
+  border-radius: 50%;
   background: radial-gradient(circle, rgba(34, 197, 94, 0.45) 0%, rgba(16, 185, 129, 0.2) 50%, transparent 70%);
   filter: blur(50px);
+  will-change: transform, opacity;
   animation: doomsdaySmokeDrift 18s ease-in-out infinite alternate;
 }
 
@@ -343,8 +346,10 @@ img, video, canvas {
   right: 5%;
   width: 650px;
   height: 650px;
+  border-radius: 50%;
   background: radial-gradient(circle, rgba(16, 185, 129, 0.4) 0%, rgba(5, 150, 105, 0.25) 50%, transparent 70%);
   filter: blur(60px);
+  will-change: transform, opacity;
   animation: doomsdaySmokePulse 12s ease-in-out infinite alternate;
 }
 
@@ -354,9 +359,17 @@ img, video, canvas {
   left: 30%;
   width: 500px;
   height: 500px;
+  border-radius: 50%;
   background: radial-gradient(circle, rgba(74, 222, 128, 0.35) 0%, rgba(20, 83, 45, 0.2) 60%, transparent 75%);
   filter: blur(45px);
+  will-change: transform, opacity;
   animation: doomsdaySmokeDrift 22s ease-in-out infinite alternate-reverse;
+}
+
+@media (max-width: 768px) {
+  .smoke-cloud-1 { width: 340px; height: 340px; filter: blur(35px); }
+  .smoke-cloud-2 { width: 380px; height: 380px; filter: blur(40px); }
+  .smoke-cloud-3 { width: 320px; height: 320px; filter: blur(30px); }
 }
 
 /* ─── DASHBOARD THEMES ─── */
@@ -1125,30 +1138,32 @@ main > *,
   }
 }
 
-/* Public site background blobs — preserved for public pages only */
+/* Public site background blobs — hardware-accelerated for smooth mobile and desktop rendering */
 .public-bg-blobs {
   position: fixed;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
   z-index: 0;
+  contain: strict;
 }
 
 .public-header,
 .public-footer {
-  backdrop-filter: blur(22px) saturate(155%);
-  -webkit-backdrop-filter: blur(22px) saturate(155%);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
 }
 
 .public-liquid-blob-1 {
   position: absolute;
   top: -5%;
   left: -8%;
-  width: 900px;
-  height: 900px;
+  width: 850px;
+  height: 850px;
   background: radial-gradient(circle, rgba(59, 130, 246, 0.46) 0%, rgba(99, 102, 241, 0.26) 45%, transparent 72%);
-  border-radius: 43% 57% 41% 59% / 57% 43% 57% 43%;
-  filter: blur(78px);
+  border-radius: 50%;
+  filter: blur(75px);
+  will-change: transform;
   animation: liquidBubble 16s ease-in-out infinite alternate;
 }
 
@@ -1156,11 +1171,12 @@ main > *,
   position: absolute;
   bottom: -10%;
   right: -5%;
-  width: 980px;
-  height: 980px;
+  width: 900px;
+  height: 900px;
   background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, rgba(59, 130, 246, 0.22) 50%, transparent 74%);
-  border-radius: 54% 46% 58% 42% / 46% 54% 41% 59%;
-  filter: blur(90px);
+  border-radius: 50%;
+  filter: blur(80px);
+  will-change: transform;
   animation: liquidBubble 19s ease-in-out infinite alternate-reverse;
 }
 
@@ -1168,30 +1184,45 @@ main > *,
   position: absolute;
   top: 40%;
   left: 35%;
-  width: 740px;
-  height: 740px;
+  width: 700px;
+  height: 700px;
   background: radial-gradient(circle, rgba(37, 99, 235, 0.33) 0%, rgba(16, 185, 129, 0.18) 55%, transparent 76%);
-  border-radius: 38% 62% 63% 37% / 41% 44% 56% 59%;
-  filter: blur(72px);
+  border-radius: 50%;
+  filter: blur(65px);
+  will-change: transform;
   animation: liquidBubble 14s ease-in-out infinite alternate;
 }
 
 @keyframes liquidBubble {
   0% {
-    transform: translate(0, 0) scale(1) rotate(0deg);
-    border-radius: 43% 57% 41% 59% / 57% 43% 57% 43%;
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
   }
   33% {
-    transform: translate(40px, -60px) scale(1.15) rotate(120deg);
-    border-radius: 54% 46% 58% 42% / 46% 54% 41% 59%;
+    transform: translate3d(35px, -45px, 0) scale(1.12) rotate(120deg);
   }
   66% {
-    transform: translate(-30px, 30px) scale(0.85) rotate(240deg);
-    border-radius: 38% 62% 63% 37% / 41% 44% 56% 59%;
+    transform: translate3d(-25px, 25px, 0) scale(0.9) rotate(240deg);
   }
   100% {
-    transform: translate(0, 0) scale(1) rotate(360deg);
-    border-radius: 43% 57% 41% 59% / 57% 43% 57% 43%;
+    transform: translate3d(0, 0, 0) scale(1) rotate(360deg);
+  }
+}
+
+@media (max-width: 768px) {
+  .public-liquid-blob-1 {
+    width: 380px;
+    height: 380px;
+    filter: blur(40px);
+  }
+  .public-liquid-blob-2 {
+    width: 420px;
+    height: 420px;
+    filter: blur(45px);
+  }
+  .public-liquid-blob-3 {
+    width: 340px;
+    height: 340px;
+    filter: blur(35px);
   }
 }
 

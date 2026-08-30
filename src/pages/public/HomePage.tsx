@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Calendar, Users, Sparkles, ArrowRight, ChevronRight, MapPin, Ticket, Zap, AlertCircle, Eye, History } from 'lucide-react';
 import { getSiteMembers, getFacultyCoordinator, getHomeImagesConfig, subscribeSiteSettings } from '../../services/applicationService';
 import { getPositionHolders } from '../../services/positionService';
-import { getPastEvents, subscribeEvents, subscribePublishedUpcomingEvents } from '../../services/eventService';
+import { getPastEvents, getUpcomingEvents, subscribeEvents } from '../../services/eventService';
 import { getStoredTotalVisitCount, subscribeTotalVisitCount } from '../../services/visitorTrackingService';
 import type { EventRecord } from '../../types';
 import Lightning from '../../components/animation/Lightning';
@@ -75,30 +75,23 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    const unsubscribeVisits = subscribeTotalVisitCount((count) => {
-      setTotalVisits((current) => Math.max(current, count));
-      setVisitsLoading(false);
-    });
-    const unsubscribeAllEvents = subscribeEvents((allEvents) => {
-      setConductedEvents(getPastEvents(allEvents).length);
-      setConductedEventsLoading(false);
-    });
-    return () => {
-      unsubscribeVisits();
-      unsubscribeAllEvents();
-    };
-  }, []);
-
-  useEffect(() => {
     let isMounted = true;
-
     setEventsLoading(true);
     setEventsError(null);
 
-    const unsubEvents = subscribePublishedUpcomingEvents((data) => {
+    const unsubscribeVisits = subscribeTotalVisitCount((count) => {
       if (isMounted) {
-        setEvents(data);
+        setTotalVisits((current) => Math.max(current, count));
+        setVisitsLoading(false);
+      }
+    });
+
+    const unsubscribeEvents = subscribeEvents((allEvents) => {
+      if (isMounted) {
+        setEvents(getUpcomingEvents(allEvents));
         setEventsLoading(false);
+        setConductedEvents(getPastEvents(allEvents).length);
+        setConductedEventsLoading(false);
       }
     });
 
@@ -131,7 +124,8 @@ export default function HomePage() {
 
     return () => {
       isMounted = false;
-      unsubEvents();
+      unsubscribeVisits();
+      unsubscribeEvents();
     };
   }, []);
 
@@ -256,6 +250,8 @@ export default function HomePage() {
                       <img
                         src={img}
                         alt={`SAInT showcase ${i + 1}`}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -326,7 +322,13 @@ export default function HomePage() {
                 <div key={event.id} className="card group hover:shadow-lg hover:border-blue-200 transition-all duration-300 !p-0 overflow-hidden flex flex-col">
                   {event.imageURL ? (
                     <div className="h-44 overflow-hidden shrink-0">
-                      <img src={event.imageURL} alt={event.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      <img
+                        src={event.imageURL}
+                        alt={event.title}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
                     </div>
                   ) : (
                     <div className="h-44 bg-gradient-to-br from-blue-500 to-blue-800 flex items-center justify-center shrink-0">
@@ -387,7 +389,13 @@ export default function HomePage() {
                     users.map((u) => (
                       <div key={`${position.title}-${u?.displayName}`} className="text-center">
                         {u?.photoURL ? (
-                          <img src={u.photoURL} alt="" className="w-20 h-20 rounded-full mx-auto mb-3 object-cover ring-4 ring-blue-100" />
+                          <img
+                            src={u.photoURL}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            className="w-20 h-20 rounded-full mx-auto mb-3 object-cover ring-4 ring-blue-100"
+                          />
                         ) : (
                           <div className="w-20 h-20 rounded-full mx-auto mb-3 bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-2xl ring-4 ring-blue-50">
                             {u?.displayName?.[0]}
@@ -417,7 +425,13 @@ export default function HomePage() {
             <div className="card doomsday-card-faculty bg-gradient-to-br from-blue-600 to-blue-900 !border-0 text-white overflow-hidden">
               <div className="flex items-center gap-6">
                 <div className="w-32 h-32 shrink-0 rounded-full overflow-hidden ring-4 ring-white/20">
-                  <img src="/images/faculty-coordinator.jpg" alt="Faculty Coordinator" className="w-full h-full object-cover" />
+                  <img
+                    src="/images/faculty-coordinator.jpg"
+                    alt="Faculty Coordinator"
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover"
+                  />
                 </div>
                 <div>
                   <p className="label-muted text-blue-200 text-sm font-semibold uppercase tracking-wider mb-2">Faculty Coordinator</p>
@@ -432,7 +446,13 @@ export default function HomePage() {
             <div className="card doomsday-card-chairman bg-gradient-to-br from-slate-800 to-slate-900 !border-0 text-white overflow-hidden">
               <div className="flex items-center gap-6">
                 <div className="w-32 h-32 shrink-0 rounded-full overflow-hidden ring-4 ring-white/20">
-                  <img src="/images/hod-it.jpg" alt="Chairman of the Club" className="w-full h-full object-cover" />
+                  <img
+                    src="/images/hod-it.jpg"
+                    alt="Chairman of the Club"
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover"
+                  />
                 </div>
                 <div>
                   <p className="label-muted text-slate-300 text-sm font-semibold uppercase tracking-wider mb-2">Chairman</p>
