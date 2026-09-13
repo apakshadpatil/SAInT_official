@@ -14,12 +14,14 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { getSiteSettings } from '../../services/applicationService';
 import {
   createSupportTicket,
+  deleteSupportTicket,
   getSupportTicketByNumber,
   subscribeUserSupportTickets,
 } from '../../services/supportService';
@@ -99,6 +101,7 @@ export default function PublicSupportPage() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookedUpTicket, setLookedUpTicket] = useState<SupportTicket | null>(null);
   const [myTickets, setMyTickets] = useState<SupportTicket[]>([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     getSiteSettings()
@@ -168,6 +171,20 @@ export default function PublicSupportPage() {
       showToast('Ticket number copied.', 'success');
     } catch {
       showToast('Could not copy ticket number.', 'error');
+    }
+  };
+
+  const handleDeleteMyTicket = async (ticketId: string) => {
+    if (confirmDeleteId !== ticketId) {
+      setConfirmDeleteId(ticketId);
+      return;
+    }
+    try {
+      await deleteSupportTicket(ticketId);
+      showToast('Ticket deleted.', 'success');
+      setConfirmDeleteId(null);
+    } catch (error: any) {
+      showToast(error?.message || 'Could not delete ticket.', 'error');
     }
   };
 
@@ -505,9 +522,24 @@ export default function PublicSupportPage() {
                 <div key={ticket.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-xs font-semibold text-slate-500">{ticket.ticketNumber}</p>
-                    <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase ${priorityTone(ticket.priority)}`}>
-                      {ticket.priority}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase ${priorityTone(ticket.priority)}`}>
+                        {ticket.priority}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMyTicket(ticket.id)}
+                        className="ml-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors"
+                        style={{
+                          background: confirmDeleteId === ticket.id ? 'rgba(220,38,38,0.1)' : 'transparent',
+                          color: confirmDeleteId === ticket.id ? '#dc2626' : '#94a3b8',
+                        }}
+                        title={confirmDeleteId === ticket.id ? 'Click again to confirm' : 'Delete ticket'}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        {confirmDeleteId === ticket.id ? 'Confirm' : ''}
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-2 text-sm font-bold text-slate-900">{ticket.title}</p>
                   <div className="mt-3 flex items-center justify-between text-xs text-slate-500">

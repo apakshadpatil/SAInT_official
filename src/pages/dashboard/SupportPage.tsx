@@ -11,6 +11,7 @@ import {
   MessageCircle,
   Phone,
   Search,
+  Trash2,
   X,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -19,6 +20,7 @@ import { getAllUsers } from '../../services/authService';
 import {
   addTicketComment,
   assignSupportTicket,
+  deleteSupportTicket,
   subscribeSupportTickets,
   subscribeUserSupportTickets,
   updateTicketInvestigationNotes,
@@ -92,6 +94,7 @@ export default function SupportPage() {
   const [investigationNotes, setInvestigationNotes] = useState('');
   const [resolutionSummary, setResolutionSummary] = useState('');
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -163,6 +166,18 @@ export default function SupportPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleDelete = (ticketId: string) => {
+    if (confirmDelete !== ticketId) {
+      setConfirmDelete(ticketId);
+      return;
+    }
+    runAction(async () => {
+      await deleteSupportTicket(ticketId);
+      setSelectedTicketId(null);
+      setConfirmDelete(null);
+    }, 'Ticket deleted');
   };
 
   const handleAssign = (uid: string) => {
@@ -342,9 +357,27 @@ export default function SupportPage() {
                     <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>{selectedTicket.ticketNumber}</p>
                     <h2 className="mt-1 text-base font-black" style={{ color: 'var(--dash-text)' }}>{selectedTicket.title}</h2>
                   </div>
-                  <button type="button" onClick={() => setSelectedTicketId(null)} className="p-1" style={{ color: 'var(--dash-muted)' }}>
-                    <X className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {(canManage || selectedTicket.userId === profile?.uid) && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => handleDelete(selectedTicket.id)}
+                        className="flex items-center gap-1 rounded px-2 py-1 text-[11px] font-semibold transition-colors"
+                        style={{
+                          background: confirmDelete === selectedTicket.id ? 'rgba(220, 38, 38, 0.12)' : 'transparent',
+                          color: confirmDelete === selectedTicket.id ? '#dc2626' : 'var(--dash-muted)',
+                        }}
+                        title={confirmDelete === selectedTicket.id ? 'Click again to confirm delete' : 'Delete ticket'}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {confirmDelete === selectedTicket.id ? 'Confirm' : ''}
+                      </button>
+                    )}
+                    <button type="button" onClick={() => { setSelectedTicketId(null); setConfirmDelete(null); }} className="p-1" style={{ color: 'var(--dash-muted)' }}>
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
                 <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--dash-muted)' }}>{selectedTicket.description}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
