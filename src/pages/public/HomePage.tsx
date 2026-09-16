@@ -320,41 +320,53 @@ export default function HomePage() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {events.map((event) => (
                 <div key={event.id} className="card group hover:shadow-lg hover:border-blue-200 transition-all duration-300 !p-0 overflow-hidden flex flex-col">
-                  {event.imageURL ? (
-                    <div className="h-44 overflow-hidden shrink-0">
-                      <img
-                        src={event.imageURL}
-                        alt={event.title}
-                        loading="lazy"
-                        decoding="async"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                    </div>
-                  ) : (
-                    <div className="h-44 bg-gradient-to-br from-blue-500 to-blue-800 flex items-center justify-center shrink-0">
-                      <Calendar className="w-12 h-12 text-white/30" />
-                    </div>
-                  )}
+                  <Link to={`/events/${event.id}`} className="block">
+                    {event.imageURL ? (
+                      <div className="h-44 overflow-hidden shrink-0">
+                        <img
+                          src={event.imageURL}
+                          alt={event.title}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      </div>
+                    ) : (
+                      <div className="h-44 bg-gradient-to-br from-blue-500 to-blue-800 flex items-center justify-center shrink-0">
+                        <Calendar className="w-12 h-12 text-white/30" />
+                      </div>
+                    )}
+                  </Link>
                   <div className="p-6 flex flex-col flex-1">
                     <div className="flex items-center gap-2 text-blue-600 text-sm font-medium mb-3">
                       <Calendar className="w-4 h-4 shrink-0" />
                       {new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
                       {' · '}{event.startTime}
                     </div>
-                    <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-blue-700 transition-colors">{event.title}</h3>
+                    <Link to={`/events/${event.id}`} className="block mb-2">
+                      <h3 className="text-xl font-bold text-slate-900 group-hover:text-blue-700 transition-colors">{event.title}</h3>
+                    </Link>
                     <p className="text-sm text-slate-500 leading-relaxed flex-1 line-clamp-3">{event.description}</p>
                     <div className="flex items-center gap-1.5 text-xs text-blue-600 font-medium mt-3 mb-4">
                       <MapPin className="w-3.5 h-3.5 shrink-0" />
                       {event.location}{event.venue ? ` · ${event.venue}` : ''}
                     </div>
-                    <Link
-                      to={`/events/${event.id}/register`}
-                      className="inline-flex items-center justify-center gap-2 w-full py-2.5 rounded-xl font-semibold text-sm text-white transition-all hover:opacity-90"
-                      style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}
-                    >
-                      <Ticket className="w-4 h-4" />
-                      Register &amp; Get Ticket
-                    </Link>
+                    <div className="grid grid-cols-2 gap-2 mt-auto">
+                      <Link
+                        to={`/events/${event.id}`}
+                        className="inline-flex items-center justify-center py-2.5 rounded-xl font-semibold text-xs text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all text-center"
+                      >
+                        Details
+                      </Link>
+                      <Link
+                        to={`/events/${event.id}/register`}
+                        className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-semibold text-xs text-white transition-all hover:opacity-90 shadow-sm"
+                        style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}
+                      >
+                        <Ticket className="w-3.5 h-3.5" />
+                        Register
+                      </Link>
+                    </div>
                   </div>
                 </div>
               ))}

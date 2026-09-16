@@ -1,12 +1,15 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { hasTabAccess } from '../utils/permissions';
+import type { SidebarPermissions } from '../types';
 
 interface Props {
   children: React.ReactNode;
   requireApproved?: boolean;
+  requiredPermission?: keyof SidebarPermissions;
 }
 
-export default function ProtectedRoute({ children, requireApproved = true }: Props) {
+export default function ProtectedRoute({ children, requireApproved = true, requiredPermission }: Props) {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
 
@@ -28,6 +31,10 @@ export default function ProtectedRoute({ children, requireApproved = true }: Pro
 
   if (requireApproved && profile?.status === 'rejected') {
     return <Navigate to="/login" replace />;
+  }
+
+  if (requiredPermission && !hasTabAccess(profile, requiredPermission)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

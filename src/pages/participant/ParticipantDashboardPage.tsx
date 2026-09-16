@@ -21,6 +21,8 @@ import {
   Phone,
   Mail,
   ChevronRight,
+  Lock,
+  XCircle,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -466,20 +468,38 @@ export default function ParticipantDashboardPage() {
                 {registrations.map((reg) => {
                   const { event, ticket } = reg;
                   const isCheckedIn = Boolean(ticket.checkedIn);
+                  const isRevoked = ticket.accessStatus === 'revoked';
+
                   return (
-                    <article key={ticket.id} className="participant-ticket-card">
-                      <div className="participant-ticket-accent" aria-hidden="true" />
+                    <article
+                      key={ticket.id}
+                      className="participant-ticket-card"
+                      style={isRevoked ? { borderColor: 'rgba(239, 68, 68, 0.35)', background: 'linear-gradient(135deg, #181119 0%, #0d0a11 100%)' } : undefined}
+                    >
+                      <div
+                        className="participant-ticket-accent"
+                        style={isRevoked ? { background: 'linear-gradient(90deg, #ef4444, #b91c1c)' } : undefined}
+                        aria-hidden="true"
+                      />
 
                       <div className="participant-ticket-head">
-                        <span>{ticket.tierName || 'EVENT PASS'}</span>
-                        <button
-                          type="button"
-                          onClick={() => setActiveTicket(reg)}
-                          title="View Live QR Code"
-                          aria-label="View QR Code"
-                        >
-                          <QrCode size={18} />
-                        </button>
+                        <span style={isRevoked ? { color: '#fca5a5', fontWeight: 800 } : undefined}>
+                          {isRevoked ? 'PASS REVOKED' : ticket.tierName || 'EVENT PASS'}
+                        </span>
+                        {isRevoked ? (
+                          <span title="Pass Access Revoked" style={{ color: '#ef4444', display: 'flex', alignItems: 'center' }}>
+                            <Lock size={16} />
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setActiveTicket(reg)}
+                            title="View Live QR Code"
+                            aria-label="View QR Code"
+                          >
+                            <QrCode size={18} />
+                          </button>
+                        )}
                       </div>
 
                       <h2>{event.title}</h2>
@@ -492,60 +512,91 @@ export default function ParticipantDashboardPage() {
                           <MapPin size={14} /> {event.location || event.venue || 'JSPM RSCOE Campus'}
                         </span>
                         {ticket.teamName && (
-                          <span style={{ color: '#f4d06f', fontWeight: 700 }}>
+                          <span style={{ color: isRevoked ? '#94a3b8' : '#f4d06f', fontWeight: 700 }}>
                             <Users size={14} /> Team: {ticket.teamName}
                           </span>
                         )}
-                        <span style={{ color: isCheckedIn ? '#4ade80' : '#f4d06f' }}>
-                          <CheckCircle2 size={14} /> {isCheckedIn ? 'Checked In' : 'Entry Ready'}
-                        </span>
+                        {isRevoked ? (
+                          <span style={{ color: '#ef4444', fontWeight: 800 }}>
+                            <XCircle size={14} /> Access Revoked
+                          </span>
+                        ) : (
+                          <span style={{ color: isCheckedIn ? '#4ade80' : '#f4d06f' }}>
+                            <CheckCircle2 size={14} /> {isCheckedIn ? 'Checked In' : 'Entry Ready'}
+                          </span>
+                        )}
                       </div>
 
                       {/* Ticket Number Badge & Copy Button */}
                       <div className="participant-ticket-number">
                         <small>TICKET NUMBER</small>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                          <strong>{ticket.ticketNumber}</strong>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyTicket(ticket.ticketNumber)}
-                            style={{
-                              border: '1px solid #51495d',
-                              background: 'transparent',
-                              color: copiedId === ticket.ticketNumber ? '#4ade80' : '#bdb7c7',
-                              padding: '0.3rem 0.55rem',
-                              fontSize: '0.68rem',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.3rem',
-                            }}
-                          >
-                            {copiedId === ticket.ticketNumber ? (
-                              <>
-                                <Check size={12} /> Copied
-                              </>
-                            ) : (
-                              <>
-                                <Copy size={12} /> Copy
-                              </>
-                            )}
-                          </button>
+                          <strong style={isRevoked ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
+                            {ticket.ticketNumber}
+                          </strong>
+                          {!isRevoked && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyTicket(ticket.ticketNumber)}
+                              style={{
+                                border: '1px solid #51495d',
+                                background: 'transparent',
+                                color: copiedId === ticket.ticketNumber ? '#4ade80' : '#bdb7c7',
+                                padding: '0.3rem 0.55rem',
+                                fontSize: '0.68rem',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                              }}
+                            >
+                              {copiedId === ticket.ticketNumber ? (
+                                <>
+                                  <Check size={12} /> Copied
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={12} /> Copy
+                                </>
+                              )}
+                            </button>
+                          )}
                         </div>
                       </div>
 
                       {/* Action buttons */}
-                      <div className="participant-ticket-buttons">
-                        <button type="button" onClick={() => setActiveTicket(reg)}>
-                          <QrCode size={14} /> Live QR
-                        </button>
-                        <button type="button" onClick={() => handleDownloadTicket(reg)}>
-                          <Download size={14} /> Download
-                        </button>
-                      </div>
+                      {isRevoked ? (
+                        <div
+                          style={{
+                            padding: '0.65rem 0.8rem',
+                            textAlign: 'center',
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            color: '#fca5a5',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            borderRadius: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.4rem',
+                          }}
+                        >
+                          <Lock size={12} /> Access revoked by administrator
+                        </div>
+                      ) : (
+                        <div className="participant-ticket-buttons">
+                          <button type="button" onClick={() => setActiveTicket(reg)}>
+                            <QrCode size={14} /> Live QR
+                          </button>
+                          <button type="button" onClick={() => handleDownloadTicket(reg)}>
+                            <Download size={14} /> Download
+                          </button>
+                        </div>
+                      )}
 
-                      {(ticket.teamMembers?.length || ticket.teamName || event.teamsEnabled) && (
+                      {!isRevoked && (ticket.teamMembers?.length || ticket.teamName || event.teamsEnabled) && (
                         <button
                           type="button"
                           className="participant-team-link"

@@ -130,6 +130,12 @@ export default function AccessControlPage() {
       ],
     },
     {
+      title: 'Participants',
+      items: [
+        { key: 'participants', label: 'Participant Access' },
+      ],
+    },
+    {
       title: 'Admin & Finance',
       items: [
         { key: 'finance', label: 'Finance' },

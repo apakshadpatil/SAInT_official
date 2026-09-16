@@ -340,30 +340,68 @@ export default function EventRegisterPage() {
     (f) => !f.tierId || f.tierId === selectedTierId
   );
 
-  return (
-    <div className="min-h-screen relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#020617 0%,#0f172a 50%,#1e1b4b 100%)' }}>
-      {/* Large animated background blobs */}
-      <div className="public-bg-blobs" aria-hidden="true">
-        <div className="public-liquid-blob-1" style={{ opacity: 0.7 }} />
-        <div className="public-liquid-blob-2" style={{ opacity: 0.65 }} />
-        <div className="public-liquid-blob-3" style={{ opacity: 0.55 }} />
-      </div>
+  const registrationBanner = event.registrationBannerUrl || event.imageURL;
+  const hasCustomBg = Boolean(event.registrationBackgroundUrl);
 
-      <div className="relative z-10 max-w-3xl mx-auto px-4 py-12 min-h-screen flex flex-col justify-center">
-        <Link to="/#events" className="inline-flex items-center gap-2 text-blue-300 hover:text-white text-sm mb-6 transition-colors">
-          <ArrowLeft className="w-4 h-4" /> Back to Events
-        </Link>
+  return (
+    <div
+      className="min-h-screen relative overflow-hidden"
+      style={
+        hasCustomBg
+          ? {
+              backgroundImage: `url(${event.registrationBackgroundUrl})`,
+              backgroundPosition: 'center',
+              backgroundSize: 'cover',
+              backgroundAttachment: 'fixed',
+            }
+          : { background: 'linear-gradient(135deg,#020617 0%,#0f172a 50%,#1e1b4b 100%)' }
+      }
+    >
+      {/* If custom background is set, apply readability scrim overlay; otherwise standard blobs */}
+      {hasCustomBg ? (
+        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-[2px]" aria-hidden="true" />
+      ) : (
+        /* Large animated background blobs */
+        <div className="public-bg-blobs" aria-hidden="true">
+          <div className="public-liquid-blob-1" style={{ opacity: 0.7 }} />
+          <div className="public-liquid-blob-2" style={{ opacity: 0.65 }} />
+          <div className="public-liquid-blob-3" style={{ opacity: 0.55 }} />
+        </div>
+      )}
+
+      <div className="relative z-10 max-w-3xl mx-auto px-4 py-8 sm:py-12 min-h-screen flex flex-col justify-center">
+        <div className="flex items-center justify-between gap-4 mb-6">
+          <Link
+            to={`/events/${eventId}`}
+            className="inline-flex items-center gap-2 text-blue-300 hover:text-white text-xs sm:text-sm font-semibold transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to Event Details
+          </Link>
+          <Link
+            to="/events"
+            className="text-xs text-slate-400 hover:text-white transition-colors"
+          >
+            All Events →
+          </Link>
+        </div>
 
         {/* Event Header Banner */}
-        <div className="rounded-2xl overflow-hidden mb-6" style={{
+        <div className="rounded-2xl overflow-hidden mb-6 shadow-2xl" style={{
           background: 'rgba(255,255,255,0.04)',
           border: '1px solid rgba(255,255,255,0.08)',
           backdropFilter: 'blur(24px)',
         }}>
-          {event.imageURL && (
-            <img src={event.imageURL} alt={event.title} className="w-full h-52 object-cover" />
+          {registrationBanner && (
+            <div className="w-full h-44 sm:h-56 md:h-64 overflow-hidden relative bg-slate-900">
+              <img
+                src={registrationBanner}
+                alt={event.title}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
+            </div>
           )}
-          <div className="p-6">
+          <div className="p-5 sm:p-7">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold mb-3"
               style={{ background: 'rgba(59,130,246,0.15)', color: '#93c5fd', border: '1px solid rgba(59,130,246,0.3)' }}>
               <Ticket className="w-3 h-3" /> Event Registration &amp; Pass

@@ -5,7 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { subscribeEventById, subscribeEventTickets, mergeEventWithTickets, updateEvent, deleteEvent } from '../../services/eventService';
 import type { EventRecord, EventTicket } from '../../types';
 import { isSuperAdmin, isCoreMember } from '../../utils/permissions';
-import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award, Users2, ClipboardCheck } from 'lucide-react';
+import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award, Users2, ClipboardCheck, ExternalLink, Palette, LayoutList } from 'lucide-react';
 import TicketingTab from '../../components/ui/TicketingTab';
 import ScanTicketTab from '../../components/ui/ScanTicketTab';
 import TicketDesignTab from '../../components/ui/TicketDesignTab';
@@ -18,8 +18,10 @@ import EventAnalyticsTab from '../../components/ui/EventAnalyticsTab';
 import CertificateTab from '../../components/ui/CertificateTab';
 import TeamRegistrationTab from '../../components/ui/TeamRegistrationTab';
 import RulesTab from '../../components/ui/RulesTab';
+import EventSectionsTab from '../../components/ui/EventSectionsTab';
+import EventBrandingTab from '../../components/ui/EventBrandingTab';
 
-type TabType = 'overview' | 'ticketing' | 'scan' | 'design' | 'form' | 'rules' | 'certificates' | 'participants' | 'teams' | 'allocation' | 'domains' | 'analytics' | 'settings';
+type TabType = 'overview' | 'content' | 'branding' | 'ticketing' | 'scan' | 'design' | 'form' | 'rules' | 'certificates' | 'participants' | 'teams' | 'allocation' | 'domains' | 'analytics' | 'settings';
 
 export default function EventDetailsPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -140,6 +142,10 @@ export default function EventDetailsPage() {
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'overview', label: 'Overview', icon: ImageIcon },
+    ...(canEdit ? [
+      { id: 'content' as TabType, label: 'Content & Sections', icon: LayoutList },
+      { id: 'branding' as TabType, label: 'Portal Branding', icon: Palette },
+    ] : []),
     { id: 'ticketing', label: 'Ticketing', icon: Ticket },
     { id: 'scan', label: 'Scan Ticket', icon: QrCode },
     { id: 'design', label: 'Ticket Design', icon: ImageIcon },
@@ -207,14 +213,38 @@ export default function EventDetailsPage() {
               )}
             </div>
           </div>
-          {canEdit && !isEditing && (
-            <div className="flex gap-2">
-              <button onClick={() => setIsEditing(true)} className="rounded-2xl border p-2.5" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }} title="Edit event">
-                <Edit2 className="w-5 h-5" style={{ color: 'var(--dash-text)' }} />
-              </button>
+          {!isEditing && (
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={`/events/${event.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-2xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors hover:border-slate-600"
+                style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)', color: 'var(--dash-text)' }}
+                title="View public event details page"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-blue-500" />
+                <span>Public Page</span>
+              </a>
+              <a
+                href={`/events/${event.id}/register`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-2xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors hover:border-blue-500/50"
+                style={{ borderColor: 'rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}
+                title="Open event registration portal"
+              >
+                <Ticket className="w-3.5 h-3.5 text-blue-400" />
+                <span>Registration</span>
+              </a>
+              {canEdit && (
+                <button onClick={() => setIsEditing(true)} className="rounded-2xl border p-2.5 cursor-pointer" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }} title="Edit event">
+                  <Edit2 className="w-4 h-4" style={{ color: 'var(--dash-text)' }} />
+                </button>
+              )}
               {canDelete && (
-                <button onClick={handleDeleteEvent} className="rounded-2xl border p-2.5" style={{ borderColor: 'rgba(239,68,68,0.25)', background: 'rgba(254,242,242,0.9)' }} title="Delete event">
-                  <Trash2 className="w-5 h-5 text-red-500" />
+                <button onClick={handleDeleteEvent} className="rounded-2xl border p-2.5 cursor-pointer" style={{ borderColor: 'rgba(239,68,68,0.25)', background: 'rgba(254,242,242,0.9)' }} title="Delete event">
+                  <Trash2 className="w-4 h-4 text-red-500" />
                 </button>
               )}
             </div>
@@ -314,6 +344,22 @@ export default function EventDetailsPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {activeTab === 'content' && (
+          <EventSectionsTab
+            event={event}
+            onUpdate={handleEventUpdate}
+            canEdit={canEdit}
+          />
+        )}
+
+        {activeTab === 'branding' && (
+          <EventBrandingTab
+            event={event}
+            onUpdate={handleEventUpdate}
+            canEdit={canEdit}
+          />
         )}
 
         {activeTab === 'ticketing' && (

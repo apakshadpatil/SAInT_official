@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import type { EventRecord, CertificateConfig, EventTeam, TeamMemberDetail } from '../types';
+import type { EventRecord, CertificateConfig, SignatoryConfig, EventTeam, TeamMemberDetail } from '../types';
 import { uploadBlobToSupabase, SUPABASE_BUCKET } from './supabase';
 
 export const DEFAULT_CERTIFICATE_CONFIG: CertificateConfig = {
@@ -24,6 +24,10 @@ export const DEFAULT_CERTIFICATE_CONFIG: CertificateConfig = {
   signatoryTitle: 'Faculty Advisor, IT Dept',
   signatory2Name: 'Student President',
   signatory2Title: 'SAInT Core Committee',
+  signatories: [
+    { id: 'left', name: 'Faculty Coordinator', title: 'Faculty Advisor, IT Dept' },
+    { id: 'right', name: 'Student President', title: 'SAInT Core Committee' },
+  ],
   showSignatories: true,
   signatoriesOffsetY: 0,
   showDate: true,
@@ -31,6 +35,43 @@ export const DEFAULT_CERTIFICATE_CONFIG: CertificateConfig = {
   showCertificateId: true,
   certificateIdOffsetY: 0,
 };
+
+/**
+ * Resolves signatories list from CertificateConfig.
+ * Preserves full backward compatibility with legacy signatoryName / signatory2Name fields.
+ */
+export function getSignatories(config: CertificateConfig): SignatoryConfig[] {
+  if (config.signatories && config.signatories.length > 0) {
+    return config.signatories;
+  }
+
+  const list: SignatoryConfig[] = [];
+  if (config.signatoryName || config.signatoryTitle || config.signatorySignatureUrl) {
+    list.push({
+      id: 'left',
+      name: config.signatoryName || '',
+      title: config.signatoryTitle || '',
+      signatureUrl: config.signatorySignatureUrl,
+      signaturePath: config.signatorySignaturePath,
+    });
+  }
+  if (config.signatory2Name || config.signatory2Title || config.signatory2SignatureUrl) {
+    list.push({
+      id: 'right',
+      name: config.signatory2Name || '',
+      title: config.signatory2Title || '',
+      signatureUrl: config.signatory2SignatureUrl,
+      signaturePath: config.signatory2SignaturePath,
+    });
+  }
+
+  return list.length > 0
+    ? list
+    : [
+        { id: 'left', name: 'Faculty Coordinator', title: 'Faculty Advisor, IT Dept' },
+        { id: 'right', name: 'Student President', title: 'SAInT Core Committee' },
+      ];
+}
 
 /**
  * Load image with CORS-safe fallback (fetch -> blob -> Object URL)
@@ -93,6 +134,23 @@ export async function renderCertificateCanvas(
 
   // Load the uploaded template from Supabase Storage
   const bgImg = await loadCorsSafeImage(templateUrl);
+
+  // Extract signatories and pre-load all available signature images safely
+  const signatories = getSignatories(config);
+  const signatureImages: Record<string, HTMLImageElement> = {};
+  if (config.showSignatories !== false) {
+    await Promise.all(
+      signatories.map(async (sig) => {
+        if (!sig.signatureUrl) return;
+        try {
+          const img = await loadCorsSafeImage(sig.signatureUrl);
+          signatureImages[sig.id] = img;
+        } catch (err) {
+          console.warn(`Failed to load signature image for signatory "${sig.name}" (${sig.id}):`, err);
+        }
+      })
+    );
+  }
 
   const width = Math.max(1600, bgImg.naturalWidth || 1920);
   const height = Math.max(1100, bgImg.naturalHeight || 1080);
@@ -205,58 +263,68 @@ export async function renderCertificateCanvas(
     ctx.restore();
   }
 
-  // 7. Signatories (Left & Right)
-  if (config.showSignatories !== false) {
+  // 7. Signatories
+  if (config.showSignatories !== false && signatories.length > 0) {
     const sigY = height * 0.84 + (config.signatoriesOffsetY || 0);
-    const leftSigX = width * 0.24;
-    const rightSigX = width * 0.76;
-    const sigLineWidth = Math.round(width * 0.16);
+    const n = signatories.length;
+    const sigLineWidth = n > 3 ? Math.round(width * 0.12) : Math.round(width * 0.16);
 
-    // Left Signatory (Faculty Coordinator)
-    if (config.signatoryName) {
+    signatories.forEach((sig, index) => {
+      let sigX = width / 2;
+      if (n === 1) {
+        sigX = width * 0.5;
+      } else if (n === 2) {
+        sigX = index === 0 ? width * 0.24 : width * 0.76;
+      } else {
+        const leftBound = width * 0.18;
+        const rightBound = width * 0.82;
+        sigX = leftBound + (index / (n - 1)) * (rightBound - leftBound);
+      }
+
+      const sigLineY = sigY - 24;
+
+      // 7.1 Draw Signature Image if available
+      const sigImg = signatureImages[sig.id];
+      if (sigImg && sigImg.naturalWidth && sigImg.naturalHeight) {
+        ctx.save();
+        const maxSigWidth = sigLineWidth * 0.9;
+        const maxSigHeight = 65;
+        const scale = Math.min(maxSigWidth / sigImg.naturalWidth, maxSigHeight / sigImg.naturalHeight);
+        const drawW = Math.round(sigImg.naturalWidth * scale);
+        const drawH = Math.round(sigImg.naturalHeight * scale);
+        const drawX = Math.round(sigX - drawW / 2);
+        // Position slightly overlapping line (-4px for authentic signature feel)
+        const drawY = Math.round(sigLineY - drawH + 4);
+
+        ctx.drawImage(sigImg, drawX, drawY, drawW, drawH);
+        ctx.restore();
+      }
+
+      // 7.2 Draw Signatory Line
       ctx.save();
       ctx.textAlign = 'center';
       ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(leftSigX - sigLineWidth / 2, sigY - 24);
-      ctx.lineTo(leftSigX + sigLineWidth / 2, sigY - 24);
+      ctx.moveTo(sigX - sigLineWidth / 2, sigLineY);
+      ctx.lineTo(sigX + sigLineWidth / 2, sigLineY);
       ctx.stroke();
 
-      ctx.fillStyle = config.primaryColor || '#0f172a';
-      ctx.font = `bold ${Math.round(width * 0.011)}px sans-serif`;
-      ctx.fillText(config.signatoryName, leftSigX, sigY);
+      // 7.3 Draw Signatory Name
+      if (sig.name) {
+        ctx.fillStyle = config.primaryColor || '#0f172a';
+        ctx.font = `bold ${Math.round(width * 0.011)}px sans-serif`;
+        ctx.fillText(sig.name, sigX, sigY);
+      }
 
-      if (config.signatoryTitle) {
+      // 7.4 Draw Signatory Title
+      if (sig.title) {
         ctx.fillStyle = '#64748b';
         ctx.font = `normal ${Math.round(width * 0.009)}px sans-serif`;
-        ctx.fillText(config.signatoryTitle, leftSigX, sigY + 20);
+        ctx.fillText(sig.title, sigX, sigY + 20);
       }
       ctx.restore();
-    }
-
-    // Right Signatory (Student President / Lead)
-    if (config.signatory2Name) {
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(rightSigX - sigLineWidth / 2, sigY - 24);
-      ctx.lineTo(rightSigX + sigLineWidth / 2, sigY - 24);
-      ctx.stroke();
-
-      ctx.fillStyle = config.primaryColor || '#0f172a';
-      ctx.font = `bold ${Math.round(width * 0.011)}px sans-serif`;
-      ctx.fillText(config.signatory2Name, rightSigX, sigY);
-
-      if (config.signatory2Title) {
-        ctx.fillStyle = '#64748b';
-        ctx.font = `normal ${Math.round(width * 0.009)}px sans-serif`;
-        ctx.fillText(config.signatory2Title, rightSigX, sigY + 20);
-      }
-      ctx.restore();
-    }
+    });
   }
 
   // 8. Certificate ID & Verification Reference

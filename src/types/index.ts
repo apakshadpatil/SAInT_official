@@ -36,7 +36,7 @@ export interface SidebarPermissions {
   systemStats: boolean;
   deploymentStats?: boolean;
   userInteractions?: boolean;
-  participants?: boolean;
+  participants: boolean;
   winners?: boolean;
   gallery?: boolean;
   support?: boolean;
@@ -157,6 +157,14 @@ export interface TicketTier {
   customFields?: CustomFormField[]; // tier-specific form fields
 }
 
+export interface SignatoryConfig {
+  id: string; // Unique identifier (e.g. 'sig_1', 'sig_2', or UUID)
+  name: string; // Signatory Name e.g. "Dr. ABC"
+  title: string; // Signatory Designation/Role e.g. "HOD, IT Department"
+  signatureUrl?: string; // Supabase Storage public CDN URL
+  signaturePath?: string; // Supabase Storage bucket path for cleanup
+}
+
 export interface CertificateConfig {
   templateUrl?: string;
   templatePath?: string;
@@ -181,8 +189,13 @@ export interface CertificateConfig {
   showBodyText?: boolean;
   signatoryName?: string;
   signatoryTitle?: string;
+  signatorySignatureUrl?: string;
+  signatorySignaturePath?: string;
   signatory2Name?: string;
   signatory2Title?: string;
+  signatory2SignatureUrl?: string;
+  signatory2SignaturePath?: string;
+  signatories?: SignatoryConfig[];
   showSignatories?: boolean;
   signatoriesOffsetY?: number;
   organizationName?: string;
@@ -210,6 +223,15 @@ export interface ParticipantBatch {
   capacity?: number;
   color?: string;
   createdAt: string;
+}
+
+export interface EventCustomSection {
+  id: string;
+  title: string;
+  content: string;
+  icon?: string;
+  visible: boolean;
+  order: number;
 }
 
 export interface EventRecord {
@@ -265,6 +287,11 @@ export interface EventRecord {
   rules?: string[];
   rulebookUrl?: string;
   whatsappGroupUrl?: string;
+  // Registration Portal Banner & Background Customization
+  registrationBannerUrl?: string;
+  registrationBackgroundUrl?: string;
+  // Dynamic & Custom Sections
+  customSections?: EventCustomSection[];
 }
 
 export interface EventRuleAgreement {
@@ -370,6 +397,9 @@ export interface EventTicket {
   checkedIn: boolean;
   checkedInAt?: string;
   checkedInBy?: string;
+  accessStatus?: 'granted' | 'revoked';
+  accessUpdatedAt?: string;
+  accessUpdatedBy?: string;
   createdAt: string;
 }
 
@@ -398,6 +428,9 @@ export interface EventParticipant {
   ticketId?: string;
   batchId?: string;
   batchName?: string;
+  accessStatus?: 'granted' | 'revoked';
+  accessUpdatedAt?: string;
+  accessUpdatedBy?: string;
   certificateUrl?: string;
   certificateSent?: boolean;
   createdAt: string;
@@ -666,6 +699,7 @@ export const DEFAULT_MEMBER_PERMISSIONS: SidebarPermissions = {
   systemStats: false,
   deploymentStats: false,
   userInteractions: false,
+  participants: false,
 };
 
 export const DEFAULT_CORE_PERMISSIONS: SidebarPermissions = {
@@ -681,6 +715,7 @@ export const DEFAULT_CORE_PERMISSIONS: SidebarPermissions = {
   systemStats: false,
   deploymentStats: false,
   userInteractions: false,
+  participants: false,
 };
 
 export const DEFAULT_SUPERADMIN_PERMISSIONS: SidebarPermissions = {
@@ -712,6 +747,7 @@ export const DEFAULT_SUPERADMIN_PERMISSIONS: SidebarPermissions = {
   systemStats: true,
   deploymentStats: true,
   userInteractions: true,
+  participants: true,
 };
 
 export type DBOperationType = 'read' | 'write' | 'update' | 'delete' | 'fetch' | 'listener';

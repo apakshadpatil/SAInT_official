@@ -43,7 +43,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/dashboard/qr-scanner',            label: 'QR Scanner',            icon: QrCode,          tab: 'qrScanner',          group: 'main' },
   { to: '/dashboard/sponsors',              label: 'Sponsors',              icon: Handshake,       tab: 'sponsors',           group: 'main' },
   { to: '/dashboard/analytics',             label: 'Analytics Hub',         icon: BarChart3,       tab: 'analytics',          group: 'management' },
-  { to: '/dashboard/participants',          label: 'Manage Participants',   icon: UserCheck,       tab: 'participants',       group: 'management', superOnly: true },
+  { to: '/dashboard/participant-access',     label: 'Participant Access',    icon: UserCheck,       tab: 'participants',       group: 'management' },
   { to: '/dashboard/teams',                 label: 'Manage Teams',          icon: Users,           tab: 'teams',              group: 'management' },
   { to: '/dashboard/files',                 label: 'Upload Files',          icon: Upload,          tab: 'files',              group: 'management' },
   { to: '/dashboard/documentation',         label: 'Documentation',         icon: FileText,        tab: 'documentation',      group: 'management' },

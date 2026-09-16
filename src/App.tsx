@@ -13,6 +13,7 @@ const ActivitiesPage = lazy(() => import('./pages/public/ActivitiesPage'));
 const ApplyPage = lazy(() => import('./pages/public/ApplyPage'));
 const AuthPage = lazy(() => import('./pages/public/AuthPage'));
 const EventRegisterPage = lazy(() => import('./pages/public/EventRegisterPage'));
+const PublicEventDetailsPage = lazy(() => import('./pages/public/PublicEventDetailsPage'));
 const AboutPage = lazy(() => import('./pages/public/AboutPage'));
 const PublicEventsPage = lazy(() => import('./pages/public/PublicEventsPage'));
 const PublicSupportPage = lazy(() => import('./pages/public/PublicSupportPage'));
@@ -39,7 +40,7 @@ const ExplorePage = lazy(() => import('./pages/dashboard/ExplorePage'));
 const QRScannerPage = lazy(() => import('./pages/dashboard/QRScannerPage'));
 const SponsorsPage = lazy(() => import('./pages/dashboard/SponsorsPage'));
 const AnalyticsPage = lazy(() => import('./pages/dashboard/AnalyticsPage'));
-const ManageParticipantsPage = lazy(() => import('./pages/dashboard/ManageParticipantsPage'));
+const ParticipantAccessPage = lazy(() => import('./pages/dashboard/ParticipantAccessPage'));
 const TeamsPage = lazy(() => import('./pages/dashboard/TeamsPage'));
 const FilesPage = lazy(() => import('./pages/dashboard/FilesPage'));
 const DocumentationPage = lazy(() => import('./pages/dashboard/DocumentationPage'));
@@ -93,6 +94,7 @@ export default function App() {
                 <Route path="/apply" element={<ApplyPage />} />
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/support" element={<PublicSupportPage />} />
+                <Route path="/events/:eventId" element={<PublicEventDetailsPage />} />
                 <Route path="/events/:eventId/register" element={<EventRegisterPage />} />
               </Route>
 
@@ -156,7 +158,15 @@ export default function App() {
                 <Route path="qr-scanner" element={<QRScannerPage />} />
                 <Route path="sponsors" element={<SponsorsPage />} />
                 <Route path="analytics" element={<AnalyticsPage />} />
-                <Route path="participants" element={<ManageParticipantsPage />} />
+                <Route
+                  path="participant-access"
+                  element={
+                    <ProtectedRoute requiredPermission="participants">
+                      <ParticipantAccessPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="participants" element={<Navigate to="/dashboard/participant-access" replace />} />
                 <Route path="teams" element={<TeamsPage />} />
                 <Route path="files" element={<FilesPage />} />
                 <Route path="documentation" element={<DocumentationPage />} />

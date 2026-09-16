@@ -101,9 +101,13 @@ export default function UserActivityPage() {
         return 'bg-blue-500/10 text-blue-400 border border-blue-500/20';
       case 'approve_user':
       case 'create_position':
+      case 'grant_participant_access':
+      case 'bulk_grant_participant_access':
         return 'bg-green-500/10 text-green-400 border border-green-500/20';
       case 'reject_user':
       case 'remove_user':
+      case 'revoke_participant_access':
+      case 'bulk_revoke_participant_access':
         return 'bg-red-500/10 text-red-400 border border-red-500/20';
       default:
         return 'bg-purple-500/10 text-purple-400 border border-purple-500/20';

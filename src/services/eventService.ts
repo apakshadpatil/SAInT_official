@@ -16,10 +16,12 @@ import {
 import { db, auth } from '../firebase/config';
 import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
 import { trackDBOperation } from './dbTrackingService';
-import type { EventRecord, EventTicket, EventParticipant, EventTeam, EventRuleAgreement, TeamMemberDetail } from '../types';
+import type { EventRecord, EventTicket, EventParticipant, EventTeam, EventRuleAgreement, TeamMemberDetail, UserProfile } from '../types';
 import { buildQRPayload, parseQRPayload } from '../utils/qrScan';
 import { extractSupabasePathFromPublicUrl, removeFileFromSupabase, uploadFileToSupabase } from '../utils/supabase';
 import { uploadFileToStorage } from '../utils/fileUtils';
+import { logActivity } from './activityService';
+import { hasTabAccess, isSuperAdmin } from '../utils/permissions';
 
 const FIRESTORE_FIELD_LIMIT = 1048487; // bytes — guard for inline data URLs
 
@@ -104,7 +106,13 @@ export async function createEvent(data: Omit<EventRecord, 'id' | 'createdAt' | '
 }
 
 export async function updateEvent(id: string, data: Partial<EventRecord>) {
-  const imageFields: Array<keyof EventRecord> = ['imageURL', 'ticketDesignImageUrl', 'paymentQRUrl'] as any;
+  const imageFields: Array<keyof EventRecord> = [
+    'imageURL',
+    'ticketDesignImageUrl',
+    'paymentQRUrl',
+    'registrationBannerUrl',
+    'registrationBackgroundUrl',
+  ] as any;
   for (const field of imageFields) {
     const val = (data as any)[field];
     if (val && typeof val === 'string' && val.startsWith('data:')) {
@@ -148,6 +156,28 @@ export async function deleteEvent(id: string) {
           await removeFileFromSupabase(certPath);
         } catch (e) {
           console.warn('Failed to remove Supabase certificate template for event', id, e);
+        }
+      }
+
+      // Cleanup signatory signature images if stored in Supabase
+      const certCfg = data.certificateConfig;
+      if (certCfg) {
+        const sigPaths: string[] = [];
+        if (certCfg.signatories) {
+          for (const s of certCfg.signatories) {
+            const p = s.signaturePath || (s.signatureUrl ? extractSupabasePathFromPublicUrl(s.signatureUrl) : undefined);
+            if (p) sigPaths.push(p);
+          }
+        }
+        if (certCfg.signatorySignaturePath) sigPaths.push(certCfg.signatorySignaturePath);
+        if (certCfg.signatory2SignaturePath) sigPaths.push(certCfg.signatory2SignaturePath);
+
+        for (const sp of sigPaths) {
+          try {
+            await removeFileFromSupabase(sp);
+          } catch (e) {
+            console.warn('Failed to remove Supabase signatory signature for event', id, e);
+          }
         }
       }
     }
@@ -1157,4 +1187,161 @@ export function getPastEvents(events: EventRecord[]) {
     const eventDate = (e.date || '').slice(0, 10);
     return (eventDate && eventDate < today) || e.status === 'completed';
   });
+}
+
+export async function updateParticipantAccessStatus(
+  eventId: string,
+  ticketId: string,
+  accessStatus: 'granted' | 'revoked',
+  actorProfile: UserProfile
+) {
+  if (!isSuperAdmin(actorProfile) && !hasTabAccess(actorProfile, 'participants')) {
+    throw new Error('Unauthorized: You do not have permission to manage participant access.');
+  }
+
+  const ticketRef = doc(db, 'events', eventId, 'tickets', ticketId);
+  const ticketSnap = await getDoc(ticketRef);
+  if (!ticketSnap.exists()) {
+    throw new Error('Ticket not found');
+  }
+  const ticketData = ticketSnap.data() as EventTicket;
+
+  const timestamp = new Date().toISOString();
+  const actorName = actorProfile.displayName || actorProfile.firstName || actorProfile.email || 'Admin';
+
+  // 1. Update ticket in subcollection
+  await updateDoc(ticketRef, {
+    accessStatus,
+    accessUpdatedAt: timestamp,
+    accessUpdatedBy: actorName,
+  });
+
+  // 2. Update participant in parent event document if present
+  try {
+    const event = await getEvent(eventId);
+    if (event && event.participants && event.participants.length > 0) {
+      const idx = event.participants.findIndex((p) => p.ticketId === ticketId || p.id === ticketId);
+      if (idx >= 0) {
+        const nextParticipants = [...event.participants];
+        nextParticipants[idx] = {
+          ...nextParticipants[idx],
+          accessStatus,
+          accessUpdatedAt: timestamp,
+          accessUpdatedBy: actorName,
+        };
+        await updateEvent(eventId, { participants: nextParticipants });
+      }
+    }
+  } catch (err) {
+    console.warn('Could not update parent event document participants:', err);
+  }
+
+  // 3. Update participant user account status if linked
+  try {
+    const userEmail = (ticketData.guestEmail || '').toLowerCase().trim();
+    if (ticketData.participantUid) {
+      await updateDoc(doc(db, 'users', ticketData.participantUid), {
+        status: accessStatus === 'granted' ? 'approved' : 'rejected',
+        updatedAt: timestamp,
+      });
+      invalidateCache(`user:${ticketData.participantUid}`);
+    } else if (userEmail) {
+      const usersSnap = await getDocs(
+        query(collection(db, 'users'), where('participantEmail', '==', userEmail))
+      );
+      if (!usersSnap.empty) {
+        const userDoc = usersSnap.docs[0];
+        await updateDoc(doc(db, 'users', userDoc.id), {
+          status: accessStatus === 'granted' ? 'approved' : 'rejected',
+          updatedAt: timestamp,
+        });
+        invalidateCache(`user:${userDoc.id}`);
+      }
+    }
+  } catch (err) {
+    console.warn('Could not update participant user account status:', err);
+  }
+
+  // 4. Invalidate relevant caches
+  invalidateCache(`tickets:${eventId}`);
+  invalidateCache(`event:${eventId}`);
+  invalidateCache('events:all');
+  invalidateCache('users:participants');
+
+  // 5. Global Audit Log
+  const action = accessStatus === 'granted' ? 'grant_participant_access' : 'revoke_participant_access';
+  const participantName = ticketData.guestName || 'Participant';
+  const details = accessStatus === 'granted'
+    ? `${actorName} granted participant access to ${participantName}`
+    : `${actorName} revoked participant access from ${participantName}`;
+
+  await logActivity(
+    actorProfile.uid,
+    actorName,
+    actorProfile.email,
+    action,
+    details
+  );
+}
+
+export async function batchUpdateParticipantsAccess(
+  items: Array<{ eventId: string; ticketId: string; participantName: string; guestEmail?: string; participantUid?: string }>,
+  accessStatus: 'granted' | 'revoked',
+  actorProfile: UserProfile
+) {
+  if (!isSuperAdmin(actorProfile) && !hasTabAccess(actorProfile, 'participants')) {
+    throw new Error('Unauthorized: You do not have permission to manage participant access.');
+  }
+
+  if (items.length === 0) return { successCount: 0, failCount: 0 };
+
+  const timestamp = new Date().toISOString();
+  const actorName = actorProfile.displayName || actorProfile.firstName || actorProfile.email || 'Admin';
+
+  const results = await Promise.allSettled(
+    items.map(async (item) => {
+      const ticketRef = doc(db, 'events', item.eventId, 'tickets', item.ticketId);
+      await updateDoc(ticketRef, {
+        accessStatus,
+        accessUpdatedAt: timestamp,
+        accessUpdatedBy: actorName,
+      });
+
+      if (item.participantUid) {
+        await updateDoc(doc(db, 'users', item.participantUid), {
+          status: accessStatus === 'granted' ? 'approved' : 'rejected',
+          updatedAt: timestamp,
+        });
+      }
+      return item;
+    })
+  );
+
+  const successCount = results.filter((r) => r.status === 'fulfilled').length;
+  const failCount = results.length - successCount;
+
+  // Invalidate event tickets caches
+  const uniqueEventIds = Array.from(new Set(items.map((i) => i.eventId)));
+  uniqueEventIds.forEach((evId) => {
+    invalidateCache(`tickets:${evId}`);
+    invalidateCache(`event:${evId}`);
+  });
+  invalidateCache('events:all');
+  invalidateCache('users:participants');
+
+  // Single bulk activity log
+  const action = accessStatus === 'granted' ? 'bulk_grant_participant_access' : 'bulk_revoke_participant_access';
+  const details = accessStatus === 'granted'
+    ? `${actorName} granted participant access to ${successCount} participants`
+    : `${actorName} revoked participant access from ${successCount} participants`;
+
+  await logActivity(
+    actorProfile.uid,
+    actorName,
+    actorProfile.email,
+    action,
+    details
+  );
+
+  return { successCount, failCount };
 }

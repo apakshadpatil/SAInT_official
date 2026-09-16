@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { EventRecord, CertificateConfig, EventParticipant } from '../../types';
+import type { EventRecord, CertificateConfig, SignatoryConfig, EventParticipant } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
 import {
   renderCertificateCanvas,
   downloadCertificate,
   downloadAllCertificatesAsZip,
   DEFAULT_CERTIFICATE_CONFIG,
+  getSignatories,
 } from '../../utils/certificateGenerator';
 import {
   uploadFileToSupabase,
@@ -37,6 +38,7 @@ import {
   X,
   FileCheck,
   FolderArchive,
+  Plus,
 } from 'lucide-react';
 
 interface CertificateTabProps {
@@ -81,9 +83,160 @@ export default function CertificateTab({ event, onUpdate, canEdit }: Certificate
   const [sendingSingleEmail, setSendingSingleEmail] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
+  // Signatory Signature Uploading / Deleting state
+  const [uploadingSigId, setUploadingSigId] = useState<string | null>(null);
+  const [deletingSigId, setDeletingSigId] = useState<string | null>(null);
+
   const participants = event.participants || [];
   const arrivedParticipants = participants.filter((p) => p.arrived);
   const hasUploadedTemplate = Boolean(config.templateUrl);
+
+  const activeSignatories = getSignatories(config);
+
+  const updateSignatoriesConfig = (newSignatories: SignatoryConfig[]) => {
+    const updated: CertificateConfig = {
+      ...config,
+      signatories: newSignatories,
+      // Synchronize legacy fields for 100% backward compatibility
+      signatoryName: newSignatories[0]?.name || '',
+      signatoryTitle: newSignatories[0]?.title || '',
+      signatorySignatureUrl: newSignatories[0]?.signatureUrl,
+      signatorySignaturePath: newSignatories[0]?.signaturePath,
+      signatory2Name: newSignatories[1]?.name || '',
+      signatory2Title: newSignatories[1]?.title || '',
+      signatory2SignatureUrl: newSignatories[1]?.signatureUrl,
+      signatory2SignaturePath: newSignatories[1]?.signaturePath,
+    };
+    setConfig(updated);
+    return updated;
+  };
+
+  const handleSignatoryChange = (sigId: string, field: 'name' | 'title', value: string) => {
+    const newSignatories = activeSignatories.map((s) => (s.id === sigId ? { ...s, [field]: value } : s));
+    updateSignatoriesConfig(newSignatories);
+  };
+
+  const handleSignatureUpload = async (sigId: string, file: File) => {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      showToast('Please upload a valid image file (PNG, JPG, or WEBP)', 'error');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Signature image exceeds 5MB. Please choose a smaller file.', 'error');
+      return;
+    }
+
+    setUploadingSigId(sigId);
+    try {
+      const currentSig = activeSignatories.find((s) => s.id === sigId);
+      // 1. If this signatory previously had an uploaded signature in Supabase, remove it
+      if (currentSig?.signaturePath) {
+        await removeFileFromSupabase(currentSig.signaturePath, SUPABASE_BUCKET);
+      }
+
+      // 2. Upload the new signature file to Supabase Storage
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+      const cleanEventId = event.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanSigId = sigId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const storagePath = `certificates/signatures/${cleanEventId}/${cleanSigId}_${Date.now()}.${ext}`;
+
+      const publicUrl = await uploadFileToSupabase(file, storagePath, SUPABASE_BUCKET);
+
+      // 3. Update signatories in config
+      const newSignatories = activeSignatories.map((s) =>
+        s.id === sigId ? { ...s, signatureUrl: publicUrl, signaturePath: storagePath } : s
+      );
+      const updatedConfig = updateSignatoriesConfig(newSignatories);
+
+      // 4. Persist to Firestore
+      suppressConfigSyncRef.current = true;
+      await onUpdate({
+        certificateConfig: updatedConfig,
+      });
+
+      showToast('Signatory signature uploaded successfully!', 'success');
+    } catch (err: any) {
+      console.error('Failed to upload signatory signature:', err);
+      showToast(err.message || 'Failed to upload signature image', 'error');
+    } finally {
+      setUploadingSigId(null);
+    }
+  };
+
+  const handleRemoveSignature = async (sigId: string) => {
+    if (!window.confirm('Are you sure you want to remove this signature?')) {
+      return;
+    }
+
+    setDeletingSigId(sigId);
+    try {
+      const currentSig = activeSignatories.find((s) => s.id === sigId);
+      if (currentSig?.signaturePath) {
+        await removeFileFromSupabase(currentSig.signaturePath, SUPABASE_BUCKET);
+      }
+
+      const newSignatories = activeSignatories.map((s) =>
+        s.id === sigId ? { ...s, signatureUrl: undefined, signaturePath: undefined } : s
+      );
+      const updatedConfig = updateSignatoriesConfig(newSignatories);
+
+      suppressConfigSyncRef.current = true;
+      await onUpdate({
+        certificateConfig: updatedConfig,
+      });
+
+      showToast('Signature removed successfully.', 'info');
+    } catch (err: any) {
+      console.error('Failed to remove signatory signature:', err);
+      showToast('Failed to remove signature from storage', 'error');
+    } finally {
+      setDeletingSigId(null);
+    }
+  };
+
+  const handleAddSignatory = () => {
+    if (activeSignatories.length >= 4) {
+      showToast('Maximum 4 signatories allowed on a certificate.', 'info');
+      return;
+    }
+    const newSignatories: SignatoryConfig[] = [
+      ...activeSignatories,
+      {
+        id: `sig_${Date.now()}`,
+        name: '',
+        title: '',
+      },
+    ];
+    updateSignatoriesConfig(newSignatories);
+  };
+
+  const handleRemoveSignatory = async (sigId: string) => {
+    if (activeSignatories.length <= 1) {
+      showToast('At least one signatory is required.', 'error');
+      return;
+    }
+    if (!window.confirm('Are you sure you want to remove this signatory position?')) {
+      return;
+    }
+
+    const currentSig = activeSignatories.find((s) => s.id === sigId);
+    if (currentSig?.signaturePath) {
+      try {
+        await removeFileFromSupabase(currentSig.signaturePath, SUPABASE_BUCKET);
+      } catch (e) {
+        console.warn('Failed to delete signature during signatory removal:', e);
+      }
+    }
+
+    const newSignatories = activeSignatories.filter((s) => s.id !== sigId);
+    const updatedConfig = updateSignatoriesConfig(newSignatories);
+    suppressConfigSyncRef.current = true;
+    await onUpdate({
+      certificateConfig: updatedConfig,
+    });
+    showToast('Signatory removed.', 'info');
+  };
 
   useEffect(() => {
     // Skip if this component itself triggered the update (avoid re-render loop)
@@ -1049,9 +1202,12 @@ export default function CertificateTab({ event, onUpdate, canEdit }: Certificate
               </div>
 
               {/* Signatories & Verification ID */}
-              <div className="p-3 rounded-xl bg-slate-900/40 border space-y-3" style={{ borderColor: 'var(--dash-border)' }}>
+              <div className="p-3.5 rounded-xl bg-slate-900/40 border space-y-3.5" style={{ borderColor: 'var(--dash-border)' }}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-amber-400">4. Signatories &amp; Verification</span>
+                  <div>
+                    <span className="text-xs font-bold text-amber-400 block">4. Signatories &amp; Signatures</span>
+                    <span className="text-[10px] text-slate-400">Manage names, designations, and uploaded signature images</span>
+                  </div>
                   <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
                     <input
                       type="checkbox"
@@ -1064,49 +1220,204 @@ export default function CertificateTab({ event, onUpdate, canEdit }: Certificate
                 </div>
 
                 {config.showSignatories !== false && (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="block text-[10px] mb-1 text-slate-400">Left Signatory Name</label>
-                        <input
-                          type="text"
-                          value={config.signatoryName || ''}
-                          onChange={(e) => setConfig({ ...config, signatoryName: e.target.value })}
-                          className="input-field w-full text-xs"
-                          placeholder="Prof. Faculty Coordinator"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] mb-1 text-slate-400">Left Signatory Title</label>
-                        <input
-                          type="text"
-                          value={config.signatoryTitle || ''}
-                          onChange={(e) => setConfig({ ...config, signatoryTitle: e.target.value })}
-                          className="input-field w-full text-xs"
-                          placeholder="Faculty Advisor, IT Dept"
-                        />
-                      </div>
+                  <div className="space-y-3">
+                    {/* Multi-Signatory List */}
+                    <div className="space-y-3">
+                      {activeSignatories.map((sig, idx) => {
+                        const positionLabel =
+                          idx === 0
+                            ? 'Left Signatory'
+                            : idx === 1 && activeSignatories.length === 2
+                            ? 'Right Signatory'
+                            : `Signatory ${idx + 1}`;
+
+                        return (
+                          <div
+                            key={sig.id}
+                            className="p-3 rounded-xl border space-y-2.5 transition-all"
+                            style={{
+                              borderColor: 'var(--dash-border)',
+                              background: 'rgba(15, 23, 42, 0.5)',
+                            }}
+                          >
+                            <div className="flex items-center justify-between pb-1 border-b border-slate-800/60">
+                              <span className="text-[11px] font-bold tracking-wide uppercase text-slate-300">
+                                {positionLabel}
+                              </span>
+                              {canEdit && activeSignatories.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveSignatory(sig.id)}
+                                  className="text-slate-400 hover:text-red-400 p-1 rounded transition-colors cursor-pointer"
+                                  title="Remove this signatory"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid sm:grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[10px] mb-1 text-slate-400">Signatory Name</label>
+                                <input
+                                  type="text"
+                                  value={sig.name || ''}
+                                  onChange={(e) => handleSignatoryChange(sig.id, 'name', e.target.value)}
+                                  className="input-field w-full text-xs"
+                                  placeholder="e.g. Dr. ABC"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] mb-1 text-slate-400">Designation / Role</label>
+                                <input
+                                  type="text"
+                                  value={sig.title || ''}
+                                  onChange={(e) => handleSignatoryChange(sig.id, 'title', e.target.value)}
+                                  className="input-field w-full text-xs"
+                                  placeholder="e.g. HOD, IT Dept"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Signature Upload & Preview Component */}
+                            <div className="pt-1">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className="text-[10px] font-semibold text-slate-400">
+                                  Signature Graphic
+                                </label>
+                                {sig.signatureUrl && (
+                                  <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
+                                    <CheckCircle2 className="w-3 h-3" /> Configured
+                                  </span>
+                                )}
+                              </div>
+
+                              {sig.signatureUrl ? (
+                                <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                  {/* Transparent checkerboard preview box */}
+                                  <div
+                                    className="h-14 w-full sm:w-44 rounded-md border border-slate-700/60 flex items-center justify-center p-1.5 overflow-hidden shrink-0"
+                                    style={{
+                                      backgroundColor: '#090d16',
+                                      backgroundImage:
+                                        'linear-gradient(45deg, #111827 25%, transparent 25%), linear-gradient(-45deg, #111827 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #111827 75%), linear-gradient(-45deg, transparent 75%, #111827 75%)',
+                                      backgroundSize: '12px 12px',
+                                      backgroundPosition: '0 0, 0 6px, 6px -6px, -6px 0px',
+                                    }}
+                                  >
+                                    <img
+                                      src={sig.signatureUrl}
+                                      alt={sig.name || 'Signature'}
+                                      className="max-h-full max-w-full object-contain filter contrast-125"
+                                    />
+                                  </div>
+
+                                  {canEdit && (
+                                    <div className="flex items-center gap-2">
+                                      <label
+                                        className={`btn-secondary !text-[11px] !py-1.5 !px-3 flex items-center gap-1.5 cursor-pointer ${
+                                          uploadingSigId === sig.id ? 'opacity-50 cursor-not-allowed' : ''
+                                        }`}
+                                      >
+                                        <RefreshCw
+                                          className={`w-3 h-3 ${
+                                            uploadingSigId === sig.id ? 'animate-spin' : ''
+                                          }`}
+                                        />
+                                        {uploadingSigId === sig.id ? 'Uploading...' : 'Replace'}
+                                        <input
+                                          type="file"
+                                          accept="image/png,image/jpeg,image/webp"
+                                          disabled={uploadingSigId === sig.id || deletingSigId === sig.id}
+                                          onChange={(e) =>
+                                            e.target.files?.[0] &&
+                                            handleSignatureUpload(sig.id, e.target.files[0])
+                                          }
+                                          className="hidden"
+                                        />
+                                      </label>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveSignature(sig.id)}
+                                        disabled={deletingSigId === sig.id || uploadingSigId === sig.id}
+                                        className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-slate-800 cursor-pointer disabled:opacity-50"
+                                        title="Remove signature image"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : canEdit ? (
+                                <label
+                                  className={`border border-dashed rounded-lg p-3 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all border-slate-700/80 hover:border-amber-500/60 bg-slate-950/40 hover:bg-slate-950/80 ${
+                                    uploadingSigId === sig.id ? 'opacity-50 cursor-not-allowed' : ''
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-1.5 text-xs text-amber-400 font-semibold">
+                                    <Upload
+                                      className={`w-3.5 h-3.5 ${
+                                        uploadingSigId === sig.id ? 'animate-spin' : ''
+                                      }`}
+                                    />
+                                    <span>
+                                      {uploadingSigId === sig.id
+                                        ? 'Uploading Signature...'
+                                        : 'Upload Signature Image'}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 text-center">
+                                    PNG with transparent background recommended · Max 5MB
+                                  </span>
+                                  <input
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/webp"
+                                    disabled={uploadingSigId === sig.id}
+                                    onChange={(e) =>
+                                      e.target.files?.[0] &&
+                                      handleSignatureUpload(sig.id, e.target.files[0])
+                                    }
+                                    className="hidden"
+                                  />
+                                </label>
+                              ) : (
+                                <div className="text-[11px] text-slate-500 italic py-1">
+                                  No signature uploaded for this signatory.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="block text-[10px] mb-1 text-slate-400">Right Signatory Name</label>
+                    {/* Add Signatory Button & Position Offset Slider */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+                      {canEdit && activeSignatories.length < 4 && (
+                        <button
+                          type="button"
+                          onClick={handleAddSignatory}
+                          className="btn-secondary !text-xs !py-1.5 !px-3 flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-amber-400" />
+                          Add Another Signatory
+                        </button>
+                      )}
+
+                      <div className="flex items-center gap-2 text-xs flex-1 sm:justify-end">
+                        <label className="text-[10px] text-slate-400 shrink-0">
+                          Vertical Offset (px):
+                        </label>
                         <input
-                          type="text"
-                          value={config.signatory2Name || ''}
-                          onChange={(e) => setConfig({ ...config, signatory2Name: e.target.value })}
-                          className="input-field w-full text-xs"
-                          placeholder="Student President"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] mb-1 text-slate-400">Right Signatory Title</label>
-                        <input
-                          type="text"
-                          value={config.signatory2Title || ''}
-                          onChange={(e) => setConfig({ ...config, signatory2Title: e.target.value })}
-                          className="input-field w-full text-xs"
-                          placeholder="SAInT Core Committee"
+                          type="number"
+                          min="-200"
+                          max="200"
+                          value={config.signatoriesOffsetY || 0}
+                          onChange={(e) =>
+                            setConfig({ ...config, signatoriesOffsetY: Number(e.target.value) || 0 })
+                          }
+                          className="input-field !py-1 !px-2 text-xs w-20 text-center"
                         />
                       </div>
                     </div>

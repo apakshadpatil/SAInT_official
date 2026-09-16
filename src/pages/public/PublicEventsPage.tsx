@@ -200,20 +200,22 @@ export default function PublicEventsPage() {
                 style={doomsdayMode ? { background: '#0a0d0a', borderColor: 'rgba(16,185,129,0.25)' } : { background: '#ffffff', borderColor: '#e2e8f0' }}
               >
                 {/* Image Banner */}
-                {event.imageURL ? (
-                  <div className="h-44 overflow-hidden relative shrink-0">
-                    <img src={event.imageURL} alt={event.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    {event.category && (
-                      <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md" style={doomsdayMode ? { background: 'rgba(0,0,0,0.8)', color: '#34d399', border: '1px solid rgba(16,185,129,0.4)' } : { background: 'rgba(255,255,255,0.9)', color: '#2563eb' }}>
-                        {event.category}
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <div className="h-44 flex items-center justify-center shrink-0" style={doomsdayMode ? { background: 'linear-gradient(135deg, #064e3b, #022c22)' } : { background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-                    <Calendar className="w-12 h-12 text-white/30" />
-                  </div>
-                )}
+                <Link to={`/events/${event.id}`} className="block">
+                  {event.imageURL ? (
+                    <div className="h-44 overflow-hidden relative shrink-0">
+                      <img src={event.imageURL} alt={event.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      {event.category && (
+                        <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md" style={doomsdayMode ? { background: 'rgba(0,0,0,0.8)', color: '#34d399', border: '1px solid rgba(16,185,129,0.4)' } : { background: 'rgba(255,255,255,0.9)', color: '#2563eb' }}>
+                          {event.category}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="h-44 flex items-center justify-center shrink-0" style={doomsdayMode ? { background: 'linear-gradient(135deg, #064e3b, #022c22)' } : { background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
+                      <Calendar className="w-12 h-12 text-white/30" />
+                    </div>
+                  )}
+                </Link>
 
                 {/* Content */}
                 <div className="p-5 flex flex-col flex-1">
@@ -225,9 +227,11 @@ export default function PublicEventsPage() {
                     <span>{event.startTime}</span>
                   </div>
 
-                  <h3 className="text-lg font-bold line-clamp-1 mb-2 group-hover:underline" style={{ color: doomsdayMode ? '#ffffff' : '#0f172a' }}>
-                    {event.title}
-                  </h3>
+                  <Link to={`/events/${event.id}`} className="block mb-2">
+                    <h3 className="text-lg font-bold line-clamp-1 hover:underline" style={{ color: doomsdayMode ? '#ffffff' : '#0f172a' }}>
+                      {event.title}
+                    </h3>
+                  </Link>
 
                   <p className="text-xs leading-relaxed flex-1 line-clamp-3 mb-4" style={{ color: doomsdayMode ? '#94a3b8' : '#64748b' }}>
                     {event.description}
@@ -238,18 +242,30 @@ export default function PublicEventsPage() {
                     <span className="truncate">{event.location}{event.venue ? ` · ${event.venue}` : ''}</span>
                   </div>
 
-                  {/* Register Button */}
-                  <Link
-                    to={`/events/${event.id}/register`}
-                    className="w-full py-2.5 px-4 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:scale-[1.02]"
-                    style={doomsdayMode
-                      ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: '#000000', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }
-                      : { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#ffffff' }
-                    }
-                  >
-                    <Ticket className="w-4 h-4" />
-                    <span>Register &amp; Get Ticket</span>
-                  </Link>
+                  {/* Actions: Details + Register */}
+                  <div className="grid grid-cols-2 gap-2 mt-auto">
+                    <Link
+                      to={`/events/${event.id}`}
+                      className="py-2.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center transition-all border"
+                      style={doomsdayMode
+                        ? { borderColor: 'rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.08)', color: '#34d399' }
+                        : { borderColor: '#cbd5e1', background: '#f8fafc', color: '#334155' }
+                      }
+                    >
+                      <span>Details</span>
+                    </Link>
+                    <Link
+                      to={`/events/${event.id}/register`}
+                      className="py-2.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md hover:scale-[1.02]"
+                      style={doomsdayMode
+                        ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: '#000000', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }
+                        : { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#ffffff' }
+                      }
+                    >
+                      <Ticket className="w-3.5 h-3.5" />
+                      <span>Register</span>
+                    </Link>
+                  </div>
                 </div>
               </div>
             ))}
@@ -265,15 +281,15 @@ export default function PublicEventsPage() {
               >
                 {/* Left Side: Thumbnail & Meta */}
                 <div className="flex items-start gap-4 flex-1">
-                  <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-lg overflow-hidden shrink-0 border" style={{ borderColor: doomsdayMode ? 'rgba(16,185,129,0.3)' : '#e2e8f0' }}>
+                  <Link to={`/events/${event.id}`} className="w-24 h-24 sm:w-28 sm:h-28 rounded-lg overflow-hidden shrink-0 border block group" style={{ borderColor: doomsdayMode ? 'rgba(16,185,129,0.3)' : '#e2e8f0' }}>
                     {event.imageURL ? (
-                      <img src={event.imageURL} alt={event.title} className="w-full h-full object-cover" />
+                      <img src={event.imageURL} alt={event.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center" style={doomsdayMode ? { background: '#064e3b' } : { background: '#2563eb' }}>
                         <Calendar className="w-8 h-8 text-white/40" />
                       </div>
                     )}
-                  </div>
+                  </Link>
 
                   <div className="space-y-1.5 flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -286,9 +302,11 @@ export default function PublicEventsPage() {
                       </span>
                     </div>
 
-                    <h3 className="text-xl font-black" style={{ color: doomsdayMode ? '#ffffff' : '#0f172a' }}>
-                      {event.title}
-                    </h3>
+                    <Link to={`/events/${event.id}`} className="block">
+                      <h3 className="text-xl font-black hover:underline" style={{ color: doomsdayMode ? '#ffffff' : '#0f172a' }}>
+                        {event.title}
+                      </h3>
+                    </Link>
 
                     <p className="text-xs leading-relaxed line-clamp-2" style={{ color: doomsdayMode ? '#94a3b8' : '#64748b' }}>
                       {event.description}
@@ -301,11 +319,11 @@ export default function PublicEventsPage() {
                   </div>
                 </div>
 
-                {/* Right Side: Register Action */}
-                <div className="w-full lg:w-56 shrink-0 pt-3 lg:pt-0 border-t lg:border-t-0" style={{ borderColor: doomsdayMode ? 'rgba(16,185,129,0.2)' : '#f1f5f9' }}>
+                {/* Right Side: Details & Register Actions */}
+                <div className="w-full lg:w-56 shrink-0 pt-3 lg:pt-0 border-t lg:border-t-0 flex flex-col gap-2" style={{ borderColor: doomsdayMode ? 'rgba(16,185,129,0.2)' : '#f1f5f9' }}>
                   <Link
                     to={`/events/${event.id}/register`}
-                    className="w-full py-3 px-4 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:scale-[1.02]"
+                    className="w-full py-2.5 px-4 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:scale-[1.02]"
                     style={doomsdayMode
                       ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: '#000000', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }
                       : { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#ffffff' }
@@ -313,6 +331,17 @@ export default function PublicEventsPage() {
                   >
                     <Ticket className="w-4 h-4" />
                     <span>Register Now</span>
+                  </Link>
+
+                  <Link
+                    to={`/events/${event.id}`}
+                    className="w-full py-2 px-4 rounded-lg font-semibold text-xs flex items-center justify-center transition-all border text-center"
+                    style={doomsdayMode
+                      ? { borderColor: 'rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.08)', color: '#34d399' }
+                      : { borderColor: '#cbd5e1', background: '#f8fafc', color: '#334155' }
+                    }
+                  >
+                    <span>View Event Details</span>
                   </Link>
                 </div>
               </div>
