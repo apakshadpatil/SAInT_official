@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
-import type { EventRecord, EventParticipant } from '../../types';
+import { useState, useEffect, useRef } from 'react';
+import type { EventRecord, EventParticipant, EventTicket } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
+import QRCode from 'qrcode';
 import {
   Download,
   Trash2,
   UserCheck,
+  UserPlus,
   RotateCcw,
   CheckSquare,
   Square,
@@ -16,12 +18,21 @@ import {
   Eye,
   ExternalLink,
   X,
+  MessageCircle,
+  UploadCloud,
+  Check,
+  AlertCircle,
+  Maximize2,
 } from 'lucide-react';
 import {
   updateParticipantArrivalStatus,
   batchUpdateParticipantsArrival,
   updatePaymentVerificationStatus,
+  registerParticipantForEvent,
 } from '../../services/eventService';
+import { downloadTicketImage } from '../../utils/ticketDownload';
+import { uploadFileToSupabase } from '../../utils/supabase';
+import { logActivity } from '../../services/activityService';
 
 interface ParticipantsTabProps {
   event: EventRecord;
@@ -42,11 +53,202 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
   const [proofModalParticipant, setProofModalParticipant] = useState<EventParticipant | null>(null);
   const [updatingPaymentId, setUpdatingPaymentId] = useState<string | null>(null);
 
+  // Manual participant registration state
+  const formRef = useRef<HTMLDivElement>(null);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [college, setCollege] = useState('');
+  const [department, setDepartment] = useState('');
+  const [selectedTierId, setSelectedTierId] = useState('');
+  const [selectedDomainId, setSelectedDomainId] = useState('');
+  const [transactionId, setTransactionId] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState<'verified' | 'pending' | 'rejected'>('verified');
+  const [paymentScreenshotFile, setPaymentScreenshotFile] = useState<File | null>(null);
+  const [paymentScreenshotPreview, setPaymentScreenshotPreview] = useState<string>('');
+  const [paymentScreenshotError, setPaymentScreenshotError] = useState<string>('');
+  const [customResponses, setCustomResponses] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string>('');
+  const [showFullQRModal, setShowFullQRModal] = useState(false);
+
+  // Success ticket state after manual registration
+  const [successTicket, setSuccessTicket] = useState<EventTicket | null>(null);
+  const [successQrUrl, setSuccessQrUrl] = useState<string>('');
+  const [downloadingTicket, setDownloadingTicket] = useState(false);
+
   useEffect(() => {
     if (event.participants) {
       setParticipants(event.participants);
     }
   }, [event.participants]);
+
+  const handleOpenRegisterModal = () => {
+    setName('');
+    setEmail('');
+    setPhone('');
+    setCollege('');
+    setDepartment('');
+    setSelectedTierId(event.ticketTiers?.[0]?.id || '');
+    setSelectedDomainId(event.participantDomains?.[0]?.id || '');
+    setTransactionId('');
+    setPaymentStatus('verified');
+    setPaymentScreenshotFile(null);
+    setPaymentScreenshotPreview('');
+    setPaymentScreenshotError('');
+    setCustomResponses({});
+    setFormError('');
+    setSuccessTicket(null);
+    setSuccessQrUrl('');
+    setShowRegisterModal(true);
+
+    setTimeout(() => {
+      if (formRef.current) {
+        formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 60);
+  };
+
+  const handleScreenshotChange = (file: File | null) => {
+    setPaymentScreenshotError('');
+    if (!file) {
+      setPaymentScreenshotFile(null);
+      setPaymentScreenshotPreview('');
+      return;
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setPaymentScreenshotError('Please upload a valid image (JPG, PNG, or WebP).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setPaymentScreenshotError('Image size must be less than 5 MB.');
+      return;
+    }
+    setPaymentScreenshotFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPaymentScreenshotPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveParticipant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError('');
+
+    if (!name.trim()) {
+      const msg = 'Participant full name is required';
+      setFormError(msg);
+      showToast(msg, 'error');
+      return;
+    }
+
+    setRegistering(true);
+    try {
+      // 1. Duplicate check
+      const normEmail = email.trim().toLowerCase();
+      const normPhone = phone.trim().replace(/\D/g, '');
+
+      const isDuplicateParticipant = participants.some((p) => {
+        const pEmail = p.email?.trim().toLowerCase();
+        const pPhone = p.phone?.trim().replace(/\D/g, '');
+        if (normEmail && pEmail && pEmail === normEmail) return true;
+        if (normPhone && pPhone && pPhone === normPhone) return true;
+        return false;
+      });
+
+      const teams = event.teams || [];
+      const isDuplicateInTeams = teams.some((t) => {
+        const tEmail = t.leadEmail?.trim().toLowerCase();
+        const tPhone = t.leadPhone?.trim().replace(/\D/g, '');
+        if (normEmail && tEmail && tEmail === normEmail) return true;
+        if (normPhone && tPhone && tPhone === normPhone) return true;
+        return (t.members || []).some((m) => {
+          const mEmail = m.email?.trim().toLowerCase();
+          const mPhone = m.phone?.trim().replace(/\D/g, '');
+          if (normEmail && mEmail && mEmail === normEmail) return true;
+          if (normPhone && mPhone && mPhone === normPhone) return true;
+          return false;
+        });
+      });
+
+      if (isDuplicateParticipant || isDuplicateInTeams) {
+        const dupMsg = 'Existing registration found for this event.';
+        setFormError(dupMsg);
+        showToast(dupMsg, 'error');
+        setRegistering(false);
+        return;
+      }
+
+      // 2. Upload payment proof if provided
+      let uploadedProofUrl = '';
+      let uploadedProofPath = '';
+      if (paymentScreenshotFile) {
+        const cleanFileName = paymentScreenshotFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        uploadedProofPath = `payment_proofs/${event.id}/${Date.now()}_${cleanFileName}`;
+        uploadedProofUrl = await uploadFileToSupabase(paymentScreenshotFile, uploadedProofPath);
+      }
+
+      const selectedTier = (event.ticketTiers || []).find((t) => t.id === selectedTierId);
+      const selectedDomain = (event.participantDomains || []).find((d) => d.id === selectedDomainId);
+
+      // 3. Register participant
+      const regResult = await registerParticipantForEvent(event.id, {
+        name: name.trim(),
+        email: email.trim().toLowerCase() || undefined,
+        phone: phone.trim() || undefined,
+        college: college.trim() || undefined,
+        department: department.trim() || undefined,
+        domain: selectedDomain?.name,
+        domainId: selectedDomainId || undefined,
+        tierId: selectedTier?.id,
+        tierName: selectedTier?.name,
+        transactionId: transactionId.trim() || undefined,
+        paymentScreenshotUrl: uploadedProofUrl || undefined,
+        paymentScreenshotPath: uploadedProofPath || undefined,
+        paymentStatus: paymentStatus,
+        customResponses: Object.keys(customResponses).length > 0 ? customResponses : undefined,
+        registrationSource: 'manual',
+      });
+
+      // 4. Log activity
+      await logActivity(
+        profile?.uid || 'coordinator',
+        profile?.displayName || 'Coordinator',
+        profile?.email || '',
+        'manual_registration',
+        `Manually registered participant "${name.trim()}" for event "${event.title}"`
+      );
+
+      // 5. Generate QR Code
+      const qrUrl = await QRCode.toDataURL(regResult.ticket.qrPayload, { width: 300, margin: 2 });
+      setSuccessTicket(regResult.ticket);
+      setSuccessQrUrl(qrUrl);
+
+      // 6. Update local participants list immediately
+      const newParticipantList = [regResult.participant, ...participants];
+      setParticipants(newParticipantList);
+      if (onParticipantsChange) {
+        await onParticipantsChange(newParticipantList);
+      }
+
+      showToast(`Participant "${name}" registered successfully! Entry ticket generated.`, 'success');
+
+      // 7. Auto-download ticket image
+      try {
+        await downloadTicketImage(event, regResult.ticket, qrUrl);
+      } catch (dlErr) {
+        console.warn('Auto download participant ticket note:', dlErr);
+      }
+    } catch (err: any) {
+      console.error('Failed to register participant:', err);
+      setFormError(err.message || 'Failed to register participant');
+      showToast(err.message || 'Failed to register participant', 'error');
+    } finally {
+      setRegistering(false);
+    }
+  };
 
   const handleUpdatePayment = async (
     participant: EventParticipant,
@@ -290,6 +492,59 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
 
   return (
     <div className="space-y-6">
+      {/* Top Banner & Action Header */}
+      <div
+        className="rounded-2xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }}
+      >
+        <div>
+          <div className="flex items-center gap-2">
+            <UserCheck className="w-5 h-5 text-emerald-500" />
+            <h3 className="font-bold text-lg" style={{ color: 'var(--dash-text)' }}>
+              Participants &amp; Attendance Studio
+            </h3>
+          </div>
+          <p className="text-sm mt-1" style={{ color: 'var(--dash-muted)' }}>
+            Register new participants, track live check-ins, manage payment verification, and export credentials.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={exportParticipantCsv}
+            disabled={participants.length === 0}
+            className="btn-secondary !text-xs !py-2.5 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            title="Download full participant CSV roster"
+          >
+            <Download className="w-4 h-4 text-emerald-400" />
+            Export CSV
+          </button>
+
+          <button
+            type="button"
+            onClick={downloadAllTickets}
+            disabled={participants.length === 0}
+            className="btn-secondary !text-xs !py-2.5 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            title="Export all ticket data"
+          >
+            <Download className="w-4 h-4 text-blue-400" />
+            All Tickets
+          </button>
+
+          {canEdit && (
+            <button
+              type="button"
+              onClick={handleOpenRegisterModal}
+              className="btn-primary !text-xs !py-2.5 flex items-center gap-2 cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              Register New Participant
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border p-4 transition-all" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }}>
@@ -758,6 +1013,509 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Register New Participant Modal */}
+      {showRegisterModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
+          <div
+            ref={formRef}
+            className="w-full max-w-2xl rounded-3xl border p-6 space-y-5 my-8 shadow-2xl relative"
+            style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: 'var(--dash-border)' }}>
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-emerald-500" />
+                <h3 className="font-bold text-lg" style={{ color: 'var(--dash-text)' }}>
+                  {successTicket ? 'Participant Registration Confirmed!' : 'Register New Participant'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRegisterModal(false);
+                  setSuccessTicket(null);
+                  setSuccessQrUrl('');
+                }}
+                className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Success Result View */}
+            {successTicket ? (
+              <div className="text-center space-y-5 animate-fade-in py-2">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/10 border-2 border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <div>
+                  <h4 className="text-xl font-bold" style={{ color: 'var(--dash-text)' }}>
+                    Registration Completed Successfully!
+                  </h4>
+                  <p className="text-xs mt-1" style={{ color: 'var(--dash-muted)' }}>
+                    Entry pass for <strong className="text-blue-400">{successTicket.guestName}</strong> has been created.
+                  </p>
+                </div>
+
+                {/* QR Display */}
+                {successQrUrl && (
+                  <div className="inline-block p-4 bg-white rounded-2xl shadow-xl border border-slate-200">
+                    <img src={successQrUrl} alt="Participant Ticket QR" className="w-48 h-48 block mx-auto" />
+                  </div>
+                )}
+
+                {/* Pass Details */}
+                <div
+                  className="rounded-2xl p-4 text-xs space-y-2 max-w-md mx-auto text-left border"
+                  style={{ borderColor: 'var(--dash-border)', background: 'rgba(255, 255, 255, 0.03)' }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--dash-muted)' }}>Pass Number:</span>
+                    <span className="font-mono font-bold text-blue-400">{successTicket.ticketNumber}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--dash-muted)' }}>Attendee:</span>
+                    <span className="font-semibold" style={{ color: 'var(--dash-text)' }}>{successTicket.guestName}</span>
+                  </div>
+                  {successTicket.guestEmail && (
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: 'var(--dash-muted)' }}>Email ID:</span>
+                      <span className="font-mono" style={{ color: 'var(--dash-text)' }}>{successTicket.guestEmail}</span>
+                    </div>
+                  )}
+                  {successTicket.tierName && (
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: 'var(--dash-muted)' }}>Ticket Tier:</span>
+                      <span className="font-semibold" style={{ color: 'var(--dash-text)' }}>{successTicket.tierName}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="space-y-2.5 max-w-md mx-auto pt-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (successTicket && successQrUrl) {
+                        setDownloadingTicket(true);
+                        try {
+                          await downloadTicketImage(event, successTicket, successQrUrl);
+                          showToast('Downloaded ticket pass image!', 'success');
+                        } catch (err: any) {
+                          showToast('Download failed: ' + err.message, 'error');
+                        } finally {
+                          setDownloadingTicket(false);
+                        }
+                      }
+                    }}
+                    disabled={downloadingTicket}
+                    className="btn-primary !text-xs !py-3 !px-5 flex items-center justify-center gap-2 w-full cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    {downloadingTicket ? 'Downloading Pass Image...' : 'Download Ticket Pass Image'}
+                  </button>
+
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    {event.whatsappGroupUrl && (
+                      <a
+                        href={event.whatsappGroupUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-2 text-xs font-semibold transition-colors"
+                      >
+                        <MessageCircle className="w-4 h-4" /> Join WhatsApp Group
+                      </a>
+                    )}
+                    {event.rulebookUrl && (
+                      <a
+                        href={event.rulebookUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-2 text-xs font-semibold transition-colors"
+                      >
+                        <ExternalLink className="w-4 h-4" /> Access Rulebook
+                      </a>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowRegisterModal(false);
+                      setSuccessTicket(null);
+                      setSuccessQrUrl('');
+                    }}
+                    className="btn-secondary !text-xs !py-2.5 w-full cursor-pointer mt-2"
+                  >
+                    Done &amp; Return to Participants Studio
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSaveParticipant} className="space-y-4">
+                {/* Form Error Alert Banner */}
+                {formError && (
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {/* Full Name & Tier */}
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                      Full Name <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="e.g. John Doe"
+                      className="input-field w-full text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                      Ticket Tier / Category
+                    </label>
+                    {event.ticketTiers && event.ticketTiers.length > 0 ? (
+                      <select
+                        value={selectedTierId}
+                        onChange={(e) => setSelectedTierId(e.target.value)}
+                        className="input-field w-full text-xs"
+                      >
+                        <option value="">Select Tier (Optional)</option>
+                        {event.ticketTiers.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} {t.price !== undefined ? `(₹${t.price})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        disabled
+                        value="Standard Entry"
+                        className="input-field w-full text-xs opacity-60"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Contact Information */}
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                      Email Address
+                    </label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="attendee@example.com"
+                      className="input-field w-full text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                      Phone Number
+                    </label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="9876543210"
+                      className="input-field w-full text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* College & Department */}
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                      College / Institute
+                    </label>
+                    <input
+                      type="text"
+                      value={college}
+                      onChange={(e) => setCollege(e.target.value)}
+                      placeholder="e.g. JSPM RSCOE"
+                      className="input-field w-full text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                      Department / Branch
+                    </label>
+                    <input
+                      type="text"
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                      placeholder="e.g. Computer Science"
+                      className="input-field w-full text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Domain Selection if enabled */}
+                {Boolean(event.enableDomainSelection && event.participantDomains?.length) && (
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                      Domain / Track
+                    </label>
+                    <select
+                      value={selectedDomainId}
+                      onChange={(e) => setSelectedDomainId(e.target.value)}
+                      className="input-field w-full text-xs"
+                    >
+                      <option value="">Choose Domain (Optional)</option>
+                      {event.participantDomains?.map((domain) => (
+                        <option key={domain.id} value={domain.id}>
+                          {domain.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Custom Event Fields from Form Builder */}
+                {((event.customFields || []).filter((f) => !f.tierId || f.tierId === selectedTierId).length > 0) && (
+                  <div className="p-3.5 rounded-2xl bg-slate-900/40 border space-y-3" style={{ borderColor: 'var(--dash-border)' }}>
+                    <span className="text-xs font-bold text-violet-400 block uppercase tracking-wide">
+                      Custom Event Questions
+                    </span>
+                    <div className="space-y-3">
+                      {(event.customFields || [])
+                        .filter((f) => !f.tierId || f.tierId === selectedTierId)
+                        .map((field) => (
+                          <div key={field.id}>
+                            <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
+                              {field.label} {field.required ? <span className="text-red-400">*</span> : '(Optional)'}
+                            </label>
+                            {field.type === 'textarea' ? (
+                              <textarea
+                                value={customResponses[field.id] || ''}
+                                onChange={(e) => setCustomResponses({ ...customResponses, [field.id]: e.target.value })}
+                                required={field.required}
+                                placeholder={field.placeholder || `Enter ${field.label}`}
+                                rows={2}
+                                className="input-field w-full text-xs"
+                              />
+                            ) : field.type === 'select' ? (
+                              <select
+                                value={customResponses[field.id] || ''}
+                                onChange={(e) => setCustomResponses({ ...customResponses, [field.id]: e.target.value })}
+                                required={field.required}
+                                className="input-field w-full text-xs"
+                              >
+                                <option value="">Select {field.label}...</option>
+                                {field.options?.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type={field.type === 'number' ? 'number' : field.type === 'email' ? 'email' : 'text'}
+                                value={customResponses[field.id] || ''}
+                                onChange={(e) => setCustomResponses({ ...customResponses, [field.id]: e.target.value })}
+                                required={field.required}
+                                placeholder={field.placeholder || `Enter ${field.label}`}
+                                className="input-field w-full text-xs"
+                              />
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Payment Information & Proof Section */}
+                <div className="p-3.5 rounded-2xl bg-slate-900/40 border space-y-3" style={{ borderColor: 'var(--dash-border)' }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-400 block uppercase tracking-wide flex items-center gap-1.5">
+                      <CreditCard className="w-3.5 h-3.5" /> Payment Details &amp; Proof
+                    </span>
+                    {(event.paymentQRUrl || event.ticketTiers?.find((t) => t.id === selectedTierId)?.paymentQRUrl) && (
+                      <button
+                        type="button"
+                        onClick={() => setShowFullQRModal(true)}
+                        className="text-[11px] text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Maximize2 className="w-3 h-3" /> View Event Payment QR
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Payment Screenshot Upload */}
+                  <div className="space-y-2">
+                    <label className="block text-[11px]" style={{ color: 'var(--dash-muted)' }}>
+                      Upload Payment Screenshot (Optional for manual backup)
+                    </label>
+
+                    {paymentScreenshotPreview ? (
+                      <div className="flex items-center justify-between p-2.5 rounded-xl border border-slate-700 bg-slate-950/60 gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img
+                            src={paymentScreenshotPreview}
+                            alt="Screenshot Preview"
+                            className="w-12 h-12 rounded-lg object-cover border border-slate-700 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-slate-200 truncate">
+                              {paymentScreenshotFile?.name || 'Payment_Proof.png'}
+                            </p>
+                            <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Attached
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <label className="px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 cursor-pointer transition-colors">
+                            Change
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) {
+                                  handleScreenshotChange(e.target.files[0]);
+                                }
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleScreenshotChange(null)}
+                            className="p-1 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center p-4 border border-dashed border-slate-700 hover:border-blue-500/50 rounded-2xl cursor-pointer bg-slate-950/40 hover:bg-slate-900/50 transition-colors">
+                        <UploadCloud className="w-6 h-6 text-slate-400 mb-1" />
+                        <span className="text-xs font-semibold text-slate-300">Click to upload payment screenshot</span>
+                        <span className="text-[10px] text-slate-500">JPG, PNG, or WebP up to 5 MB</span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) {
+                              handleScreenshotChange(e.target.files[0]);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+
+                    {paymentScreenshotError && (
+                      <p className="text-[11px] text-red-400">{paymentScreenshotError}</p>
+                    )}
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
+                        UPI Transaction ID / UTR
+                      </label>
+                      <input
+                        type="text"
+                        value={transactionId}
+                        onChange={(e) => setTransactionId(e.target.value)}
+                        placeholder="e.g. 425612349870 or UPI Ref ID"
+                        className="input-field w-full text-xs font-mono uppercase"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
+                        Payment Status
+                      </label>
+                      <select
+                        value={paymentStatus}
+                        onChange={(e) => setPaymentStatus(e.target.value as any)}
+                        className="input-field w-full text-xs"
+                      >
+                        <option value="verified">Verified / Completed</option>
+                        <option value="pending">Pending Verification</option>
+                        <option value="rejected">Rejected / Unpaid</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Submit Buttons */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t" style={{ borderColor: 'var(--dash-border)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowRegisterModal(false)}
+                    className="btn-secondary !text-xs !py-2.5 !px-4 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={registering}
+                    className="btn-primary !text-xs !py-2.5 !px-5 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {registering ? 'Registering Participant...' : 'Register Participant'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Enlarged Payment QR Modal */}
+      {showFullQRModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+          onClick={() => setShowFullQRModal(false)}
+        >
+          <div
+            className="relative bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between w-full pb-2 border-b border-slate-800">
+              <span className="text-xs font-bold text-slate-200">Event Payment QR</span>
+              <button
+                type="button"
+                onClick={() => setShowFullQRModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-3 bg-white rounded-2xl shadow-xl">
+              <img
+                src={
+                  event.ticketTiers?.find((t) => t.id === selectedTierId)?.paymentQRUrl ||
+                  event.paymentQRUrl ||
+                  ''
+                }
+                alt="Event Payment QR"
+                className="w-64 h-64 object-contain rounded-lg"
+              />
+            </div>
+            <p className="text-[11px] text-slate-400 text-center">
+              Scan via any UPI banking app (Google Pay, PhonePe, Paytm, BHIM)
+            </p>
           </div>
         </div>
       )}

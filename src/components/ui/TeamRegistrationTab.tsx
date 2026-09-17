@@ -1,6 +1,8 @@
-import { useState, useMemo } from 'react';
-import type { EventRecord, EventTeam, TeamMemberDetail } from '../../types';
+import { useState, useMemo, useRef } from 'react';
+import type { EventRecord, EventTeam, TeamMemberDetail, EventTicket } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
+import QRCode from 'qrcode';
 import {
   Users2,
   Plus,
@@ -21,6 +23,13 @@ import {
   FileSpreadsheet,
   X,
   Layers,
+  CheckCircle2,
+  MessageCircle,
+  UploadCloud,
+  Check,
+  AlertCircle,
+  Maximize2,
+  CreditCard,
 } from 'lucide-react';
 import {
   downloadTeamCertificatesAsZip,
@@ -31,7 +40,10 @@ import {
   sendSingleTeamMemberCertificate,
   type BulkCertificateProgress,
 } from '../../services/emailService';
-import { updateTeamArrivalStatus } from '../../services/eventService';
+import { updateTeamArrivalStatus, registerParticipantForEvent } from '../../services/eventService';
+import { downloadTicketImage } from '../../utils/ticketDownload';
+import { uploadFileToSupabase } from '../../utils/supabase';
+import { logActivity } from '../../services/activityService';
 
 /**
  * Robust helper to resolve a certificate URL for any team member or lead.
@@ -85,6 +97,9 @@ export default function TeamRegistrationTab({
   const [filterCerts, setFilterCerts] = useState<'all' | 'issued' | 'pending'>('all');
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
 
+  const formRef = useRef<HTMLDivElement>(null);
+  const { profile } = useAuth();
+
   // Modal / Form state
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
@@ -97,10 +112,24 @@ export default function TeamRegistrationTab({
   const [leadPhone, setLeadPhone] = useState('');
   const [college, setCollege] = useState('');
   const [department, setDepartment] = useState('');
+  const [selectedTierId, setSelectedTierId] = useState('');
   const [tierName, setTierName] = useState('');
+  const [selectedDomainId, setSelectedDomainId] = useState('');
   const [transactionId, setTransactionId] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState<'verified' | 'pending' | 'rejected'>('verified');
+  const [paymentScreenshotFile, setPaymentScreenshotFile] = useState<File | null>(null);
+  const [paymentScreenshotPreview, setPaymentScreenshotPreview] = useState<string>('');
+  const [paymentScreenshotError, setPaymentScreenshotError] = useState<string>('');
+  const [customResponses, setCustomResponses] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
   const [members, setMembers] = useState<TeamMemberDetail[]>([]);
+  const [formError, setFormError] = useState<string>('');
+  const [showFullQRModal, setShowFullQRModal] = useState(false);
+
+  // Ticket generation success state
+  const [successTicket, setSuccessTicket] = useState<EventTicket | null>(null);
+  const [successQrUrl, setSuccessQrUrl] = useState<string>('');
+  const [downloadingTicket, setDownloadingTicket] = useState(false);
 
   // Processing state for certificates / ZIP
   const [processingTeamId, setProcessingTeamId] = useState<string | null>(null);
@@ -148,11 +177,27 @@ export default function TeamRegistrationTab({
     setLeadPhone('');
     setCollege('');
     setDepartment('');
-    setTierName('');
+    setSelectedTierId(event.ticketTiers?.[0]?.id || '');
+    setTierName(event.ticketTiers?.[0]?.name || '');
+    setSelectedDomainId(event.participantDomains?.[0]?.id || '');
     setTransactionId('');
+    setPaymentStatus('verified');
+    setPaymentScreenshotFile(null);
+    setPaymentScreenshotPreview('');
+    setPaymentScreenshotError('');
+    setCustomResponses({});
     setNotes('');
+    setFormError('');
+    setSuccessTicket(null);
+    setSuccessQrUrl('');
     setMembers([{ name: '', email: '', phone: '', college: '', department: '' }]);
     setShowTeamModal(true);
+
+    setTimeout(() => {
+      if (formRef.current) {
+        formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 60);
   };
 
   const handleOpenEditModal = (t: EventTeam) => {
@@ -163,11 +208,50 @@ export default function TeamRegistrationTab({
     setLeadPhone(t.leadPhone || '');
     setCollege(t.college || '');
     setDepartment(t.department || '');
+    setSelectedTierId(t.tierId || '');
     setTierName(t.tierName || '');
+    setSelectedDomainId('');
     setTransactionId(t.transactionId || '');
+    setPaymentStatus(t.paymentStatus || 'verified');
+    setPaymentScreenshotFile(null);
+    setPaymentScreenshotPreview(t.paymentScreenshotUrl || '');
+    setPaymentScreenshotError('');
+    setCustomResponses(t.customResponses || {});
     setNotes(t.notes || '');
+    setFormError('');
+    setSuccessTicket(null);
+    setSuccessQrUrl('');
     setMembers(t.members && t.members.length > 0 ? [...t.members] : [{ name: '', email: '', phone: '', college: '', department: '' }]);
     setShowTeamModal(true);
+
+    setTimeout(() => {
+      if (formRef.current) {
+        formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 60);
+  };
+
+  const handleScreenshotChange = (file: File | null) => {
+    setPaymentScreenshotError('');
+    if (!file) {
+      setPaymentScreenshotFile(null);
+      setPaymentScreenshotPreview('');
+      return;
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setPaymentScreenshotError('Please upload a valid image (JPG, PNG, or WebP).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setPaymentScreenshotError('Image size must be less than 5 MB.');
+      return;
+    }
+    setPaymentScreenshotFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPaymentScreenshotPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   // Add / Remove dynamic member rows
@@ -188,14 +272,17 @@ export default function TeamRegistrationTab({
   // Save Team
   const handleSaveTeam = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError('');
+
     if (!teamName.trim() || !leadName.trim()) {
-      showToast('Team name and team lead name are required', 'error');
+      const msg = 'Team name and team leader name are required';
+      setFormError(msg);
+      showToast(msg, 'error');
       return;
     }
 
     setSavingTeam(true);
     try {
-      let updatedTeams: EventTeam[];
       if (editingTeamId) {
         const existingTeam = teams.find((t) => t.id === editingTeamId);
         const cleanMembers = members
@@ -210,7 +297,15 @@ export default function TeamRegistrationTab({
             };
           });
 
-        updatedTeams = teams.map((t) =>
+        let uploadedProofUrl = existingTeam?.paymentScreenshotUrl;
+        let uploadedProofPath = existingTeam?.paymentScreenshotPath;
+        if (paymentScreenshotFile) {
+          const cleanFileName = paymentScreenshotFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          uploadedProofPath = `payment_proofs/${event.id}/${Date.now()}_${cleanFileName}`;
+          uploadedProofUrl = await uploadFileToSupabase(paymentScreenshotFile, uploadedProofPath);
+        }
+
+        const updatedTeams = teams.map((t) =>
           t.id === editingTeamId
             ? {
                 ...t,
@@ -220,8 +315,13 @@ export default function TeamRegistrationTab({
                 leadPhone: leadPhone.trim(),
                 college: college.trim(),
                 department: department.trim(),
-                tierName: tierName.trim(),
+                tierId: selectedTierId || t.tierId,
+                tierName: tierName.trim() || t.tierName,
                 transactionId: transactionId.trim(),
+                paymentScreenshotUrl: uploadedProofUrl,
+                paymentScreenshotPath: uploadedProofPath,
+                paymentStatus: paymentStatus,
+                customResponses: customResponses,
                 notes: notes.trim(),
                 memberCount: cleanMembers.length + 1,
                 members: cleanMembers,
@@ -230,11 +330,128 @@ export default function TeamRegistrationTab({
               }
             : t
         );
+
+        await onUpdate({ teams: updatedTeams });
         showToast(`Team "${teamName}" updated successfully!`, 'success');
+        setShowTeamModal(false);
       } else {
+        // --- DUPLICATE REGISTRATION CHECK ---
         const cleanMembers = members.filter((m) => m.name.trim().length > 0);
-        const newTeam: EventTeam = {
-          id: `team_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        const normTeamName = teamName.trim().toLowerCase();
+        const normLeadEmail = leadEmail.trim().toLowerCase();
+        const normLeadPhone = leadPhone.trim().replace(/\D/g, '');
+
+        // 1. Check duplicate team name
+        const isDuplicateTeamName = teams.some(
+          (t) => t.teamName.trim().toLowerCase() === normTeamName
+        );
+
+        // 2. Check duplicate leader email or phone in teams
+        const isDuplicateLeaderInTeams = teams.some((t) => {
+          const tEmail = t.leadEmail?.trim().toLowerCase();
+          const tPhone = t.leadPhone?.trim().replace(/\D/g, '');
+          if (normLeadEmail && tEmail && tEmail === normLeadEmail) return true;
+          if (normLeadPhone && tPhone && tPhone === normLeadPhone) return true;
+          return false;
+        });
+
+        // 3. Check duplicate members in teams
+        const isDuplicateMemberInTeams = cleanMembers.some((m) => {
+          const mEmail = m.email?.trim().toLowerCase();
+          const mPhone = m.phone?.trim().replace(/\D/g, '');
+          return teams.some((t) => {
+            const tLeadEmail = t.leadEmail?.trim().toLowerCase();
+            const tLeadPhone = t.leadPhone?.trim().replace(/\D/g, '');
+            if (mEmail && tLeadEmail && tLeadEmail === mEmail) return true;
+            if (mPhone && tLeadPhone && tLeadPhone === mPhone) return true;
+            return (t.members || []).some((tm) => {
+              const tmEmail = tm.email?.trim().toLowerCase();
+              const tmPhone = tm.phone?.trim().replace(/\D/g, '');
+              if (mEmail && tmEmail && tmEmail === mEmail) return true;
+              if (mPhone && tmPhone && tmPhone === mPhone) return true;
+              return false;
+            });
+          });
+        });
+
+        // 4. Check duplicate in existing participants
+        const participants = event.participants || [];
+        const isDuplicateInParticipants = participants.some((p) => {
+          const pEmail = p.email?.trim().toLowerCase();
+          const pPhone = p.phone?.trim().replace(/\D/g, '');
+          if (normLeadEmail && pEmail && pEmail === normLeadEmail) return true;
+          if (normLeadPhone && pPhone && pPhone === normLeadPhone) return true;
+          return cleanMembers.some((m) => {
+            const mEmail = m.email?.trim().toLowerCase();
+            const mPhone = m.phone?.trim().replace(/\D/g, '');
+            if (mEmail && pEmail && pEmail === mEmail) return true;
+            if (mPhone && pPhone && pPhone === mPhone) return true;
+            return false;
+          });
+        });
+
+        if (isDuplicateTeamName || isDuplicateLeaderInTeams || isDuplicateMemberInTeams || isDuplicateInParticipants) {
+          const dupMsg = 'Existing registration found for this event.';
+          setFormError(dupMsg);
+          showToast(dupMsg, 'error');
+          setSavingTeam(false);
+          return;
+        }
+
+        // Upload payment screenshot if provided
+        let uploadedProofUrl = '';
+        let uploadedProofPath = '';
+        if (paymentScreenshotFile) {
+          const cleanFileName = paymentScreenshotFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          uploadedProofPath = `payment_proofs/${event.id}/${Date.now()}_${cleanFileName}`;
+          uploadedProofUrl = await uploadFileToSupabase(paymentScreenshotFile, uploadedProofPath);
+        }
+
+        const selectedTier = (event.ticketTiers || []).find((t) => t.id === selectedTierId);
+        const selectedDomain = (event.participantDomains || []).find((d) => d.id === selectedDomainId);
+
+        // Register participant + team using core event service
+        const regResult = await registerParticipantForEvent(event.id, {
+          name: leadName.trim(),
+          email: leadEmail.trim().toLowerCase() || undefined,
+          phone: leadPhone.trim() || undefined,
+          college: college.trim() || undefined,
+          department: department.trim() || undefined,
+          domain: selectedDomain?.name,
+          domainId: selectedDomainId || undefined,
+          tierId: selectedTier?.id,
+          tierName: selectedTier ? selectedTier.name : (tierName.trim() || undefined),
+          teamSize: cleanMembers.length + 1,
+          teamMembers: cleanMembers,
+          transactionId: transactionId.trim() || undefined,
+          paymentScreenshotUrl: uploadedProofUrl || undefined,
+          paymentScreenshotPath: uploadedProofPath || undefined,
+          paymentStatus: paymentStatus,
+          customResponses: {
+            ...customResponses,
+            teamName: teamName.trim(),
+            'Team Name': teamName.trim(),
+          },
+          registrationSource: 'manual',
+        });
+
+        // Audit Log
+        await logActivity(
+          profile?.uid || 'coordinator',
+          profile?.displayName || 'Coordinator',
+          profile?.email || '',
+          'manual_registration',
+          `Manually registered team "${teamName.trim()}" (${cleanMembers.length + 1} members) for event "${event.title}"`
+        );
+
+        // Generate QR code data URL for ticket viewing
+        const qrUrl = await QRCode.toDataURL(regResult.ticket.qrPayload, { width: 300, margin: 2 });
+        setSuccessTicket(regResult.ticket);
+        setSuccessQrUrl(qrUrl);
+
+        // Update local teams array
+        const newTeamItem: EventTeam = {
+          id: `team_${regResult.ticket.id}`,
           eventId: event.id,
           teamName: teamName.trim(),
           leadName: leadName.trim(),
@@ -242,22 +459,32 @@ export default function TeamRegistrationTab({
           leadPhone: leadPhone.trim(),
           college: college.trim(),
           department: department.trim(),
-          tierName: tierName.trim(),
+          tierId: selectedTier?.id,
+          tierName: selectedTier ? selectedTier.name : (tierName.trim() || undefined),
           transactionId: transactionId.trim(),
-          notes: notes.trim(),
+          paymentScreenshotUrl: uploadedProofUrl || undefined,
+          paymentScreenshotPath: uploadedProofPath || undefined,
+          paymentStatus: paymentStatus,
+          customResponses: customResponses,
           memberCount: cleanMembers.length + 1,
           members: cleanMembers,
-          registeredAt: new Date().toISOString(),
+          registeredAt: regResult.ticket.createdAt || new Date().toISOString(),
           arrived: false,
         };
-        updatedTeams = [newTeam, ...teams];
-        showToast(`Team "${teamName}" registered successfully!`, 'success');
-      }
 
-      await onUpdate({ teams: updatedTeams });
-      setShowTeamModal(false);
+        await onUpdate({ teams: [newTeamItem, ...teams] });
+        showToast(`Team "${teamName}" registered successfully! Ticket generated.`, 'success');
+
+        // Automatic pass image download
+        try {
+          await downloadTicketImage(event, regResult.ticket, qrUrl);
+        } catch (dlErr) {
+          console.warn('Auto download ticket pass info:', dlErr);
+        }
+      }
     } catch (err: any) {
       console.error('Failed to save team:', err);
+      setFormError(err.message || 'Failed to save team registration');
       showToast(err.message || 'Failed to save team registration', 'error');
     } finally {
       setSavingTeam(false);
@@ -1139,6 +1366,7 @@ export default function TeamRegistrationTab({
       {showTeamModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
           <div
+            ref={formRef}
             className="w-full max-w-2xl rounded-3xl border p-6 space-y-5 my-8 shadow-2xl relative"
             style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }}
           >
@@ -1147,227 +1375,561 @@ export default function TeamRegistrationTab({
               <div className="flex items-center gap-2">
                 <Users2 className="w-5 h-5 text-blue-500" />
                 <h3 className="font-bold text-lg" style={{ color: 'var(--dash-text)' }}>
-                  {editingTeamId ? 'Edit Team Registration' : 'Register New Team'}
+                  {successTicket ? 'Team Registration Confirmed!' : editingTeamId ? 'Edit Team Registration' : 'Register New Team'}
                 </h3>
               </div>
               <button
                 type="button"
-                onClick={() => setShowTeamModal(false)}
+                onClick={() => {
+                  setShowTeamModal(false);
+                  setSuccessTicket(null);
+                  setSuccessQrUrl('');
+                }}
                 className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveTeam} className="space-y-4">
-              {/* Team Name & Tier */}
-              <div className="grid sm:grid-cols-2 gap-3">
+            {/* Success Result View */}
+            {successTicket ? (
+              <div className="text-center space-y-5 animate-fade-in py-2">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/10 border-2 border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
                 <div>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
-                    Team Name <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={teamName}
-                    onChange={(e) => setTeamName(e.target.value)}
-                    placeholder="e.g. CyberKnights"
-                    className="input-field w-full text-xs"
-                  />
+                  <h4 className="text-xl font-bold" style={{ color: 'var(--dash-text)' }}>
+                    Team Registration Completed!
+                  </h4>
+                  <p className="text-xs mt-1" style={{ color: 'var(--dash-muted)' }}>
+                    Entry pass for <strong className="text-blue-400">{successTicket.guestName}</strong> ({teamName}) has been generated.
+                  </p>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
-                    Ticket Tier / Category
-                  </label>
-                  <input
-                    type="text"
-                    value={tierName}
-                    onChange={(e) => setTierName(e.target.value)}
-                    placeholder="e.g. Squad (4 Members) or Custom"
-                    className="input-field w-full text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* Team Leader Section */}
-              <div className="p-3.5 rounded-2xl bg-slate-900/40 border space-y-3" style={{ borderColor: 'var(--dash-border)' }}>
-                <span className="text-xs font-bold text-amber-400 block uppercase tracking-wide">
-                  Team Leader Details
-                </span>
-
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
-                      Leader Full Name <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={leadName}
-                      onChange={(e) => setLeadName(e.target.value)}
-                      placeholder="e.g. Rahul Sharma"
-                      className="input-field w-full text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
-                      Leader Email <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={leadEmail}
-                      onChange={(e) => setLeadEmail(e.target.value)}
-                      placeholder="rahul@example.com"
-                      className="input-field w-full text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
-                      Leader Phone
-                    </label>
-                    <input
-                      type="tel"
-                      value={leadPhone}
-                      onChange={(e) => setLeadPhone(e.target.value)}
-                      placeholder="9876543210"
-                      className="input-field w-full text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
-                      College / Institute
-                    </label>
-                    <input
-                      type="text"
-                      value={college}
-                      onChange={(e) => setCollege(e.target.value)}
-                      placeholder="JSPM RSCOE"
-                      className="input-field w-full text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
-                      Department / Branch
-                    </label>
-                    <input
-                      type="text"
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      placeholder="IT / CS"
-                      className="input-field w-full text-xs"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Dynamic Additional Members List */}
-              <div className="p-3.5 rounded-2xl bg-slate-900/40 border space-y-3" style={{ borderColor: 'var(--dash-border)' }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-400 block uppercase tracking-wide">
-                    Additional Team Members ({members.length})
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleAddMemberRow}
-                    className="btn-secondary !text-[11px] !py-1 !px-2.5 flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add Member
-                  </button>
-                </div>
-
-                {members.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-2">No additional members added yet. Click &quot;Add Member&quot; to include teammates.</p>
-                ) : (
-                  <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-                    {members.map((mem, idx) => (
-                      <div
-                        key={idx}
-                        className="p-2.5 rounded-xl bg-slate-950/60 border space-y-2 relative"
-                        style={{ borderColor: 'var(--dash-border)' }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-semibold text-slate-300">
-                            Member #{idx + 2}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveMemberRow(idx)}
-                            className="p-1 rounded text-red-400 hover:bg-red-500/10 cursor-pointer"
-                            title="Remove member"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        <div className="grid sm:grid-cols-2 gap-2">
-                          <input
-                            type="text"
-                            value={mem.name}
-                            onChange={(e) => handleMemberChange(idx, 'name', e.target.value)}
-                            placeholder="Full Name"
-                            className="input-field text-xs !py-1.5"
-                          />
-                          <input
-                            type="email"
-                            value={mem.email || ''}
-                            onChange={(e) => handleMemberChange(idx, 'email', e.target.value)}
-                            placeholder="Email address"
-                            className="input-field text-xs !py-1.5"
-                          />
-                        </div>
-
-                        <div className="grid sm:grid-cols-3 gap-2">
-                          <input
-                            type="tel"
-                            value={mem.phone || ''}
-                            onChange={(e) => handleMemberChange(idx, 'phone', e.target.value)}
-                            placeholder="Phone Number"
-                            className="input-field text-xs !py-1.5"
-                          />
-                          <input
-                            type="text"
-                            value={mem.college || ''}
-                            onChange={(e) => handleMemberChange(idx, 'college', e.target.value)}
-                            placeholder="College Name"
-                            className="input-field text-xs !py-1.5"
-                          />
-                          <input
-                            type="text"
-                            value={mem.department || ''}
-                            onChange={(e) => handleMemberChange(idx, 'department', e.target.value)}
-                            placeholder="Department"
-                            className="input-field text-xs !py-1.5"
-                          />
-                        </div>
-                      </div>
-                    ))}
+                {/* QR Display */}
+                {successQrUrl && (
+                  <div className="inline-block p-4 bg-white rounded-2xl shadow-xl border border-slate-200">
+                    <img src={successQrUrl} alt="Team Ticket QR" className="w-48 h-48 block mx-auto" />
                   </div>
                 )}
-              </div>
 
-              {/* Transaction ID & Notes */}
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
-                    Payment Reference / Transaction ID
-                  </label>
-                  <input
-                    type="text"
-                    value={transactionId}
-                    onChange={(e) => setTransactionId(e.target.value)}
-                    placeholder="e.g. UPI-TXN-123456"
-                    className="input-field w-full text-xs"
-                  />
+                {/* Pass Details */}
+                <div
+                  className="rounded-2xl p-4 text-xs space-y-2 max-w-md mx-auto text-left border"
+                  style={{ borderColor: 'var(--dash-border)', background: 'rgba(255, 255, 255, 0.03)' }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--dash-muted)' }}>Pass Number:</span>
+                    <span className="font-mono font-bold text-blue-400">{successTicket.ticketNumber}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--dash-muted)' }}>Team Name:</span>
+                    <span className="font-semibold" style={{ color: 'var(--dash-text)' }}>{teamName}</span>
+                  </div>
+                  {successTicket.tierName && (
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: 'var(--dash-muted)' }}>Tier / Category:</span>
+                      <span className="font-semibold" style={{ color: 'var(--dash-text)' }}>{successTicket.tierName}</span>
+                    </div>
+                  )}
+                  {members.filter((m) => m.name.trim()).length > 0 && (
+                    <div className="pt-2 border-t" style={{ borderColor: 'var(--dash-border)' }}>
+                      <span className="font-semibold text-slate-300">Teammates: </span>
+                      <span style={{ color: 'var(--dash-muted)' }}>
+                        {members.filter((m) => m.name.trim()).map((m) => m.name).join(', ')}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
+                {/* Actions */}
+                <div className="space-y-2.5 max-w-md mx-auto pt-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (successTicket && successQrUrl) {
+                        setDownloadingTicket(true);
+                        try {
+                          await downloadTicketImage(event, successTicket, successQrUrl);
+                          showToast('Downloaded ticket pass image!', 'success');
+                        } catch (err: any) {
+                          showToast('Download failed: ' + err.message, 'error');
+                        } finally {
+                          setDownloadingTicket(false);
+                        }
+                      }
+                    }}
+                    disabled={downloadingTicket}
+                    className="btn-primary !text-xs !py-3 !px-5 flex items-center justify-center gap-2 w-full cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    {downloadingTicket ? 'Downloading Pass Image...' : 'Download Ticket Pass Image'}
+                  </button>
+
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    {event.whatsappGroupUrl && (
+                      <a
+                        href={event.whatsappGroupUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-2 text-xs font-semibold transition-colors"
+                      >
+                        <MessageCircle className="w-4 h-4" /> Join WhatsApp Group
+                      </a>
+                    )}
+                    {event.rulebookUrl && (
+                      <a
+                        href={event.rulebookUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-2 text-xs font-semibold transition-colors"
+                      >
+                        <ExternalLink className="w-4 h-4" /> Access Rulebook
+                      </a>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTeamModal(false);
+                      setSuccessTicket(null);
+                      setSuccessQrUrl('');
+                    }}
+                    className="btn-secondary !text-xs !py-2.5 w-full cursor-pointer mt-2"
+                  >
+                    Done &amp; Return to Teams Studio
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSaveTeam} className="space-y-4">
+                {/* Form Error Alert Banner */}
+                {formError && (
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {/* Team Name & Tier Selection */}
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                      Team Name <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={teamName}
+                      onChange={(e) => setTeamName(e.target.value)}
+                      placeholder="e.g. CyberKnights"
+                      className="input-field w-full text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                      Ticket Tier / Category
+                    </label>
+                    {event.ticketTiers && event.ticketTiers.length > 0 ? (
+                      <select
+                        value={selectedTierId}
+                        onChange={(e) => {
+                          const tid = e.target.value;
+                          setSelectedTierId(tid);
+                          const tierObj = event.ticketTiers?.find((t) => t.id === tid);
+                          if (tierObj) {
+                            setTierName(tierObj.name);
+                            if (tierObj.teamSize && tierObj.teamSize > 1) {
+                              const extraNeeded = tierObj.teamSize - 1;
+                              if (members.length < extraNeeded) {
+                                const added: TeamMemberDetail[] = Array.from(
+                                  { length: extraNeeded - members.length },
+                                  () => ({ name: '', email: '', phone: '', college: '', department: '' })
+                                );
+                                setMembers([...members, ...added]);
+                              }
+                            }
+                          }
+                        }}
+                        className="input-field w-full text-xs"
+                      >
+                        <option value="">Select Tier (Optional)</option>
+                        {event.ticketTiers.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} {t.price !== undefined ? `(₹${t.price})` : ''} {t.teamSize ? `[${t.teamSize} pax]` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={tierName}
+                        onChange={(e) => setTierName(e.target.value)}
+                        placeholder="e.g. Squad (4 Members) or Custom"
+                        className="input-field w-full text-xs"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Domain selection if enabled */}
+                {Boolean(event.enableDomainSelection && event.participantDomains?.length) && (
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+                      Select Domain / Track
+                    </label>
+                    <select
+                      value={selectedDomainId}
+                      onChange={(e) => setSelectedDomainId(e.target.value)}
+                      className="input-field w-full text-xs"
+                    >
+                      <option value="">Choose Domain Track (Optional)</option>
+                      {event.participantDomains?.map((domain) => (
+                        <option key={domain.id} value={domain.id}>
+                          {domain.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Team Leader Section */}
+                <div className="p-3.5 rounded-2xl bg-slate-900/40 border space-y-3" style={{ borderColor: 'var(--dash-border)' }}>
+                  <span className="text-xs font-bold text-amber-400 block uppercase tracking-wide">
+                    Team Leader Details
+                  </span>
+
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
+                        Leader Full Name <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={leadName}
+                        onChange={(e) => setLeadName(e.target.value)}
+                        placeholder="e.g. Rahul Sharma"
+                        className="input-field w-full text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
+                        Leader Email
+                      </label>
+                      <input
+                        type="email"
+                        value={leadEmail}
+                        onChange={(e) => setLeadEmail(e.target.value)}
+                        placeholder="rahul@example.com"
+                        className="input-field w-full text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
+                        Leader Phone
+                      </label>
+                      <input
+                        type="tel"
+                        value={leadPhone}
+                        onChange={(e) => setLeadPhone(e.target.value)}
+                        placeholder="9876543210"
+                        className="input-field w-full text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
+                        College / Institute
+                      </label>
+                      <input
+                        type="text"
+                        value={college}
+                        onChange={(e) => setCollege(e.target.value)}
+                        placeholder="JSPM RSCOE"
+                        className="input-field w-full text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
+                        Department / Branch
+                      </label>
+                      <input
+                        type="text"
+                        value={department}
+                        onChange={(e) => setDepartment(e.target.value)}
+                        placeholder="IT / CS"
+                        className="input-field w-full text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dynamic Additional Members List */}
+                <div className="p-3.5 rounded-2xl bg-slate-900/40 border space-y-3" style={{ borderColor: 'var(--dash-border)' }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-blue-400 block uppercase tracking-wide">
+                      Additional Team Members ({members.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleAddMemberRow}
+                      className="btn-secondary !text-[11px] !py-1 !px-2.5 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Member
+                    </button>
+                  </div>
+
+                  {members.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-2">No additional members added yet. Click &quot;Add Member&quot; to include teammates.</p>
+                  ) : (
+                    <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                      {members.map((mem, idx) => (
+                        <div
+                          key={idx}
+                          className="p-2.5 rounded-xl bg-slate-950/60 border space-y-2 relative"
+                          style={{ borderColor: 'var(--dash-border)' }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-slate-300">
+                              Member #{idx + 2}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMemberRow(idx)}
+                              className="p-1 rounded text-red-400 hover:bg-red-500/10 cursor-pointer"
+                              title="Remove member"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="grid sm:grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              value={mem.name}
+                              onChange={(e) => handleMemberChange(idx, 'name', e.target.value)}
+                              placeholder="Full Name"
+                              className="input-field text-xs !py-1.5"
+                            />
+                            <input
+                              type="email"
+                              value={mem.email || ''}
+                              onChange={(e) => handleMemberChange(idx, 'email', e.target.value)}
+                              placeholder="Email address"
+                              className="input-field text-xs !py-1.5"
+                            />
+                          </div>
+
+                          <div className="grid sm:grid-cols-3 gap-2">
+                            <input
+                              type="tel"
+                              value={mem.phone || ''}
+                              onChange={(e) => handleMemberChange(idx, 'phone', e.target.value)}
+                              placeholder="Phone Number"
+                              className="input-field text-xs !py-1.5"
+                            />
+                            <input
+                              type="text"
+                              value={mem.college || ''}
+                              onChange={(e) => handleMemberChange(idx, 'college', e.target.value)}
+                              placeholder="College Name"
+                              className="input-field text-xs !py-1.5"
+                            />
+                            <input
+                              type="text"
+                              value={mem.department || ''}
+                              onChange={(e) => handleMemberChange(idx, 'department', e.target.value)}
+                              placeholder="Department"
+                              className="input-field text-xs !py-1.5"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Custom Event Fields from Form Builder */}
+                {((event.customFields || []).filter((f) => !f.tierId || f.tierId === selectedTierId).length > 0) && (
+                  <div className="p-3.5 rounded-2xl bg-slate-900/40 border space-y-3" style={{ borderColor: 'var(--dash-border)' }}>
+                    <span className="text-xs font-bold text-violet-400 block uppercase tracking-wide">
+                      Event Custom Fields
+                    </span>
+                    <div className="space-y-3">
+                      {(event.customFields || [])
+                        .filter((f) => !f.tierId || f.tierId === selectedTierId)
+                        .map((field) => (
+                          <div key={field.id}>
+                            <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
+                              {field.label} {field.required ? <span className="text-red-400">*</span> : '(Optional)'}
+                            </label>
+                            {field.type === 'textarea' ? (
+                              <textarea
+                                value={customResponses[field.id] || ''}
+                                onChange={(e) => setCustomResponses({ ...customResponses, [field.id]: e.target.value })}
+                                required={field.required}
+                                placeholder={field.placeholder || `Enter ${field.label}`}
+                                rows={2}
+                                className="input-field w-full text-xs"
+                              />
+                            ) : field.type === 'select' ? (
+                              <select
+                                value={customResponses[field.id] || ''}
+                                onChange={(e) => setCustomResponses({ ...customResponses, [field.id]: e.target.value })}
+                                required={field.required}
+                                className="input-field w-full text-xs"
+                              >
+                                <option value="">Select {field.label}...</option>
+                                {field.options?.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type={field.type === 'number' ? 'number' : field.type === 'email' ? 'email' : 'text'}
+                                value={customResponses[field.id] || ''}
+                                onChange={(e) => setCustomResponses({ ...customResponses, [field.id]: e.target.value })}
+                                required={field.required}
+                                placeholder={field.placeholder || `Enter ${field.label}`}
+                                className="input-field w-full text-xs"
+                              />
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Payment Information & Proof Section */}
+                <div className="p-3.5 rounded-2xl bg-slate-900/40 border space-y-3" style={{ borderColor: 'var(--dash-border)' }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-400 block uppercase tracking-wide flex items-center gap-1.5">
+                      <CreditCard className="w-3.5 h-3.5" /> Payment Details &amp; Verification
+                    </span>
+                    {/* Payment QR preview button if available */}
+                    {(event.paymentQRUrl || event.ticketTiers?.find((t) => t.id === selectedTierId)?.paymentQRUrl) && (
+                      <button
+                        type="button"
+                        onClick={() => setShowFullQRModal(true)}
+                        className="text-[11px] text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Maximize2 className="w-3 h-3" /> View Event Payment QR
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Payment Screenshot Upload */}
+                  <div className="space-y-2">
+                    <label className="block text-[11px]" style={{ color: 'var(--dash-muted)' }}>
+                      Upload Payment Screenshot / Receipt (Optional for manual backup)
+                    </label>
+
+                    {paymentScreenshotPreview ? (
+                      <div className="flex items-center justify-between p-2.5 rounded-xl border border-slate-700 bg-slate-950/60 gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img
+                            src={paymentScreenshotPreview}
+                            alt="Screenshot Preview"
+                            className="w-12 h-12 rounded-lg object-cover border border-slate-700 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-slate-200 truncate">
+                              {paymentScreenshotFile?.name || 'Payment_Proof.png'}
+                            </p>
+                            <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Attached
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <label className="px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 cursor-pointer transition-colors">
+                            Change
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) {
+                                  handleScreenshotChange(e.target.files[0]);
+                                }
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleScreenshotChange(null)}
+                            className="p-1 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center p-4 border border-dashed border-slate-700 hover:border-blue-500/50 rounded-2xl cursor-pointer bg-slate-950/40 hover:bg-slate-900/50 transition-colors">
+                        <UploadCloud className="w-6 h-6 text-slate-400 mb-1" />
+                        <span className="text-xs font-semibold text-slate-300">Click to upload payment screenshot</span>
+                        <span className="text-[10px] text-slate-500">JPG, PNG, or WebP up to 5 MB</span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) {
+                              handleScreenshotChange(e.target.files[0]);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+
+                    {paymentScreenshotError && (
+                      <p className="text-[11px] text-red-400">{paymentScreenshotError}</p>
+                    )}
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
+                        UPI Transaction ID / UTR
+                      </label>
+                      <input
+                        type="text"
+                        value={transactionId}
+                        onChange={(e) => setTransactionId(e.target.value)}
+                        placeholder="e.g. 425612349870 or UPI Ref ID"
+                        className="input-field w-full text-xs font-mono uppercase"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
+                        Payment Status
+                      </label>
+                      <select
+                        value={paymentStatus}
+                        onChange={(e) => setPaymentStatus(e.target.value as any)}
+                        className="input-field w-full text-xs"
+                      >
+                        <option value="verified">Verified / Completed</option>
+                        <option value="pending">Pending Verification</option>
+                        <option value="rejected">Rejected / Unpaid</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Internal Notes */}
                 <div>
                   <label className="block text-[11px] mb-1" style={{ color: 'var(--dash-muted)' }}>
                     Internal Notes / Comments
@@ -1380,26 +1942,64 @@ export default function TeamRegistrationTab({
                     className="input-field w-full text-xs"
                   />
                 </div>
-              </div>
 
-              {/* Submit Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t" style={{ borderColor: 'var(--dash-border)' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowTeamModal(false)}
-                  className="btn-secondary !text-xs !py-2.5 !px-4 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingTeam}
-                  className="btn-primary !text-xs !py-2.5 !px-5 flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {savingTeam ? 'Saving Team...' : editingTeamId ? 'Update Team' : 'Register Team'}
-                </button>
-              </div>
-            </form>
+                {/* Submit Buttons */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t" style={{ borderColor: 'var(--dash-border)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowTeamModal(false)}
+                    className="btn-secondary !text-xs !py-2.5 !px-4 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingTeam}
+                    className="btn-primary !text-xs !py-2.5 !px-5 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {savingTeam ? 'Saving Team...' : editingTeamId ? 'Update Team' : 'Register Team'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Enlarged Payment QR Modal */}
+      {showFullQRModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+          onClick={() => setShowFullQRModal(false)}
+        >
+          <div
+            className="relative bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between w-full pb-2 border-b border-slate-800">
+              <span className="text-xs font-bold text-slate-200">Event Payment QR</span>
+              <button
+                type="button"
+                onClick={() => setShowFullQRModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-3 bg-white rounded-2xl shadow-xl">
+              <img
+                src={
+                  event.ticketTiers?.find((t) => t.id === selectedTierId)?.paymentQRUrl ||
+                  event.paymentQRUrl ||
+                  ''
+                }
+                alt="Event Payment QR"
+                className="w-64 h-64 object-contain rounded-lg"
+              />
+            </div>
+            <p className="text-[11px] text-slate-400 text-center">
+              Scan via any UPI banking app (Google Pay, PhonePe, Paytm, BHIM)
+            </p>
           </div>
         </div>
       )}

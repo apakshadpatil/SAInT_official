@@ -132,7 +132,7 @@ export default function AccessControlPage() {
     {
       title: 'Participants',
       items: [
-        { key: 'participants', label: 'Participant Access' },
+        { key: 'participants', label: 'Manage Participant' },
       ],
     },
     {

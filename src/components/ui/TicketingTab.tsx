@@ -720,21 +720,41 @@ export default function TicketingTab({ event, onUpdate, canEdit }: TicketingTabP
           Included Ticketing Features
         </h4>
         <div className="grid sm:grid-cols-2 gap-3 text-xs">
-          <div className="flex items-center gap-2 p-2.5 rounded-xl border" style={{ borderColor: 'var(--dash-border)' }}>
+          <div
+            className="flex items-center gap-2.5 p-3 rounded-xl border transition-colors shadow-xs"
+            style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)', color: 'var(--dash-text)' }}
+          >
             <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span>Automatic digital ticket pass generation (Custom sizes)</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              Automatic digital ticket pass generation (Custom sizes)
+            </span>
           </div>
-          <div className="flex items-center gap-2 p-2.5 rounded-xl border" style={{ borderColor: 'var(--dash-border)' }}>
+          <div
+            className="flex items-center gap-2.5 p-3 rounded-xl border transition-colors shadow-xs"
+            style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)', color: 'var(--dash-text)' }}
+          >
             <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span>Team-size based QRs &amp; member collection</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              Team-size based QRs &amp; member collection
+            </span>
           </div>
-          <div className="flex items-center gap-2 p-2.5 rounded-xl border" style={{ borderColor: 'var(--dash-border)' }}>
+          <div
+            className="flex items-center gap-2.5 p-3 rounded-xl border transition-colors shadow-xs"
+            style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)', color: 'var(--dash-text)' }}
+          >
             <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span>Real-time QR camera scanner check-in</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              Real-time QR camera scanner check-in
+            </span>
           </div>
-          <div className="flex items-center gap-2 p-2.5 rounded-xl border" style={{ borderColor: 'var(--dash-border)' }}>
+          <div
+            className="flex items-center gap-2.5 p-3 rounded-xl border transition-colors shadow-xs"
+            style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)', color: 'var(--dash-text)' }}
+          >
             <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span>Manual ticket number verification (ST-XXXXXX)</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              Manual ticket number verification (ST-XXXXXX)
+            </span>
           </div>
         </div>
       </div>

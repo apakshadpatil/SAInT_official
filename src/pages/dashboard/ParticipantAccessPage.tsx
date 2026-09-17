@@ -9,8 +9,10 @@ import {
   updatePaymentVerificationStatus,
 } from '../../services/eventService';
 import { getParticipantUsers } from '../../services/authService';
-import type { EventRecord, UserProfile } from '../../types';
+import type { EventRecord, UserProfile, EventTicket } from '../../types';
 import { hasTabAccess, isSuperAdmin } from '../../utils/permissions';
+import { downloadTicketImage } from '../../utils/ticketDownload';
+import QRCode from 'qrcode';
 import {
   ShieldCheck,
   Search,
@@ -63,6 +65,8 @@ export interface ParticipantItem {
   paymentVerifiedAt?: string;
   paymentVerifiedBy?: string;
   createdAt: string;
+  ticketObj?: EventTicket;
+  eventObj?: EventRecord;
 }
 
 export default function ParticipantAccessPage() {
@@ -96,17 +100,70 @@ export default function ParticipantAccessPage() {
   const [proofModalItem, setProofModalItem] = useState<ParticipantItem | null>(null);
   const [updatingPaymentId, setUpdatingPaymentId] = useState<string | null>(null);
 
+  // Ticket Viewing Modal
+  const [viewTicketItem, setViewTicketItem] = useState<ParticipantItem | null>(null);
+  const [ticketQrDataUrl, setTicketQrDataUrl] = useState<string>('');
+  const [downloadingPass, setDownloadingPass] = useState(false);
+
   // Close modals on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setProofModalItem(null);
         setBulkConfirmAction(null);
+        setViewTicketItem(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  const handleViewTicket = async (item: ParticipantItem) => {
+    setViewTicketItem(item);
+    setTicketQrDataUrl('');
+    try {
+      const payload = item.ticketObj?.qrPayload || item.ticketNumber || `saint:pass:${item.eventId}:${item.ticketId}`;
+      const qr = await QRCode.toDataURL(payload, { width: 350, margin: 2 });
+      setTicketQrDataUrl(qr);
+    } catch (err) {
+      console.error('Failed to generate ticket QR:', err);
+    }
+  };
+
+  const handleDownloadTicketPass = async () => {
+    if (!viewTicketItem) return;
+    setDownloadingPass(true);
+    try {
+      const matchingEvent = viewTicketItem.eventObj || events.find((e) => e.id === viewTicketItem.eventId);
+      if (!matchingEvent) {
+        showToast('Event details not found', 'error');
+        return;
+      }
+      const ticketPayload: EventTicket = viewTicketItem.ticketObj || {
+        id: viewTicketItem.ticketId,
+        ticketNumber: viewTicketItem.ticketNumber,
+        eventId: viewTicketItem.eventId,
+        guestName: viewTicketItem.name,
+        guestEmail: viewTicketItem.email,
+        guestPhone: viewTicketItem.phone,
+        college: viewTicketItem.college,
+        department: viewTicketItem.department,
+        tierName: viewTicketItem.tierName,
+        teamName: viewTicketItem.teamName,
+        qrPayload: viewTicketItem.ticketNumber,
+        registrationSource: 'manual',
+        checkedIn: viewTicketItem.checkedIn,
+        createdAt: viewTicketItem.createdAt || new Date().toISOString(),
+      };
+      const qr = ticketQrDataUrl || (await QRCode.toDataURL(ticketPayload.qrPayload || ticketPayload.ticketNumber, { width: 400, margin: 2 }));
+      await downloadTicketImage(matchingEvent, ticketPayload, qr);
+      showToast('Ticket pass downloaded!', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to download ticket pass', 'error');
+    } finally {
+      setDownloadingPass(false);
+    }
+  };
 
   const handleUpdatePaymentStatus = async (
     item: ParticipantItem,
@@ -220,6 +277,8 @@ export default function ParticipantAccessPage() {
               paymentVerifiedAt: t.paymentVerifiedAt,
               paymentVerifiedBy: t.paymentVerifiedBy,
               createdAt: t.createdAt || '',
+              ticketObj: t,
+              eventObj: event,
             });
           });
 
@@ -242,6 +301,24 @@ export default function ParticipantAccessPage() {
               } else if (p.accessStatus === 'granted') {
                 status = 'granted';
               }
+
+              const fallbackTicket: EventTicket = {
+                id: pTicketId || p.id,
+                ticketNumber: p.ticketId || (p.id ? p.id.slice(0, 8) : 'PASS'),
+                eventId: evId,
+                guestName: p.name,
+                guestEmail: p.email,
+                guestPhone: p.phone,
+                college: p.college,
+                department: p.department,
+                tierName: p.tierName,
+                teamName: p.teamName,
+                teamMembers: p.teamMembers,
+                qrPayload: `saint:ticket:${evId}:${pTicketId || p.id}`,
+                registrationSource: 'manual',
+                checkedIn: Boolean(p.arrived),
+                createdAt: p.createdAt || new Date().toISOString(),
+              };
 
               items.push({
                 id: `${evId}_${pTicketId || p.id || Math.random().toString(36).slice(2)}`,
@@ -269,6 +346,8 @@ export default function ParticipantAccessPage() {
                 paymentVerifiedAt: p.paymentVerifiedAt,
                 paymentVerifiedBy: p.paymentVerifiedBy,
                 createdAt: p.createdAt || '',
+                ticketObj: fallbackTicket,
+                eventObj: event,
               });
             });
           }
@@ -557,16 +636,16 @@ export default function ParticipantAccessPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-indigo-400 mb-1">
-            <ShieldCheck className="w-4 h-4" /> Participant Permission & Access Control
+            <ShieldCheck className="w-4 h-4" /> Participant Management & Access Control
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2.5">
-            Participant Access
+            Manage Participant
             <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
               {participantItems.length} Records
             </span>
           </h1>
           <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-            Manage event attendee credentials, inspect event ticket authorizations, and grant or revoke access for individual or bulk participants.
+            Manage event attendee credentials, inspect tickets, review payment proofs, and grant or revoke access for individual or bulk participants.
           </p>
         </div>
 
@@ -751,10 +830,11 @@ export default function ParticipantAccessPage() {
                       )}
                     </button>
                   </th>
-                  <th scope="col" className="py-3 px-4 font-bold">Participant</th>
-                  <th scope="col" className="py-3 px-4 font-bold">Event</th>
-                  <th scope="col" className="py-3 px-4 font-bold">Registration</th>
-                  <th scope="col" className="py-3 px-4 font-bold">Payment &amp; Proof</th>
+                  <th scope="col" className="py-3 px-4 font-bold">Name</th>
+                  <th scope="col" className="py-3 px-4 font-bold">Username</th>
+                  <th scope="col" className="py-3 px-4 font-bold">Email ID</th>
+                  <th scope="col" className="py-3 px-4 font-bold">Tickets</th>
+                  <th scope="col" className="py-3 px-4 font-bold">Payment Proof</th>
                   <th scope="col" className="py-3 px-4 font-bold">Access Status</th>
                   <th scope="col" className="py-3 px-4 font-bold">Registered Date</th>
                   <th scope="col" className="py-3 px-4 font-bold text-right">Action</th>
@@ -777,7 +857,7 @@ export default function ParticipantAccessPage() {
                         <button
                           type="button"
                           onClick={() => handleToggleSelect(item.id)}
-                          className="text-slate-400 hover:text-white transition-colors"
+                          className="text-slate-400 hover:text-white transition-colors cursor-pointer"
                         >
                           {isSelected ? (
                             <CheckSquare className="w-4 h-4 text-indigo-400" />
@@ -787,14 +867,11 @@ export default function ParticipantAccessPage() {
                         </button>
                       </td>
 
-                      {/* Participant Name & Username */}
+                      {/* Name & Event Details */}
                       <td className="py-3 px-4">
                         <div className="font-semibold text-white text-[13px]">{item.name}</div>
-                        <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                          <span>{item.email}</span>
-                          {item.username && (
-                            <span className="text-indigo-400 font-medium">@{item.username}</span>
-                          )}
+                        <div className="text-[11px] text-indigo-300 flex items-center gap-1 mt-0.5">
+                          <span>{item.eventName}</span>
                         </div>
                         {item.teamName && (
                           <div className="text-[10px] text-slate-400 mt-0.5">
@@ -803,77 +880,87 @@ export default function ParticipantAccessPage() {
                         )}
                       </td>
 
-                      {/* Event */}
+                      {/* Username */}
                       <td className="py-3 px-4">
-                        <div className="font-medium text-slate-200 text-xs truncate max-w-[200px]">
-                          {item.eventName}
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                          Pass: {item.ticketNumber}
-                        </div>
-                      </td>
-
-                      {/* Registration Status */}
-                      <td className="py-3 px-4">
-                        {item.checkedIn ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Checked In
+                        {item.username ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                            @{item.username}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
-                            <Ticket className="w-3.5 h-3.5" /> Registered
-                          </span>
+                          <span className="text-slate-500 text-xs">—</span>
                         )}
                       </td>
 
-                      {/* Payment & Proof */}
+                      {/* Email ID */}
                       <td className="py-3 px-4">
-                        {item.paymentStatus || item.transactionId || item.paymentScreenshotUrl ? (
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {item.paymentStatus === 'verified' ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                                  <CheckCircle2 className="w-3 h-3" /> Verified
-                                </span>
-                              ) : item.paymentStatus === 'rejected' ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
-                                  <XCircle className="w-3 h-3" /> Rejected
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                                  <Clock className="w-3 h-3" /> Pending
-                                </span>
-                              )}
+                        <div className="text-xs text-slate-200 font-mono select-all">{item.email}</div>
+                        {item.phone && (
+                          <div className="text-[10px] text-slate-400 mt-0.5">{item.phone}</div>
+                        )}
+                      </td>
 
-                              {item.paymentScreenshotUrl ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setProofModalItem(item)}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 transition-colors"
-                                  title="View Payment Screenshot"
-                                >
-                                  <Eye className="w-3 h-3" /> Proof
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setProofModalItem(item)}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-                                  title="Review Payment & UTR"
-                                >
-                                  <CreditCard className="w-3 h-3" /> Review
-                                </button>
-                              )}
+                      {/* Tickets (Viewing & Download) */}
+                      <td className="py-3 px-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono font-bold text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                              {item.ticketNumber}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleViewTicket(item)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition-colors cursor-pointer"
+                              title="View entry pass and download image"
+                            >
+                              <Ticket className="w-3.5 h-3.5" />
+                              View Ticket
+                            </button>
+                          </div>
+                          {item.tierName && (
+                            <div className="text-[10px] text-slate-400">
+                              Tier: <span className="text-slate-300 font-medium">{item.tierName}</span>
                             </div>
-                            {item.transactionId && (
-                              <div className="text-[10px] font-mono text-slate-400 truncate max-w-[130px]" title={item.transactionId}>
-                                UTR: {item.transactionId}
-                              </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Payment Proof */}
+                      <td className="py-3 px-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {item.paymentStatus === 'verified' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                <CheckCircle2 className="w-3 h-3" /> Verified
+                              </span>
+                            ) : item.paymentStatus === 'rejected' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                                <XCircle className="w-3 h-3" /> Rejected
+                              </span>
+                            ) : item.paymentStatus === 'pending' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                <Clock className="w-3 h-3" /> Pending
+                              </span>
+                            ) : null}
+
+                            {item.paymentScreenshotUrl ? (
+                              <button
+                                type="button"
+                                onClick={() => setProofModalItem(item)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-400/30 transition-colors cursor-pointer"
+                                title="Preview Payment Proof"
+                              >
+                                <Eye className="w-3 h-3" /> Preview
+                              </button>
+                            ) : (
+                              <span className="text-[11px] text-slate-500">Not uploaded</span>
                             )}
                           </div>
-                        ) : (
-                          <span className="text-[11px] text-slate-500">Free / None</span>
-                        )}
+                          {item.transactionId ? (
+                            <div className="text-[10px] font-mono text-slate-300 truncate max-w-[130px]" title={item.transactionId}>
+                              UTR: {item.transactionId}
+                            </div>
+                          ) : null}
+                        </div>
                       </td>
 
                       {/* Access Status Badge */}
@@ -893,7 +980,7 @@ export default function ParticipantAccessPage() {
 
                       {/* Registration Date */}
                       <td className="py-3 px-4 text-[11px] text-slate-400">
-                        {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
+                        {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '—'}
                       </td>
 
                       {/* Action Button */}
@@ -903,18 +990,18 @@ export default function ParticipantAccessPage() {
                             type="button"
                             onClick={() => handleToggleAccess(item)}
                             disabled={isProcessing}
-                            className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 text-xs font-bold transition-all disabled:opacity-50"
+                            className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
                           >
-                            {isProcessing ? 'Updating...' : 'Revoke'}
+                            {isProcessing ? 'Updating...' : 'Revoke Access'}
                           </button>
                         ) : (
                           <button
                             type="button"
                             onClick={() => handleToggleAccess(item)}
                             disabled={isProcessing}
-                            className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all disabled:opacity-50"
+                            className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
                           >
-                            {isProcessing ? 'Updating...' : 'Grant'}
+                            {isProcessing ? 'Updating...' : 'Grant Access'}
                           </button>
                         )}
                       </td>
@@ -1073,6 +1160,89 @@ export default function ParticipantAccessPage() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* ── Ticket Pass Viewing Modal ── */}
+      {viewTicketItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in"
+          onClick={() => setViewTicketItem(null)}
+        >
+          <div
+            className="relative bg-slate-900 border border-slate-700/80 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 max-h-[90vh] flex flex-col text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0 text-left">
+              <div className="flex items-center gap-2">
+                <Ticket className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-base font-bold text-white">Event Entry Pass</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewTicketItem(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 overflow-y-auto pr-1">
+              <div>
+                <h4 className="text-lg font-bold text-white">{viewTicketItem.eventName}</h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Attendee: <strong className="text-white">{viewTicketItem.name}</strong>
+                </p>
+                {viewTicketItem.teamName && (
+                  <p className="text-xs text-indigo-300 mt-0.5">Team: {viewTicketItem.teamName}</p>
+                )}
+                {viewTicketItem.tierName && (
+                  <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                    {viewTicketItem.tierName}
+                  </span>
+                )}
+              </div>
+
+              {/* Pass Number Banner */}
+              <div className="py-2 px-4 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between text-xs">
+                <span className="text-slate-400">Pass Number:</span>
+                <span className="font-mono font-bold text-amber-400 text-sm select-all">{viewTicketItem.ticketNumber}</span>
+              </div>
+
+              {/* High-Res QR Display */}
+              <div className="inline-block p-4 bg-white rounded-2xl shadow-xl mx-auto">
+                {ticketQrDataUrl ? (
+                  <img src={ticketQrDataUrl} alt="Pass QR" className="w-48 h-48 block mx-auto" />
+                ) : (
+                  <div className="w-48 h-48 flex items-center justify-center text-slate-500">
+                    <RefreshCw className="w-6 h-6 animate-spin" />
+                  </div>
+                )}
+              </div>
+
+              <p className="text-xs text-slate-400">
+                Show this digital entry pass at the venue entrance for instant check-in.
+              </p>
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setViewTicketItem(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadTicketPass}
+                disabled={downloadingPass}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors flex items-center gap-1.5 shadow-md shadow-blue-900/30 cursor-pointer disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                {downloadingPass ? 'Generating...' : 'Download Pass Image'}
+              </button>
+            </div>
           </div>
         </div>
       )}
