@@ -29,6 +29,7 @@ import type { UserProfile, UserRole, SidebarPermissions } from '../types';
 import {
   DEFAULT_CORE_PERMISSIONS,
   DEFAULT_MEMBER_PERMISSIONS,
+  DEFAULT_PARTICIPANT_PERMISSIONS,
   DEFAULT_SUPERADMIN_PERMISSIONS,
 } from '../types';
 
@@ -39,12 +40,16 @@ function now() {
 function getDefaultPermissions(role: UserRole): SidebarPermissions {
   if (role === 'superadmin') return { ...DEFAULT_SUPERADMIN_PERMISSIONS };
   if (role === 'core') return { ...DEFAULT_CORE_PERMISSIONS };
+  if (role === 'participant') return { ...DEFAULT_PARTICIPANT_PERMISSIONS };
   return { ...DEFAULT_MEMBER_PERMISSIONS };
 }
 
 function resolveRole(email: string): UserRole {
   if (SUPERADMIN_EMAIL && email.toLowerCase() === SUPERADMIN_EMAIL.toLowerCase()) {
     return 'superadmin';
+  }
+  if (email.toLowerCase().includes('.saint.local')) {
+    return 'participant';
   }
   return 'pending';
 }
@@ -181,25 +186,37 @@ export async function signUpParticipant(data: {
 
   await setPersistence(auth, browserLocalPersistence);
   const result = await createUserWithEmailAndPassword(auth, participantAuthEmail(username), data.password);
-  const baseProfile = await ensureUserProfile(result.user);
   const [firstName, ...rest] = data.name.trim().split(/\s+/);
   const profile: UserProfile = {
-    ...baseProfile,
+    uid: result.user.uid,
     email: participantAuthEmail(username),
     firstName: firstName || username,
     lastName: rest.join(' '),
     displayName: data.name.trim() || username,
+    photoURL: null,
     role: 'participant',
     status: 'approved',
     participantUsername: username,
     participantEmail: registrationEmail,
+    teamIds: [],
+    teamNames: [],
+    hasFinanceAccess: false,
     permissions: getDefaultPermissions('participant'),
+    taskScore: 0,
+    completedTaskCount: 0,
+    following: [],
+    followers: [],
+    isOnline: false,
+    lastSeen: now(),
+    createdAt: now(),
     updatedAt: now(),
   };
   await setDoc(doc(db, 'users', result.user.uid), profile);
   setCachedData(`user:${result.user.uid}`, profile);
   invalidateCache('users:');
-  await logActivity(profile.uid, profile.displayName, registrationEmail, 'register', 'Registered a participant account');
+  invalidateCache('users:participants');
+  trackDBOperation({ operation: 'write', action: 'create_participant_account', resource: 'users', documentCount: 1 });
+  void logActivity(profile.uid, profile.displayName, registrationEmail, 'register', 'Registered a participant account');
   return result.user;
 }
 
@@ -209,11 +226,11 @@ export async function signInParticipant(username: string, password: string) {
   await setPersistence(auth, browserLocalPersistence);
   const result = await signInWithEmailAndPassword(auth, participantAuthEmail(normalized), password);
   const profile = await ensureUserProfile(result.user);
-  if (profile.role !== 'participant') {
+  if (profile.status === 'rejected') {
     await signOut(auth);
-    throw new Error('This is not a participant account. Please use your email on the main login.');
+    throw new Error('Your participant account access has been revoked by an administrator.');
   }
-  await logActivity(profile.uid, profile.displayName, profile.participantEmail || profile.email, 'login', 'Logged in to participant portal');
+  void logActivity(profile.uid, profile.displayName, profile.participantEmail || profile.email, 'login', 'Logged in to participant portal');
   return result.user;
 }
 
@@ -248,11 +265,35 @@ export async function getUserProfile(uid: string, forceRefresh = false): Promise
 
 export async function ensureUserProfile(user: User): Promise<UserProfile> {
   const existing = await getUserProfile(user.uid);
-  if (existing) return existing;
+  if (existing) {
+    // Self-heal: If an existing participant account was previously saved with role 'pending'
+    if (
+      existing.role === 'pending' &&
+      (existing.email?.toLowerCase().includes('.saint.local') || Boolean(existing.participantUsername))
+    ) {
+      const healed: UserProfile = {
+        ...existing,
+        role: 'participant',
+        status: 'approved',
+        permissions: getDefaultPermissions('participant'),
+        updatedAt: now(),
+      };
+      await updateDoc(doc(db, 'users', user.uid), {
+        role: 'participant',
+        status: 'approved',
+        permissions: getDefaultPermissions('participant'),
+        updatedAt: now(),
+      }).catch(() => {});
+      setCachedData(`user:${user.uid}`, healed);
+      return healed;
+    }
+    return existing;
+  }
 
   const email = user.email || '';
   const role = resolveRole(email);
   const isSuper = role === 'superadmin';
+  const isPart = role === 'participant';
 
   const profile: UserProfile = {
     uid: user.uid,
@@ -262,7 +303,7 @@ export async function ensureUserProfile(user: User): Promise<UserProfile> {
     displayName: user.displayName || email.split('@')[0],
     photoURL: user.photoURL || null,
     role,
-    status: isSuper ? 'approved' : 'pending',
+    status: isSuper || isPart ? 'approved' : 'pending',
     teamIds: [],
     teamNames: [],
     hasFinanceAccess: isSuper,

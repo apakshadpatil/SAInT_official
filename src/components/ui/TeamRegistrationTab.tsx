@@ -757,6 +757,34 @@ export default function TeamRegistrationTab({
                         >
                           {team.arrived ? '✓ Arrived' : 'Pending'}
                         </span>
+                        {team.paymentStatus && (
+                          <span
+                            className={`px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 ${
+                              team.paymentStatus === 'verified'
+                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                : team.paymentStatus === 'rejected'
+                                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                                : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                            }`}
+                          >
+                            Payment: {team.paymentStatus.toUpperCase()}
+                          </span>
+                        )}
+                        {team.transactionId && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-mono text-slate-300 bg-slate-800 border border-slate-700">
+                            UTR: {team.transactionId}
+                          </span>
+                        )}
+                        {team.paymentScreenshotUrl && (
+                          <a
+                            href={team.paymentScreenshotUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-0.5 rounded text-[11px] font-semibold text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 inline-flex items-center gap-1"
+                          >
+                            <ExternalLink className="w-3 h-3" /> Proof
+                          </a>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-slate-400">

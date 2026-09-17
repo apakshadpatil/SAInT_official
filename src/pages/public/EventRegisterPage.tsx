@@ -1,9 +1,32 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, MapPin, Download, CheckCircle, Ticket, ArrowLeft, Loader2, CreditCard, Users, Plus, Trash2, ClipboardCheck, ExternalLink, MessageCircle, Sparkles, X } from 'lucide-react';
+import {
+  Calendar,
+  Clock,
+  MapPin,
+  Download,
+  CheckCircle,
+  Ticket,
+  ArrowLeft,
+  Loader2,
+  CreditCard,
+  Users,
+  Plus,
+  Trash2,
+  ClipboardCheck,
+  ExternalLink,
+  MessageCircle,
+  Sparkles,
+  X,
+  UploadCloud,
+  Check,
+  AlertCircle,
+  Maximize2,
+} from 'lucide-react';
 import { createRuleAgreement, getEvent, subscribeEventById, registerParticipantForEvent } from '../../services/eventService';
 import type { EventRecord, EventTicket, TicketTier, TeamMemberDetail } from '../../types';
 import { downloadTicketImage } from '../../utils/ticketDownload';
+import { uploadFileToSupabase } from '../../utils/supabase';
 import QRCode from 'qrcode';
 
 export default function EventRegisterPage() {
@@ -26,6 +49,12 @@ export default function EventRegisterPage() {
   const [transactionId, setTransactionId] = useState('');
   const [selectedDomainId, setSelectedDomainId] = useState('');
   const [customResponses, setCustomResponses] = useState<Record<string, string>>({});
+
+  // Payment Proof Fields
+  const [paymentScreenshotFile, setPaymentScreenshotFile] = useState<File | null>(null);
+  const [paymentScreenshotPreview, setPaymentScreenshotPreview] = useState<string | null>(null);
+  const [paymentScreenshotError, setPaymentScreenshotError] = useState<string>('');
+  const [showFullQRModal, setShowFullQRModal] = useState(false);
 
   // Tier selection & Team members
   const [selectedTierId, setSelectedTierId] = useState<string>('');
@@ -166,6 +195,49 @@ export default function EventRegisterPage() {
 
   const selectedTier = event?.ticketTiers?.find((t) => t.id === selectedTierId);
   const isTeam = Boolean(event?.teamsEnabled) || Boolean(selectedTier && selectedTier.teamSize > 1);
+  const activePaymentQR = selectedTier?.paymentQRUrl || event?.paymentQRUrl;
+  const showPaymentQR = Boolean(event?.ticketingEnabled && activePaymentQR);
+
+  // Clean up screenshot object URL on unmount or change
+  useEffect(() => {
+    return () => {
+      if (paymentScreenshotPreview && paymentScreenshotPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(paymentScreenshotPreview);
+      }
+    };
+  }, [paymentScreenshotPreview]);
+
+  const handleScreenshotChange = (file: File | null) => {
+    setPaymentScreenshotError('');
+    if (!file) {
+      if (paymentScreenshotPreview && paymentScreenshotPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(paymentScreenshotPreview);
+      }
+      setPaymentScreenshotFile(null);
+      setPaymentScreenshotPreview(null);
+      return;
+    }
+
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type.toLowerCase())) {
+      setPaymentScreenshotError('Please upload a valid image file (JPG, PNG, or WebP).');
+      return;
+    }
+
+    const maxSizeBytes = 5 * 1024 * 1024;
+    if (file.size > maxSizeBytes) {
+      setPaymentScreenshotError('Screenshot file size must be less than 5MB.');
+      return;
+    }
+
+    if (paymentScreenshotPreview && paymentScreenshotPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(paymentScreenshotPreview);
+    }
+
+    setPaymentScreenshotFile(file);
+    const objectUrl = URL.createObjectURL(file);
+    setPaymentScreenshotPreview(objectUrl);
+  };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,9 +279,42 @@ export default function EventRegisterPage() {
       }
     }
 
+    // Validate payment fields if paid event
+    if (showPaymentQR) {
+      const cleanTxId = transactionId.trim();
+      if (!cleanTxId) {
+        setError('Please enter your UPI Transaction ID / UTR number.');
+        return;
+      }
+      if (cleanTxId.length < 6) {
+        setError('Please enter a valid UPI Transaction ID / UTR (at least 6 characters).');
+        return;
+      }
+      if (!paymentScreenshotFile) {
+        setError('Please upload your payment screenshot before submitting registration.');
+        return;
+      }
+    }
+
     setSubmitting(true);
     setError('');
     try {
+      let uploadedScreenshotUrl: string | undefined = undefined;
+      let uploadedScreenshotPath: string | undefined = undefined;
+
+      if (showPaymentQR && paymentScreenshotFile) {
+        try {
+          const cleanFileName = paymentScreenshotFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+          uploadedScreenshotPath = `payment_proofs/${eventId}/${Date.now()}_${cleanFileName}`;
+          uploadedScreenshotUrl = await uploadFileToSupabase(paymentScreenshotFile, uploadedScreenshotPath);
+        } catch (uploadErr: any) {
+          console.error('[Payment] Screenshot upload failed:', uploadErr);
+          setError(uploadErr.message || 'Failed to upload payment screenshot. Please check your connection and try again.');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const finalCustomResponses = {
         ...customResponses,
         ...(isTeam && teamName.trim() ? { teamName: teamName.trim() } : {}),
@@ -233,7 +338,10 @@ export default function EventRegisterPage() {
         tierName: selectedTier?.name,
         teamSize: calculatedTeamSize,
         teamMembers: isTeam && teamMembers.length > 0 ? teamMembers : undefined,
-        transactionId: transactionId.trim() || undefined,
+        transactionId: showPaymentQR ? transactionId.trim() : (transactionId.trim() || undefined),
+        paymentScreenshotUrl: uploadedScreenshotUrl,
+        paymentScreenshotPath: uploadedScreenshotPath,
+        paymentStatus: showPaymentQR ? 'pending' : undefined,
         customResponses: Object.keys(finalCustomResponses).length > 0 ? finalCustomResponses : undefined,
         registrationSource: 'public',
       });
@@ -330,10 +438,6 @@ export default function EventRegisterPage() {
 
   const registrationClosed = event.status === 'cancelled' || event.status === 'completed';
   const showDomainSelection = Boolean(event.enableDomainSelection && event.participantDomains?.length);
-
-  // Active payment QR logic: Tier QR if tier selected, otherwise event default QR
-  const activePaymentQR = selectedTier?.paymentQRUrl || event.paymentQRUrl;
-  const showPaymentQR = Boolean(event.ticketingEnabled && activePaymentQR);
 
   // Applicable custom fields for this event & selected tier
   const applicableCustomFields = (event.customFields || []).filter(
@@ -557,24 +661,6 @@ export default function EventRegisterPage() {
               </div>
             )}
 
-            {/* Payment QR Code Box */}
-            {showPaymentQR && (
-              <div className="mb-6 rounded-2xl border p-5 text-center" style={{ borderColor: 'rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.08)' }}>
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <CreditCard className="w-4 h-4 text-blue-400" />
-                  <p className="text-sm font-bold text-white">
-                    Scan Payment QR Code {selectedTier?.price ? `(Amount: ₹${selectedTier.price})` : ''}
-                  </p>
-                </div>
-                <p className="text-xs text-slate-300 mb-3">
-                  Scan via GPay / PhonePe / Paytm / BHIM and enter your Transaction ID below.
-                </p>
-                <div className="inline-block p-2 bg-white rounded-xl shadow-lg">
-                  <img src={activePaymentQR} alt="Payment QR" className="h-44 w-44 rounded-lg object-contain" />
-                </div>
-              </div>
-            )}
-
             {error && (
               <div className="mb-4 p-3 rounded-xl text-sm font-medium" style={{
                 background: 'rgba(239,68,68,0.1)',
@@ -781,18 +867,167 @@ export default function EventRegisterPage() {
                 </div>
               )}
 
-              {/* Payment Transaction ID if paid */}
+              {/* --- ENLARGED PAYMENT QR & PROOF SECTION --- */}
               {showPaymentQR && (
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                    Payment Reference / UTR / Transaction ID (Optional)
-                  </label>
-                  <input
-                    value={transactionId}
-                    onChange={(e) => setTransactionId(e.target.value)}
-                    placeholder="e.g. UPI Ref / 12-digit UTR"
-                    className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400 font-mono"
-                  />
+                <div
+                  className="rounded-2xl border p-5 sm:p-6 space-y-6 animate-fade-in-up my-4"
+                  style={{
+                    borderColor: 'rgba(59,130,246,0.35)',
+                    background: 'linear-gradient(180deg, rgba(30,58,138,0.2) 0%, rgba(15,23,42,0.35) 100%)',
+                    backdropFilter: 'blur(16px)',
+                  }}
+                >
+                  {/* Header & Pricing */}
+                  <div className="text-center space-y-2">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold border border-blue-500/30">
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>Registration Payment</span>
+                    </div>
+
+                    <div className="flex flex-col items-center">
+                      <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 justify-center flex-wrap">
+                        Scan QR &amp; Pay via UPI
+                        {selectedTier?.price !== undefined && (
+                          <span className="text-emerald-400 font-mono font-extrabold px-2.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm sm:text-base">
+                            ₹{selectedTier.price}
+                          </span>
+                        )}
+                      </h3>
+                      <p className="text-xs text-slate-300 max-w-md mt-1">
+                        Scan via Google Pay, PhonePe, Paytm, BHIM, or any UPI banking app. After payment, upload your payment screenshot and enter your transaction ID below.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* High-Resolution Noticeably Larger QR Display */}
+                  <div className="flex flex-col items-center justify-center">
+                    <div className="relative group p-3.5 sm:p-4 bg-white rounded-2xl shadow-2xl border border-blue-200/50 flex flex-col items-center max-w-full">
+                      <img
+                        src={activePaymentQR}
+                        alt="UPI Payment QR Code"
+                        className="w-64 h-64 sm:w-72 sm:h-72 md:w-80 md:h-80 max-w-full aspect-square rounded-xl object-contain"
+                        style={{ imageRendering: 'crisp-edges' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowFullQRModal(true)}
+                        className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+                        title="Enlarge QR Code"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>Tap to enlarge QR</span>
+                      </button>
+                    </div>
+                    <span className="text-[11px] text-slate-400 mt-2 flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      Sharp, high-resolution QR code. Easy to scan on any phone.
+                    </span>
+                  </div>
+
+                  {/* Payment Screenshot Upload & Preview */}
+                  <div className="space-y-3 pt-4 border-t border-white/10 text-left">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-blue-300">
+                        Upload Payment Screenshot *
+                      </label>
+                      <span className="text-[11px] text-slate-400">JPG, PNG, WebP (Max 5MB)</span>
+                    </div>
+
+                    {!paymentScreenshotPreview ? (
+                      <label className="border-2 border-dashed border-blue-400/30 hover:border-blue-400 rounded-2xl p-5 sm:p-6 flex flex-col items-center justify-center cursor-pointer transition-all bg-white/[0.02] hover:bg-white/[0.05] group">
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) {
+                              handleScreenshotChange(e.target.files[0]);
+                            }
+                          }}
+                        />
+                        <div className="w-12 h-12 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                          <UploadCloud className="w-6 h-6" />
+                        </div>
+                        <p className="text-sm font-semibold text-white group-hover:text-blue-300 transition-colors text-center">
+                          Click or tap to upload payment screenshot
+                        </p>
+                        <p className="text-xs text-slate-400 mt-1 text-center">
+                          Upload your successful payment screen showing Amount &amp; UPI Ref / UTR
+                        </p>
+                      </label>
+                    ) : (
+                      <div className="p-3.5 rounded-2xl bg-black/40 border border-blue-500/30 flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
+                          <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-white/10 shrink-0 bg-black/50">
+                            <img
+                              src={paymentScreenshotPreview}
+                              alt="Payment Screenshot Preview"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-white truncate">
+                              {paymentScreenshotFile?.name || 'Payment_Screenshot.png'}
+                            </p>
+                            <p className="text-xs text-slate-400 font-mono mt-0.5">
+                              {paymentScreenshotFile ? `${(paymentScreenshotFile.size / (1024 * 1024)).toFixed(2)} MB` : ''}
+                            </p>
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 mt-1">
+                              <Check className="w-3 h-3" /> Ready to submit
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                          <label className="px-3 py-1.5 rounded-xl text-xs font-semibold text-blue-300 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-400/30 cursor-pointer transition-colors">
+                            Change
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) {
+                                  handleScreenshotChange(e.target.files[0]);
+                                }
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleScreenshotChange(null)}
+                            className="p-1.5 rounded-xl text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 transition-colors"
+                            title="Remove screenshot"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {paymentScreenshotError && (
+                      <div className="flex items-center gap-2 p-2.5 rounded-xl text-xs font-medium text-red-300 bg-red-500/10 border border-red-500/20">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                        <span>{paymentScreenshotError}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Required UPI Transaction ID / UTR Input */}
+                  <div className="space-y-1.5 pt-4 border-t border-white/10 text-left">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-blue-300">
+                      UPI Transaction ID / UTR *
+                    </label>
+                    <input
+                      value={transactionId}
+                      onChange={(e) => setTransactionId(e.target.value)}
+                      placeholder="e.g. 425612349870 or UPI Ref ID"
+                      required
+                      className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400 font-mono tracking-wider uppercase"
+                    />
+                    <p className="text-[11px] text-slate-400">
+                      Enter the 12-digit UTR number or UPI transaction reference from your payment confirmation screen.
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -870,7 +1105,7 @@ export default function EventRegisterPage() {
                 }}
               >
                 {submitting ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Generating Ticket Pass...</>
+                  <><Loader2 className="w-4 h-4 animate-spin" /> {paymentScreenshotFile ? 'Uploading Proof & Generating Ticket Pass...' : 'Generating Ticket Pass...'}</>
                 ) : (
                   <><Ticket className="w-4 h-4" /> Register &amp; Download Ticket</>
                 )}
@@ -879,6 +1114,53 @@ export default function EventRegisterPage() {
           </div>
         )}
       </div>
+
+      {/* Full Screen / Enlarged Payment QR Modal */}
+      {showFullQRModal && activePaymentQR && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setShowFullQRModal(false)}
+        >
+          <div
+            className="relative bg-slate-900 border border-slate-700/70 rounded-3xl p-6 sm:p-8 max-w-sm sm:max-w-md w-full text-center shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowFullQRModal(false)}
+              className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors"
+              aria-label="Close modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold text-white flex items-center justify-center gap-2">
+                <CreditCard className="w-5 h-5 text-blue-400" />
+                UPI Payment QR Code
+              </h3>
+              {selectedTier?.price !== undefined && (
+                <p className="text-sm font-bold text-emerald-400 font-mono">
+                  Amount: ₹{selectedTier.price}
+                </p>
+              )}
+            </div>
+            <div className="p-4 bg-white rounded-2xl inline-block shadow-xl mx-auto max-w-full">
+              <img
+                src={activePaymentQR}
+                alt="Enlarged Payment QR"
+                className="w-72 h-72 sm:w-80 sm:h-80 max-w-full aspect-square object-contain mx-auto"
+                style={{ imageRendering: 'crisp-edges' }}
+              />
+            </div>
+            <p className="text-xs text-slate-300">
+              Scan with GPay, PhonePe, Paytm, BHIM, or any UPI app. Tap outside or close to return.
+            </p>
+          </div>
+        </div>
+      )}
+
       {showParticipantPrompt && ticket && (
         <div className="participant-modal-backdrop" role="dialog" aria-modal="true" aria-label="Create participant account">
           <div className="participant-qr-modal text-center">

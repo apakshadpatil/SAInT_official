@@ -286,6 +286,11 @@ export async function createTicket(
     teamSize?: number;
     teamMembers?: Array<{ name: string; email?: string; phone?: string; college?: string; department?: string }>;
     transactionId?: string;
+    paymentScreenshotUrl?: string;
+    paymentScreenshotPath?: string;
+    paymentStatus?: 'pending' | 'verified' | 'rejected';
+    paymentVerifiedAt?: string;
+    paymentVerifiedBy?: string;
     customResponses?: Record<string, string>;
   } = {}
 ): Promise<EventTicket> {
@@ -314,6 +319,11 @@ export async function createTicket(
     teamSize: options.teamSize || null,
     teamMembers: options.teamMembers || null,
     transactionId: options.transactionId || null,
+    paymentScreenshotUrl: options.paymentScreenshotUrl || null,
+    paymentScreenshotPath: options.paymentScreenshotPath || null,
+    paymentStatus: options.paymentStatus || null,
+    paymentVerifiedAt: options.paymentVerifiedAt || null,
+    paymentVerifiedBy: options.paymentVerifiedBy || null,
     customResponses: options.customResponses || null,
     ticketNumber,
     qrPayload,
@@ -323,6 +333,7 @@ export async function createTicket(
   };
 
   await setDoc(ticketRef, removeUndefinedFields(rawTicket));
+  invalidateCache(`tickets:${eventId}`);
 
   return {
     id: ticketRef.id,
@@ -341,6 +352,11 @@ export async function createTicket(
     teamSize: options.teamSize,
     teamMembers: options.teamMembers,
     transactionId: options.transactionId,
+    paymentScreenshotUrl: options.paymentScreenshotUrl,
+    paymentScreenshotPath: options.paymentScreenshotPath,
+    paymentStatus: options.paymentStatus,
+    paymentVerifiedAt: options.paymentVerifiedAt,
+    paymentVerifiedBy: options.paymentVerifiedBy,
     customResponses: options.customResponses,
     qrPayload,
     registrationSource,
@@ -364,6 +380,9 @@ export async function registerParticipantForEvent(
     teamSize?: number;
     teamMembers?: Array<{ name: string; email?: string; phone?: string; college?: string; department?: string }>;
     transactionId?: string;
+    paymentScreenshotUrl?: string;
+    paymentScreenshotPath?: string;
+    paymentStatus?: 'pending' | 'verified' | 'rejected';
     customResponses?: Record<string, string>;
     registrationSource?: 'public' | 'manual';
   }
@@ -384,6 +403,9 @@ export async function registerParticipantForEvent(
     teamSize: participantData.teamSize,
     teamMembers: participantData.teamMembers,
     transactionId: participantData.transactionId,
+    paymentScreenshotUrl: participantData.paymentScreenshotUrl,
+    paymentScreenshotPath: participantData.paymentScreenshotPath,
+    paymentStatus: participantData.paymentStatus,
     customResponses: participantData.customResponses,
   });
 
@@ -402,6 +424,9 @@ export async function registerParticipantForEvent(
     teamSize: participantData.teamSize || undefined,
     teamMembers: participantData.teamMembers || undefined,
     transactionId: participantData.transactionId || undefined,
+    paymentScreenshotUrl: participantData.paymentScreenshotUrl,
+    paymentScreenshotPath: participantData.paymentScreenshotPath,
+    paymentStatus: participantData.paymentStatus,
     customResponses: participantData.customResponses || undefined,
     arrived: false,
     ticketId: ticket.id,
@@ -455,6 +480,9 @@ export async function registerParticipantForEvent(
           tierId: participantData.tierId,
           tierName: participantData.tierName,
           transactionId: participantData.transactionId,
+          paymentScreenshotUrl: participantData.paymentScreenshotUrl,
+          paymentScreenshotPath: participantData.paymentScreenshotPath,
+          paymentStatus: participantData.paymentStatus,
           customResponses: participantData.customResponses,
           registeredAt: ticket.createdAt,
           arrived: false,
@@ -675,14 +703,27 @@ export async function removeParticipant(eventId: string, userId: string) {
   await updateEvent(eventId, { participantIds });
 }
 
-export async function getEventTickets(eventId: string): Promise<EventTicket[]> {
-  const snap = await getDocs(collection(db, 'events', eventId, 'tickets'));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventTicket));
+export async function getEventTickets(eventId: string, forceRefresh = false): Promise<EventTicket[]> {
+  return cachedFetch<EventTicket[]>(
+    `tickets:${eventId}`,
+    async () => {
+      const snap = await getDocs(collection(db, 'events', eventId, 'tickets'));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventTicket));
+    },
+    {
+      ttlMs: 45 * 1000,
+      resource: 'tickets',
+      action: 'get_event_tickets',
+      forceRefresh,
+    }
+  );
 }
 
 export function subscribeEventTickets(eventId: string, callback: (tickets: EventTicket[]) => void) {
   return onSnapshot(collection(db, 'events', eventId, 'tickets'), (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventTicket)));
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventTicket));
+    setCachedData(`tickets:${eventId}`, list);
+    callback(list);
   });
 }
 
@@ -703,6 +744,7 @@ export async function updateParticipantTicketTeam(
       department: member.department?.trim() || null,
     })),
   }));
+  invalidateCache(`tickets:${eventId}`);
 }
 
 export async function getPublishedUpcomingEvents(forceRefresh = false): Promise<EventRecord[]> {
@@ -1344,4 +1386,101 @@ export async function batchUpdateParticipantsAccess(
   );
 
   return { successCount, failCount };
+}
+
+export async function updatePaymentVerificationStatus(
+  eventId: string,
+  ticketId: string,
+  paymentStatus: 'pending' | 'verified' | 'rejected',
+  actorProfile?: UserProfile | null
+) {
+  const ticketRef = doc(db, 'events', eventId, 'tickets', ticketId);
+  const ticketSnap = await getDoc(ticketRef);
+  if (!ticketSnap.exists()) {
+    throw new Error('Ticket not found');
+  }
+  const ticketData = ticketSnap.data() as EventTicket;
+
+  const timestamp = new Date().toISOString();
+  const actorName = actorProfile
+    ? actorProfile.displayName || actorProfile.firstName || actorProfile.email || 'Admin'
+    : 'Admin';
+
+  // 1. Update ticket document in subcollection
+  await updateDoc(
+    ticketRef,
+    removeUndefinedFields({
+      paymentStatus,
+      paymentVerifiedAt: paymentStatus === 'verified' ? timestamp : undefined,
+      paymentVerifiedBy: paymentStatus === 'verified' ? actorName : undefined,
+    })
+  );
+
+  // 2. Invalidate tickets cache
+  invalidateCache(`tickets:${eventId}`);
+  invalidateCache(`event:${eventId}`);
+  invalidateCache('events:all');
+
+  // 3. Update participant in parent event document if present
+  try {
+    const event = await getEvent(eventId);
+    if (event) {
+      let participantsUpdated = false;
+      const nextParticipants = (event.participants || []).map((p) => {
+        if (p.ticketId === ticketId || p.id === ticketId) {
+          participantsUpdated = true;
+          return {
+            ...p,
+            paymentStatus,
+            paymentVerifiedAt: paymentStatus === 'verified' ? timestamp : undefined,
+            paymentVerifiedBy: paymentStatus === 'verified' ? actorName : undefined,
+          };
+        }
+        return p;
+      });
+
+      let teamsUpdated = false;
+      const nextTeams = (event.teams || []).map((t) => {
+        if (t.id === `team_${ticketId}` || t.id === ticketId) {
+          teamsUpdated = true;
+          return {
+            ...t,
+            paymentStatus,
+            paymentVerifiedAt: paymentStatus === 'verified' ? timestamp : undefined,
+            paymentVerifiedBy: paymentStatus === 'verified' ? actorName : undefined,
+          };
+        }
+        return t;
+      });
+
+      if (participantsUpdated || teamsUpdated) {
+        await updateEvent(eventId, {
+          ...(participantsUpdated ? { participants: nextParticipants } : {}),
+          ...(teamsUpdated ? { teams: nextTeams } : {}),
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Could not update parent event document payment status:', err);
+  }
+
+  // 4. Audit log if actor profile is provided
+  if (actorProfile) {
+    const action =
+      paymentStatus === 'verified'
+        ? 'verify_payment'
+        : paymentStatus === 'rejected'
+        ? 'reject_payment'
+        : 'reset_payment_status';
+    const participantName = ticketData.guestName || 'Participant';
+    const details = `${actorName} marked payment for ${participantName} (${ticketData.ticketNumber}) as ${paymentStatus}`;
+
+    logActivity(
+      actorProfile.uid,
+      actorName,
+      actorProfile.email,
+      action,
+      details
+    ).catch(() => {});
+  }
 }

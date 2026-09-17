@@ -1,22 +1,40 @@
+import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { logoutUser } from '../services/authService';
 import { ShieldAlert, LogOut } from 'lucide-react';
 
 export default function ParticipantRoute({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, refreshProfile } = useAuth();
   const location = useLocation();
+  const [retried, setRetried] = useState(false);
+
+  // Self-heal / refresh if participant profile is momentarily missing or pending
+  useEffect(() => {
+    if (!loading && user && (!profile || profile.role === 'pending') && !retried) {
+      setRetried(true);
+      void refreshProfile();
+    }
+  }, [loading, user, profile, retried, refreshProfile]);
 
   if (loading) {
     return <div className="participant-loading"><span /></div>;
   }
   if (!user) return <Navigate to="/participant-auth" state={{ from: location }} replace />;
-  // Firebase's auth listener can run a moment before a new participant profile
-  // is upgraded from its default pending shape. Keep the participant shell stable.
-  if (!profile || (profile.role === 'pending' && user.email?.endsWith('@accounts.saint.local'))) {
+
+  const isInternalParticipant = Boolean(
+    user.email?.toLowerCase().includes('.saint.local') || profile?.participantUsername
+  );
+
+  // If still resolving profile for a participant account, show loading briefly
+  if (!profile && isInternalParticipant) {
     return <div className="participant-loading"><span /></div>;
   }
-  if (profile?.role !== 'participant') return <Navigate to="/dashboard" replace />;
+
+  // If user is pending approval on the main club portal (and not a participant account), send to pending-approval
+  if (profile?.status === 'pending' && !isInternalParticipant && profile.role !== 'superadmin') {
+    return <Navigate to="/pending-approval" replace />;
+  }
 
   if (profile?.status === 'rejected') {
     return (

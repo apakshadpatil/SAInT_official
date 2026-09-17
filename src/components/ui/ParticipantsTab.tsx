@@ -2,8 +2,26 @@ import { useState, useEffect } from 'react';
 import type { EventRecord, EventParticipant } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { Download, Trash2, UserCheck, RotateCcw, CheckSquare, Square, Clock } from 'lucide-react';
-import { updateParticipantArrivalStatus, batchUpdateParticipantsArrival } from '../../services/eventService';
+import {
+  Download,
+  Trash2,
+  UserCheck,
+  RotateCcw,
+  CheckSquare,
+  Square,
+  Clock,
+  CreditCard,
+  CheckCircle2,
+  XCircle,
+  Eye,
+  ExternalLink,
+  X,
+} from 'lucide-react';
+import {
+  updateParticipantArrivalStatus,
+  batchUpdateParticipantsArrival,
+  updatePaymentVerificationStatus,
+} from '../../services/eventService';
 
 interface ParticipantsTabProps {
   event: EventRecord;
@@ -21,12 +39,40 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'arrived' | 'pending'>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [proofModalParticipant, setProofModalParticipant] = useState<EventParticipant | null>(null);
+  const [updatingPaymentId, setUpdatingPaymentId] = useState<string | null>(null);
 
   useEffect(() => {
     if (event.participants) {
       setParticipants(event.participants);
     }
   }, [event.participants]);
+
+  const handleUpdatePayment = async (
+    participant: EventParticipant,
+    status: 'pending' | 'verified' | 'rejected'
+  ) => {
+    const ticketId = participant.ticketId || participant.id;
+    setUpdatingPaymentId(participant.id);
+    try {
+      await updatePaymentVerificationStatus(event.id, ticketId, status, profile);
+      const updated = participants.map((p) =>
+        p.id === participant.id ? { ...p, paymentStatus: status } : p
+      );
+      setParticipants(updated);
+      if (proofModalParticipant && proofModalParticipant.id === participant.id) {
+        setProofModalParticipant({ ...proofModalParticipant, paymentStatus: status });
+      }
+      if (onParticipantsChange) {
+        await onParticipantsChange(updated);
+      }
+      showToast(`Payment marked as ${status}!`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update payment status', 'error');
+    } finally {
+      setUpdatingPaymentId(null);
+    }
+  };
 
   const filteredParticipants = participants.filter((p) => {
     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -375,6 +421,9 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
                   Institution / Dept
                 </th>
                 <th className="px-4 py-3 font-semibold" style={{ color: 'var(--dash-text)' }}>
+                  Payment &amp; Proof
+                </th>
+                <th className="px-4 py-3 font-semibold" style={{ color: 'var(--dash-text)' }}>
                   Arrival Status
                 </th>
                 <th className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--dash-text)' }}>
@@ -385,7 +434,7 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
             <tbody className="divide-y" style={{ borderColor: 'var(--dash-border)' }}>
               {filteredParticipants.length === 0 ? (
                 <tr>
-                  <td colSpan={canEdit ? 6 : 5} className="px-4 py-12 text-center">
+                  <td colSpan={canEdit ? 7 : 6} className="px-4 py-12 text-center">
                     <p className="text-sm font-medium" style={{ color: 'var(--dash-muted)' }}>No participants found matching current filters</p>
                   </td>
                 </tr>
@@ -450,6 +499,48 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
                           <p className="text-[11px] text-slate-500">
                             {participant.department}
                           </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {event.ticketingEnabled || participant.transactionId || participant.paymentScreenshotUrl ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {participant.paymentStatus === 'verified' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                  <CheckCircle2 className="w-3 h-3" /> Verified
+                                </span>
+                              ) : participant.paymentStatus === 'rejected' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-500/15 text-red-400 border border-red-500/30">
+                                  <XCircle className="w-3 h-3" /> Rejected
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                  <Clock className="w-3 h-3" /> Pending
+                                </span>
+                              )}
+
+                              {participant.paymentScreenshotUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setProofModalParticipant(participant)}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-400/30 transition-colors"
+                                  title="View Payment Screenshot"
+                                >
+                                  <Eye className="w-3 h-3" /> View Proof
+                                </button>
+                              )}
+                            </div>
+
+                            {participant.transactionId ? (
+                              <p className="text-[11px] font-mono text-slate-300 truncate max-w-[150px]" title={participant.transactionId}>
+                                UTR: {participant.transactionId}
+                              </p>
+                            ) : (
+                              <p className="text-[10px] text-slate-500 italic">No UTR</p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-500">Free Event</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -560,6 +651,114 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
             <Download className="w-4 h-4" />
             Export Participants CSV
           </button>
+        </div>
+      )}
+
+      {/* Payment Proof Modal */}
+      {proofModalParticipant && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setProofModalParticipant(null)}
+        >
+          <div
+            className="relative bg-slate-900 border border-slate-700/80 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-blue-400" />
+                <h3 className="text-base font-bold text-white">
+                  Payment Verification
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProofModalParticipant(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-white/5 hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 overflow-y-auto pr-1">
+              <div className="grid grid-cols-2 gap-3 text-xs bg-black/30 p-3 rounded-xl border border-white/5">
+                <div>
+                  <span className="text-slate-400 block">Participant</span>
+                  <strong className="text-white font-medium text-sm">{proofModalParticipant.name}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Ticket ID</span>
+                  <span className="text-white font-mono">{proofModalParticipant.ticketId ? proofModalParticipant.ticketId.slice(0, 12) : '—'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">UPI Transaction ID / UTR</span>
+                  <span className="text-blue-300 font-mono font-bold select-all">{proofModalParticipant.transactionId || 'None'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Current Status</span>
+                  <span className={`font-bold capitalize ${
+                    proofModalParticipant.paymentStatus === 'verified'
+                      ? 'text-emerald-400'
+                      : proofModalParticipant.paymentStatus === 'rejected'
+                      ? 'text-red-400'
+                      : 'text-amber-400'
+                  }`}>
+                    {proofModalParticipant.paymentStatus || 'Pending'}
+                  </span>
+                </div>
+              </div>
+
+              {proofModalParticipant.paymentScreenshotUrl ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-300">Payment Screenshot</span>
+                    <a
+                      href={proofModalParticipant.paymentScreenshotUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" /> Open Full Image
+                    </a>
+                  </div>
+                  <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black/40 flex items-center justify-center max-h-80">
+                    <img
+                      src={proofModalParticipant.paymentScreenshotUrl}
+                      alt="Payment Screenshot"
+                      className="max-h-80 w-auto object-contain rounded-xl"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 text-center text-slate-400 text-xs bg-black/20 rounded-xl border border-white/5">
+                  No payment screenshot uploaded for this participant.
+                </div>
+              )}
+            </div>
+
+            {canEdit && (
+              <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleUpdatePayment(proofModalParticipant, 'rejected')}
+                  disabled={updatingPaymentId === proofModalParticipant.id}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/30 transition-colors flex items-center gap-1.5"
+                >
+                  <XCircle className="w-4 h-4" /> Reject Payment
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleUpdatePayment(proofModalParticipant, 'verified')}
+                  disabled={updatingPaymentId === proofModalParticipant.id}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-900/30"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Verify Payment
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

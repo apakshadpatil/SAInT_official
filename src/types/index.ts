@@ -359,6 +359,11 @@ export interface EventTeam {
   tierId?: string;
   tierName?: string;
   transactionId?: string;
+  paymentScreenshotUrl?: string;
+  paymentScreenshotPath?: string;
+  paymentStatus?: 'pending' | 'verified' | 'rejected';
+  paymentVerifiedAt?: string;
+  paymentVerifiedBy?: string;
   customResponses?: Record<string, string>;
   registeredAt: string;
   arrived: boolean;
@@ -389,6 +394,11 @@ export interface EventTicket {
   teamSize?: number;
   teamMembers?: TeamMemberDetail[];
   transactionId?: string;
+  paymentScreenshotUrl?: string;
+  paymentScreenshotPath?: string;
+  paymentStatus?: 'pending' | 'verified' | 'rejected';
+  paymentVerifiedAt?: string;
+  paymentVerifiedBy?: string;
   customResponses?: Record<string, string>;
   qrPayload: string;
   registrationSource: 'public' | 'manual';
@@ -420,6 +430,11 @@ export interface EventParticipant {
   teamSize?: number;
   teamMembers?: TeamMemberDetail[];
   transactionId?: string;
+  paymentScreenshotUrl?: string;
+  paymentScreenshotPath?: string;
+  paymentStatus?: 'pending' | 'verified' | 'rejected';
+  paymentVerifiedAt?: string;
+  paymentVerifiedBy?: string;
   customResponses?: Record<string, string>;
   arrived: boolean;
   arrivedAt?: string;
@@ -681,6 +696,38 @@ export const DEFAULT_MEMBER_PERMISSIONS: SidebarPermissions = {
   sponsors: true,
   profile: true,
   supportTickets: true,
+  analytics: false,
+  teams: false,
+  files: false,
+  documentation: false,
+  finance: false,
+  financialAnalytics: false,
+  controlCentre: false,
+  positions: false,
+  userApprovals: false,
+  accessControl: false,
+  monitorActivity: false,
+  manageApplications: false,
+  interviewPanels: false,
+  gdPanels: false,
+  homeImages: false,
+  systemStats: false,
+  deploymentStats: false,
+  userInteractions: false,
+  participants: false,
+};
+
+export const DEFAULT_PARTICIPANT_PERMISSIONS: SidebarPermissions = {
+  dashboard: false,
+  events: false,
+  calendar: false,
+  agenda: false,
+  tasks: false,
+  explore: false,
+  qrScanner: false,
+  sponsors: false,
+  profile: false,
+  supportTickets: false,
   analytics: false,
   teams: false,
   files: false,

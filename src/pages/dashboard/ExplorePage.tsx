@@ -16,11 +16,17 @@ export default function ExplorePage() {
   const [loading, setLoading] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
+  const isExploreEligibleMember = (u: UserProfile) => {
+    return (
+      u.status === 'approved' &&
+      (u.role === 'member' || u.role === 'core' || u.role === 'superadmin')
+    );
+  };
+
   const fetchUsers = async () => {
     try {
       const all = await getAllUsers();
-      // Filter out pending and superadmins if desired, or just show approved users
-      setUsers(all.filter((u) => u.status === 'approved' && u.uid !== profile?.uid));
+      setUsers(all.filter((u) => isExploreEligibleMember(u) && u.uid !== profile?.uid));
     } catch (err) {
       console.error('Failed to load users:', err);
     }
@@ -31,7 +37,7 @@ export default function ExplorePage() {
 
     const unsub = onSnapshot(collection(db, 'users'), (snap) => {
       const liveUsers = snap.docs.map((doc) => doc.data() as UserProfile);
-      setUsers(liveUsers.filter((u) => u.status === 'approved' && u.uid !== profile?.uid));
+      setUsers(liveUsers.filter((u) => isExploreEligibleMember(u) && u.uid !== profile?.uid));
     });
 
     return () => unsub();

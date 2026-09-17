@@ -10,7 +10,10 @@ export function isCoreMember(profile: UserProfile | null): boolean {
 
 export function isApprovedMember(profile: UserProfile | null): boolean {
   if (!profile) return false;
-  return profile.status === 'approved' && profile.role !== 'pending';
+  return (
+    profile.status === 'approved' &&
+    (profile.role === 'member' || profile.role === 'core' || profile.role === 'superadmin')
+  );
 }
 
 export function hasFinanceAccess(profile: UserProfile | null): boolean {
@@ -42,8 +45,9 @@ export function hasTabAccess(profile: UserProfile | null, tab: keyof SidebarPerm
 
 export const ROLE_LABELS: Record<string, string> = {
   pending: 'Pending Approval',
+  participant: 'Participant',
   member: 'Club Member',
-  core: 'Core Team',
+  core: 'Core Member',
   superadmin: 'Super Admin',
 };
 
@@ -51,6 +55,9 @@ export function getRoleBadge(profile: UserProfile | null): string {
   if (!profile) return '';
   if (profile.role === 'superadmin') return 'Super Admin';
   if (profile.positionTitle) return profile.positionTitle;
-  if (profile.role === 'core') return profile.coreTeamName || 'Core Team';
-  return 'Club Member';
+  if (profile.role === 'core') return 'Core Member';
+  if (profile.role === 'member') return 'Club Member';
+  if (profile.role === 'participant') return 'Participant';
+  if (profile.role === 'pending') return 'Pending Approval';
+  return '';
 }

@@ -46,10 +46,10 @@ export default function ParticipantAuthPage() {
       if (flow === 'signup') {
         await signUpParticipant({ username, password, name, registrationEmail });
         sessionStorage.removeItem('saint-participant-registration');
-        await refreshProfile();
       } else {
         await signInParticipant(username, password);
       }
+      await refreshProfile();
       const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
       navigate(from?.startsWith('/participant') ? from : '/participant', { replace: true });
     } catch (err) {

@@ -25,6 +25,10 @@ export default function ProtectedRoute({ children, requireApproved = true, requi
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  if (profile?.role === 'participant') {
+    return <Navigate to="/participant" replace />;
+  }
+
   if (requireApproved && profile?.status === 'pending' && profile.role !== 'superadmin') {
     return <Navigate to="/pending-approval" replace />;
   }

@@ -6,6 +6,7 @@ import {
   getEventTickets,
   updateParticipantAccessStatus,
   batchUpdateParticipantsAccess,
+  updatePaymentVerificationStatus,
 } from '../../services/eventService';
 import { getParticipantUsers } from '../../services/authService';
 import type { EventRecord, UserProfile } from '../../types';
@@ -27,6 +28,11 @@ import {
   CheckSquare,
   Square,
   MinusSquare,
+  Eye,
+  CreditCard,
+  ExternalLink,
+  Clock,
+  X,
 } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { TableSkeleton } from '../../components/ui/skeleton';
@@ -50,6 +56,12 @@ export interface ParticipantItem {
   accessStatus: 'granted' | 'revoked';
   accessUpdatedAt?: string;
   accessUpdatedBy?: string;
+  transactionId?: string;
+  paymentScreenshotUrl?: string;
+  paymentScreenshotPath?: string;
+  paymentStatus?: 'pending' | 'verified' | 'rejected';
+  paymentVerifiedAt?: string;
+  paymentVerifiedBy?: string;
   createdAt: string;
 }
 
@@ -80,6 +92,50 @@ export default function ParticipantAccessPage() {
   // Confirmation Modal
   const [bulkConfirmAction, setBulkConfirmAction] = useState<'revoke' | 'grant' | null>(null);
 
+  // Payment Proof Modal & Operations
+  const [proofModalItem, setProofModalItem] = useState<ParticipantItem | null>(null);
+  const [updatingPaymentId, setUpdatingPaymentId] = useState<string | null>(null);
+
+  // Close modals on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setProofModalItem(null);
+        setBulkConfirmAction(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleUpdatePaymentStatus = async (
+    item: ParticipantItem,
+    status: 'pending' | 'verified' | 'rejected'
+  ) => {
+    if (!profile) return;
+    if (!item.eventId || !item.ticketId) {
+      showToast('Cannot update payment: Missing ticket or event ID', 'error');
+      return;
+    }
+
+    setUpdatingPaymentId(item.id);
+    try {
+      await updatePaymentVerificationStatus(item.eventId, item.ticketId, status, profile);
+      setParticipantItems((prev) =>
+        prev.map((p) => (p.id === item.id ? { ...p, paymentStatus: status } : p))
+      );
+      if (proofModalItem && proofModalItem.id === item.id) {
+        setProofModalItem({ ...proofModalItem, paymentStatus: status });
+      }
+      showToast(`Payment marked as ${status}!`, 'success');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update payment status';
+      showToast(msg, 'error');
+    } finally {
+      setUpdatingPaymentId(null);
+    }
+  };
+
   const loadData = useCallback(async (force = false) => {
     try {
       if (force) setRefreshing(true);
@@ -90,12 +146,14 @@ export default function ParticipantAccessPage() {
         getParticipantUsers(force).catch(() => [] as UserProfile[]),
       ]);
 
-      setEvents(fetchedEvents);
+      const validEvents = fetchedEvents || [];
+      setEvents(validEvents);
 
       // Create a map of participant accounts by email and uid for quick lookup
       const userByEmail = new Map<string, UserProfile>();
       const userByUid = new Map<string, UserProfile>();
-      partUsers.forEach((u) => {
+      (partUsers || []).forEach((u) => {
+        if (!u) return;
         if (u.uid) userByUid.set(u.uid, u);
         const email = (u.participantEmail || u.email || '').toLowerCase().trim();
         if (email) userByEmail.set(email, u);
@@ -103,8 +161,8 @@ export default function ParticipantAccessPage() {
 
       // Fetch all event tickets in parallel
       const ticketResults = await Promise.allSettled(
-        fetchedEvents.map(async (ev) => {
-          const tickets = await getEventTickets(ev.id);
+        validEvents.map(async (ev) => {
+          const tickets = await getEventTickets(ev.id, force);
           return { event: ev, tickets };
         })
       );
@@ -112,9 +170,16 @@ export default function ParticipantAccessPage() {
       const items: ParticipantItem[] = [];
 
       ticketResults.forEach((res) => {
-        if (res.status === 'fulfilled') {
+        if (res.status === 'fulfilled' && res.value) {
           const { event, tickets } = res.value;
-          tickets.forEach((t) => {
+          const evTitle = event?.title || 'Untitled Event';
+          const evId = event?.id || '';
+          const existingTicketIds = new Set<string>();
+
+          (tickets || []).forEach((t) => {
+            if (!t) return;
+            if (t.id) existingTicketIds.add(t.id);
+
             const guestEmail = (t.guestEmail || '').toLowerCase().trim();
             const linkedUser =
               (t.participantUid ? userByUid.get(t.participantUid) : null) ||
@@ -130,11 +195,11 @@ export default function ParticipantAccessPage() {
             }
 
             items.push({
-              id: `${event.id}_${t.id}`,
-              eventId: event.id,
-              eventName: event.title || 'Untitled Event',
+              id: `${evId}_${t.id}`,
+              eventId: evId,
+              eventName: evTitle,
               ticketId: t.id,
-              ticketNumber: t.ticketNumber || t.id.slice(0, 8),
+              ticketNumber: t.ticketNumber || (t.id ? t.id.slice(0, 8) : 'PASS'),
               name: t.guestName || linkedUser?.displayName || 'Unnamed Participant',
               email: t.guestEmail || linkedUser?.participantEmail || linkedUser?.email || 'No email',
               username: linkedUser?.participantUsername,
@@ -148,9 +213,65 @@ export default function ParticipantAccessPage() {
               accessStatus: status,
               accessUpdatedAt: t.accessUpdatedAt,
               accessUpdatedBy: t.accessUpdatedBy,
-              createdAt: t.createdAt,
+              transactionId: t.transactionId,
+              paymentScreenshotUrl: t.paymentScreenshotUrl,
+              paymentScreenshotPath: t.paymentScreenshotPath,
+              paymentStatus: t.paymentStatus,
+              paymentVerifiedAt: t.paymentVerifiedAt,
+              paymentVerifiedBy: t.paymentVerifiedBy,
+              createdAt: t.createdAt || '',
             });
           });
+
+          // Also merge any event.participants that didn't have a separate ticket subcollection entry
+          if (Array.isArray(event?.participants)) {
+            event.participants.forEach((p) => {
+              if (!p) return;
+              const pTicketId = p.ticketId || p.id;
+              if (pTicketId && existingTicketIds.has(pTicketId)) return;
+
+              const pUserId = p.userId;
+              const pEmail = (p.email || '').toLowerCase().trim();
+              const linkedUser =
+                (pUserId ? userByUid.get(pUserId) : null) ||
+                (pEmail ? userByEmail.get(pEmail) : null);
+
+              let status: 'granted' | 'revoked' = 'granted';
+              if (p.accessStatus === 'revoked' || linkedUser?.status === 'rejected') {
+                status = 'revoked';
+              } else if (p.accessStatus === 'granted') {
+                status = 'granted';
+              }
+
+              items.push({
+                id: `${evId}_${pTicketId || p.id || Math.random().toString(36).slice(2)}`,
+                eventId: evId,
+                eventName: evTitle,
+                ticketId: pTicketId || p.id || '',
+                ticketNumber: p.id ? p.id.slice(0, 8) : 'PASS',
+                name: p.name || linkedUser?.displayName || 'Unnamed Participant',
+                email: p.email || linkedUser?.participantEmail || linkedUser?.email || 'No email',
+                username: linkedUser?.participantUsername,
+                phone: p.phone,
+                college: p.college,
+                department: p.department,
+                teamName: p.teamName,
+                tierName: p.tierName,
+                checkedIn: Boolean(p.arrived),
+                participantUid: pUserId || linkedUser?.uid,
+                accessStatus: status,
+                accessUpdatedAt: p.accessUpdatedAt,
+                accessUpdatedBy: p.accessUpdatedBy,
+                transactionId: p.transactionId,
+                paymentScreenshotUrl: p.paymentScreenshotUrl,
+                paymentScreenshotPath: p.paymentScreenshotPath,
+                paymentStatus: p.paymentStatus,
+                paymentVerifiedAt: p.paymentVerifiedAt,
+                paymentVerifiedBy: p.paymentVerifiedBy,
+                createdAt: p.createdAt || '',
+              });
+            });
+          }
         }
       });
 
@@ -188,13 +309,14 @@ export default function ParticipantAccessPage() {
       // Search query
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
-        const matchesName = item.name.toLowerCase().includes(query);
-        const matchesEmail = item.email.toLowerCase().includes(query);
+        const matchesName = item.name?.toLowerCase().includes(query) ?? false;
+        const matchesEmail = item.email?.toLowerCase().includes(query) ?? false;
         const matchesUsername = item.username?.toLowerCase().includes(query) ?? false;
-        const matchesTicket = item.ticketNumber.toLowerCase().includes(query);
-        const matchesEvent = item.eventName.toLowerCase().includes(query);
+        const matchesTicket = item.ticketNumber?.toLowerCase().includes(query) ?? false;
+        const matchesEvent = item.eventName?.toLowerCase().includes(query) ?? false;
         const matchesTeam = item.teamName?.toLowerCase().includes(query) ?? false;
         const matchesCollege = item.college?.toLowerCase().includes(query) ?? false;
+        const matchesTransactionId = item.transactionId?.toLowerCase().includes(query) ?? false;
 
         return (
           matchesName ||
@@ -203,7 +325,8 @@ export default function ParticipantAccessPage() {
           matchesTicket ||
           matchesEvent ||
           matchesTeam ||
-          matchesCollege
+          matchesCollege ||
+          matchesTransactionId
         );
       }
 
@@ -254,6 +377,11 @@ export default function ParticipantAccessPage() {
   // Single Grant / Revoke Action
   const handleToggleAccess = async (item: ParticipantItem) => {
     if (!profile) return;
+    if (!item.eventId || !item.ticketId) {
+      showToast('Cannot update access: Missing ticket or event ID', 'error');
+      return;
+    }
+
     const nextStatus: 'granted' | 'revoked' = item.accessStatus === 'granted' ? 'revoked' : 'granted';
 
     setProcessingIds((prev) => new Set(prev).add(item.id));
@@ -280,9 +408,10 @@ export default function ParticipantAccessPage() {
           : `Access revoked from ${item.name}.`,
         nextStatus === 'granted' ? 'success' : 'info'
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to update participant access status:', err);
-      showToast(err.message || 'Failed to update access status', 'error');
+      const msg = err instanceof Error ? err.message : 'Failed to update access status';
+      showToast(msg, 'error');
     } finally {
       setProcessingIds((prev) => {
         const next = new Set(prev);
@@ -357,9 +486,10 @@ export default function ParticipantAccessPage() {
       }
 
       handleClearSelection();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Bulk operation failed:', err);
-      showToast(err.message || 'Bulk operation failed', 'error');
+      const msg = err instanceof Error ? err.message : 'Bulk operation failed';
+      showToast(msg, 'error');
     } finally {
       setBulkProcessing(false);
     }
@@ -375,6 +505,8 @@ export default function ParticipantAccessPage() {
       'Phone',
       'Event',
       'Access Status',
+      'Payment Status',
+      'UPI / UTR',
       'Checked In',
       'Team',
       'College',
@@ -382,23 +514,26 @@ export default function ParticipantAccessPage() {
     ];
 
     const rows = filteredItems.map((item) => [
-      `"${item.ticketNumber}"`,
-      `"${item.name.replace(/"/g, '""')}"`,
+      `"${item.ticketNumber || ''}"`,
+      `"${(item.name || '').replace(/"/g, '""')}"`,
       item.username || '',
-      item.email,
+      item.email || '',
       item.phone || '',
-      `"${item.eventName.replace(/"/g, '""')}"`,
-      item.accessStatus.toUpperCase(),
+      `"${(item.eventName || '').replace(/"/g, '""')}"`,
+      (item.accessStatus || 'granted').toUpperCase(),
+      (item.paymentStatus || 'pending').toUpperCase(),
+      item.transactionId || '',
       item.checkedIn ? 'YES' : 'NO',
-      item.teamName ? `"${item.teamName.replace(/"/g, '""')}"` : '',
-      item.college ? `"${item.college.replace(/"/g, '""')}"` : '',
+      item.teamName ? `"${(item.teamName || '').replace(/"/g, '""')}"` : '',
+      item.college ? `"${(item.college || '').replace(/"/g, '""')}"` : '',
       item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '',
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.href = url;
     link.setAttribute(
       'download',
       `saint_participant_access_${new Date().toISOString().split('T')[0]}.csv`
@@ -406,6 +541,7 @@ export default function ParticipantAccessPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const selectedCount = selectedIds.size;
@@ -462,7 +598,7 @@ export default function ParticipantAccessPage() {
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
               type="text"
-              placeholder="Search by participant name, email, username, ticket number..."
+              placeholder="Search by participant name, email, username, ticket number, UTR..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
@@ -491,7 +627,7 @@ export default function ParticipantAccessPage() {
             <Filter className="w-4 h-4 text-slate-400 shrink-0 hidden sm:block" />
             <select
               value={selectedStatusFilter}
-              onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
+              onChange={(e) => setSelectedStatusFilter(e.target.value as 'all' | 'granted' | 'revoked')}
               className="w-full px-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-200 text-xs font-medium focus:outline-none focus:border-indigo-500 transition-colors"
             >
               <option value="all">All Access</option>
@@ -580,7 +716,7 @@ export default function ParticipantAccessPage() {
 
       {/* ── Participants Table ── */}
       {loading ? (
-        <TableSkeleton rows={8} cols={7} />
+        <TableSkeleton rows={8} cols={8} />
       ) : filteredItems.length === 0 ? (
         <div className="dash-card p-12 text-center border rounded-2xl space-y-3" style={{ borderColor: 'var(--dash-border)' }}>
           <div className="w-12 h-12 rounded-2xl bg-slate-800 text-slate-400 mx-auto flex items-center justify-center">
@@ -618,6 +754,7 @@ export default function ParticipantAccessPage() {
                   <th scope="col" className="py-3 px-4 font-bold">Participant</th>
                   <th scope="col" className="py-3 px-4 font-bold">Event</th>
                   <th scope="col" className="py-3 px-4 font-bold">Registration</th>
+                  <th scope="col" className="py-3 px-4 font-bold">Payment &amp; Proof</th>
                   <th scope="col" className="py-3 px-4 font-bold">Access Status</th>
                   <th scope="col" className="py-3 px-4 font-bold">Registered Date</th>
                   <th scope="col" className="py-3 px-4 font-bold text-right">Action</th>
@@ -686,6 +823,56 @@ export default function ParticipantAccessPage() {
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
                             <Ticket className="w-3.5 h-3.5" /> Registered
                           </span>
+                        )}
+                      </td>
+
+                      {/* Payment & Proof */}
+                      <td className="py-3 px-4">
+                        {item.paymentStatus || item.transactionId || item.paymentScreenshotUrl ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {item.paymentStatus === 'verified' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                  <CheckCircle2 className="w-3 h-3" /> Verified
+                                </span>
+                              ) : item.paymentStatus === 'rejected' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                                  <XCircle className="w-3 h-3" /> Rejected
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                  <Clock className="w-3 h-3" /> Pending
+                                </span>
+                              )}
+
+                              {item.paymentScreenshotUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setProofModalItem(item)}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 transition-colors"
+                                  title="View Payment Screenshot"
+                                >
+                                  <Eye className="w-3 h-3" /> Proof
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setProofModalItem(item)}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                                  title="Review Payment & UTR"
+                                >
+                                  <CreditCard className="w-3 h-3" /> Review
+                                </button>
+                              )}
+                            </div>
+                            {item.transactionId && (
+                              <div className="text-[10px] font-mono text-slate-400 truncate max-w-[130px]" title={item.transactionId}>
+                                UTR: {item.transactionId}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-500">Free / None</span>
                         )}
                       </td>
 
@@ -780,6 +967,112 @@ export default function ParticipantAccessPage() {
                 Yes, Revoke Access
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Payment Proof Modal ── */}
+      {proofModalItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setProofModalItem(null)}
+        >
+          <div
+            className="relative bg-slate-900 border border-slate-700/80 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-base font-bold text-white">Payment Verification</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProofModalItem(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-white/5 hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 overflow-y-auto pr-1">
+              <div className="grid grid-cols-2 gap-3 text-xs bg-black/30 p-3 rounded-xl border border-white/5">
+                <div>
+                  <span className="text-slate-400 block">Participant</span>
+                  <strong className="text-white font-medium text-sm">{proofModalItem.name}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Event</span>
+                  <span className="text-white font-medium truncate block">{proofModalItem.eventName}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">UPI Transaction ID / UTR</span>
+                  <span className="text-indigo-300 font-mono font-bold select-all">{proofModalItem.transactionId || 'None'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Payment Status</span>
+                  <span className={`font-bold capitalize ${
+                    proofModalItem.paymentStatus === 'verified'
+                      ? 'text-emerald-400'
+                      : proofModalItem.paymentStatus === 'rejected'
+                      ? 'text-rose-400'
+                      : 'text-amber-400'
+                  }`}>
+                    {proofModalItem.paymentStatus || 'Pending'}
+                  </span>
+                </div>
+              </div>
+
+              {proofModalItem.paymentScreenshotUrl ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-300">Payment Screenshot Proof</span>
+                    <a
+                      href={proofModalItem.paymentScreenshotUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" /> Open Full Image
+                    </a>
+                  </div>
+                  <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black/40 flex items-center justify-center max-h-80">
+                    <img
+                      src={proofModalItem.paymentScreenshotUrl}
+                      alt="Payment Screenshot"
+                      className="max-h-80 w-auto object-contain rounded-xl"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 text-center text-slate-400 text-xs bg-black/20 rounded-xl border border-white/5">
+                  No payment screenshot uploaded for this participant.
+                </div>
+              )}
+            </div>
+
+            {isAuthorized && (
+              <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleUpdatePaymentStatus(proofModalItem, 'rejected')}
+                  disabled={updatingPaymentId === proofModalItem.id}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-colors flex items-center gap-1.5"
+                >
+                  <XCircle className="w-4 h-4" /> Reject Payment
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleUpdatePaymentStatus(proofModalItem, 'verified')}
+                  disabled={updatingPaymentId === proofModalItem.id}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-900/30"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Verify Payment
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

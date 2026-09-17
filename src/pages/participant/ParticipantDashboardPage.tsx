@@ -25,10 +25,10 @@ import {
   XCircle,
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collectionGroup, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase/config';
-import { getEventTickets, getEvents, updateParticipantTicketTeam } from '../../services/eventService';
+import { getEventTickets, getEvents, getEvent, updateParticipantTicketTeam } from '../../services/eventService';
 import { logoutUser } from '../../services/authService';
 import { downloadTicketImage } from '../../utils/ticketDownload';
 import { downloadCertificate } from '../../utils/certificateGenerator';
@@ -54,7 +54,7 @@ const formatDate = (dateStr: string) => {
 };
 
 export default function ParticipantDashboardPage() {
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('passes');
@@ -78,7 +78,7 @@ export default function ParticipantDashboardPage() {
   // Certificate State
   const [downloadingCertId, setDownloadingCertId] = useState<string | null>(null);
 
-  const contactEmail = profile?.participantEmail?.toLowerCase().trim();
+  const contactEmail = (profile?.participantEmail || profile?.email)?.toLowerCase().trim();
 
   const loadRegistrations = async (isManualRefresh = false) => {
     if (!user) {
@@ -89,41 +89,94 @@ export default function ParticipantDashboardPage() {
     else setLoading(true);
 
     try {
-      const allEvents = await getEvents(true);
-      const ticketLists = await Promise.all(
-        allEvents.map(async (event) => {
-          try {
-            const tickets = await getEventTickets(event.id);
-            return { event, tickets };
-          } catch {
-            return { event, tickets: [] };
-          }
-        })
-      );
+      let matches: Registration[] = [];
+      let collectionGroupSuccess = false;
 
-      const matches = ticketLists.flatMap(({ event, tickets }) =>
-        tickets
-          .filter(
-            (ticket) =>
-              ticket.participantUid === user.uid ||
-              (contactEmail && ticket.guestEmail?.trim().toLowerCase() === contactEmail)
-          )
-          .map((ticket) => ({ event, ticket }))
-      );
+      // Fast-path: CollectionGroup query across tickets (if enabled in Firestore)
+      try {
+        const ticketQueries: Promise<any>[] = [];
+        if (user.uid) {
+          ticketQueries.push(
+            getDocs(query(collectionGroup(db, 'tickets'), where('participantUid', '==', user.uid)))
+          );
+        }
+        if (contactEmail) {
+          ticketQueries.push(
+            getDocs(query(collectionGroup(db, 'tickets'), where('guestEmail', '==', contactEmail)))
+          );
+        }
+
+        if (ticketQueries.length > 0) {
+          const snapshots = await Promise.all(ticketQueries);
+          const ticketMap = new Map<string, { eventId: string; ticket: EventTicket }>();
+          for (const snap of snapshots) {
+            for (const ticketDoc of snap.docs) {
+              const ticketData = { id: ticketDoc.id, ...ticketDoc.data() } as EventTicket;
+              const eventId = ticketData.eventId || ticketDoc.ref.parent?.parent?.id;
+              if (eventId && !ticketMap.has(ticketDoc.id)) {
+                ticketMap.set(ticketDoc.id, { eventId, ticket: ticketData });
+              }
+            }
+          }
+
+          if (ticketMap.size > 0) {
+            const allEvents = await getEvents(isManualRefresh);
+            const eventsMap = new Map<string, EventRecord>(allEvents.map((e) => [e.id, e]));
+            for (const item of ticketMap.values()) {
+              const event = eventsMap.get(item.eventId) || (await getEvent(item.eventId));
+              if (event) {
+                matches.push({ event, ticket: item.ticket });
+              }
+            }
+            collectionGroupSuccess = true;
+          }
+        }
+      } catch {
+        // Fallback gracefully if collectionGroup query fails (e.g. index needed)
+        collectionGroupSuccess = false;
+      }
+
+      // Fallback path: Scan events using cached events and cached tickets
+      if (!collectionGroupSuccess) {
+        const allEvents = await getEvents(isManualRefresh);
+        const ticketLists = await Promise.all(
+          allEvents
+            .filter((event) => event.status !== 'cancelled' && event.status !== 'draft')
+            .map(async (event) => {
+              try {
+                const tickets = await getEventTickets(event.id, isManualRefresh);
+                return { event, tickets };
+              } catch {
+                return { event, tickets: [] };
+              }
+            })
+        );
+
+        matches = ticketLists.flatMap(({ event, tickets }) =>
+          tickets
+            .filter(
+              (ticket) =>
+                ticket.participantUid === user.uid ||
+                (contactEmail && ticket.guestEmail?.trim().toLowerCase() === contactEmail)
+            )
+            .map((ticket) => ({ event, ticket }))
+        );
+      }
 
       matches.sort((a, b) => (a.event.date || '').localeCompare(b.event.date || ''));
       setRegistrations(matches);
 
-      // Link any unassigned matching tickets to user UID
-      await Promise.all(
-        matches
-          .filter(({ ticket }) => !ticket.participantUid)
-          .map(({ event, ticket }) =>
+      // Link any unassigned matching tickets to user UID in the background
+      const unassigned = matches.filter(({ ticket }) => !ticket.participantUid);
+      if (unassigned.length > 0) {
+        void Promise.allSettled(
+          unassigned.map(({ event, ticket }) =>
             updateDoc(doc(db, 'events', event.id, 'tickets', ticket.id), {
               participantUid: user.uid,
-            }).catch(() => {})
+            })
           )
-      );
+        );
+      }
     } catch (err) {
       console.error('Could not load participant registrations', err);
     } finally {
@@ -133,8 +186,10 @@ export default function ParticipantDashboardPage() {
   };
 
   useEffect(() => {
-    loadRegistrations();
-  }, [contactEmail, user?.uid]);
+    if (!authLoading && user) {
+      loadRegistrations();
+    }
+  }, [authLoading, contactEmail, user?.uid]);
 
   // Generate QR code when modal opens
   useEffect(() => {
