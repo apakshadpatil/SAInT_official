@@ -27,6 +27,7 @@ import { createRuleAgreement, getEvent, subscribeEventById, registerParticipantF
 import type { EventRecord, EventTicket, TicketTier, TeamMemberDetail } from '../../types';
 import { downloadTicketImage } from '../../utils/ticketDownload';
 import { uploadFileToSupabase } from '../../utils/supabase';
+import { isValidRegistrationUrl } from '../../utils/urlValidation';
 import QRCode from 'qrcode';
 
 export default function EventRegisterPage() {
@@ -78,6 +79,10 @@ export default function EventRegisterPage() {
       if (e) {
         setEvent(e);
         setError('');
+        if (e.registrationUrl && isValidRegistrationUrl(e.registrationUrl)) {
+          window.location.replace(e.registrationUrl);
+          return;
+        }
         // Initialize tiers if available
         if (e.enableTieredTicketing && e.ticketTiers && e.ticketTiers.length > 0) {
           setSelectedTierId((prev) => prev || e.ticketTiers![0].id);
@@ -110,6 +115,10 @@ export default function EventRegisterPage() {
             if (directDoc) {
               setEvent(directDoc);
               setError('');
+              if (directDoc.registrationUrl && isValidRegistrationUrl(directDoc.registrationUrl)) {
+                window.location.replace(directDoc.registrationUrl);
+                return;
+              }
             } else {
               setError('Event not found.');
             }

@@ -15,6 +15,7 @@ import { Calendar, Clock, MapPin, Plus, Image, LayoutGrid, List } from 'lucide-r
 import RightPanel from '../../components/ui/RightPanel';
 import { useToast } from '../../contexts/ToastContext';
 import { EventCardSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
+import { isValidRegistrationUrl } from '../../utils/urlValidation';
 
 export default function EventsPage() {
   const navigate = useNavigate();
@@ -32,6 +33,7 @@ export default function EventsPage() {
   const [formLoc, setFormLoc] = useState('');
   const [formVenue, setFormVenue] = useState('');
   const [formImage, setFormImage] = useState('');
+  const [formRegistrationUrl, setFormRegistrationUrl] = useState('');
   const [bannersDisabled, setBannersDisabled] = useState<boolean>(() => {
     try { return localStorage.getItem('disableEventBanners') === '1'; } catch { return false; }
   });
@@ -111,12 +113,17 @@ export default function EventsPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile) return;
+    if (formRegistrationUrl && !isValidRegistrationUrl(formRegistrationUrl)) {
+      showToast('Please enter a valid external registration URL (https://...).', 'error');
+      return;
+    }
     try {
       const payload: Partial<EventRecord> = {
         title: formTitle, description: formDesc, date: formDate,
         startTime: formStartTime, endTime: formEndTime, location: formLoc,
         venue: formVenue, status: formStatus, participantIds: [],
         createdBy: profile.uid, createdByName: profile.displayName,
+        registrationUrl: formRegistrationUrl.trim() || undefined,
       };
       if (formImage) {
         if (formImage.startsWith('data:')) {
@@ -154,6 +161,7 @@ export default function EventsPage() {
   const resetForm = () => {
     setFormTitle(''); setFormDesc(''); setFormDate(''); setFormStartTime('');
     setFormEndTime(''); setFormLoc(''); setFormVenue(''); setFormImage('');
+    setFormRegistrationUrl('');
     setFormStatus('published');
   };
 
@@ -401,6 +409,19 @@ export default function EventsPage() {
             ) : (
               <p className="text-xs py-2" style={{ color: 'var(--dash-muted)' }}>Banner images are disabled.</p>
             )}
+            <div>
+              <label className="field-label">External Registration URL (Optional)</label>
+              <input
+                type="url"
+                className="input-field"
+                value={formRegistrationUrl}
+                onChange={(e) => setFormRegistrationUrl(e.target.value)}
+                placeholder="https://unstop.com/... or https://forms.gle/..."
+              />
+              <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
+                Optional. If provided, the "Register" button redirects to this link.
+              </p>
+            </div>
             <div>
               <label className="field-label">Status</label>
               <select className="input-field" value={formStatus} onChange={(e) => setFormStatus(e.target.value as EventRecord['status'])}>

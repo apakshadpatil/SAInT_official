@@ -6,6 +6,7 @@ import { subscribeEventById, subscribeEventTickets, mergeEventWithTickets, updat
 import type { EventRecord, EventTicket } from '../../types';
 import { isSuperAdmin, isCoreMember } from '../../utils/permissions';
 import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award, Users2, ClipboardCheck, ExternalLink, Palette, LayoutList } from 'lucide-react';
+import { isValidRegistrationUrl } from '../../utils/urlValidation';
 import TicketingTab from '../../components/ui/TicketingTab';
 import ScanTicketTab from '../../components/ui/ScanTicketTab';
 import TicketDesignTab from '../../components/ui/TicketDesignTab';
@@ -37,6 +38,7 @@ export default function EventDetailsPage() {
   // Edit form state
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [editRegistrationUrl, setEditRegistrationUrl] = useState('');
   
   const canEdit = isSuperAdmin(profile) || isCoreMember(profile);
   const canDelete = isSuperAdmin(profile);
@@ -59,6 +61,7 @@ export default function EventDetailsPage() {
       if (!isEditing) {
         setEditTitle(combined.title);
         setEditDesc(combined.description);
+        setEditRegistrationUrl(combined.registrationUrl || '');
       }
       setLoading(false);
     };
@@ -86,12 +89,17 @@ export default function EventDetailsPage() {
 
   const handleSaveChanges = async () => {
     if (!event) return;
+    if (editRegistrationUrl && !isValidRegistrationUrl(editRegistrationUrl)) {
+      showToast('Please enter a valid external registration URL (https://...).', 'error');
+      return;
+    }
     try {
       await updateEvent(event.id, {
         title: editTitle,
         description: editDesc,
+        registrationUrl: editRegistrationUrl.trim() || '',
       });
-      setEvent({ ...event, title: editTitle, description: editDesc });
+      setEvent({ ...event, title: editTitle, description: editDesc, registrationUrl: editRegistrationUrl.trim() || undefined });
       setIsEditing(false);
       showToast('Event updated successfully', 'success');
     } catch (err) {
@@ -205,6 +213,18 @@ export default function EventDetailsPage() {
                     placeholder="Event description"
                     rows={3}
                   />
+                  <div>
+                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-muted)' }}>
+                      External Registration URL (Optional)
+                    </label>
+                    <input
+                      type="url"
+                      value={editRegistrationUrl}
+                      onChange={(e) => setEditRegistrationUrl(e.target.value)}
+                      className="input-field text-xs"
+                      placeholder="e.g. https://unstop.com/... (leave empty for built-in registration)"
+                    />
+                  </div>
                   <div className="flex gap-2">
                     <button onClick={handleSaveChanges} className="btn-primary">Save Changes</button>
                     <button onClick={() => setIsEditing(false)} className="btn-secondary">Cancel</button>
@@ -227,15 +247,15 @@ export default function EventDetailsPage() {
                 <span>Public Page</span>
               </a>
               <a
-                href={`/events/${event.id}/register`}
+                href={event.registrationUrl || `/events/${event.id}/register`}
                 target="_blank"
                 rel="noreferrer"
                 className="rounded-2xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors hover:border-blue-500/50"
                 style={{ borderColor: 'rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}
-                title="Open event registration portal"
+                title={event.registrationUrl ? "Open external registration URL" : "Open event registration portal"}
               >
-                <Ticket className="w-3.5 h-3.5 text-blue-400" />
-                <span>Registration</span>
+                {event.registrationUrl ? <ExternalLink className="w-3.5 h-3.5 text-blue-400" /> : <Ticket className="w-3.5 h-3.5 text-blue-400" />}
+                <span>{event.registrationUrl ? 'External Registration' : 'Registration'}</span>
               </a>
               {canEdit && (
                 <button onClick={() => setIsEditing(true)} className="rounded-2xl border p-2.5 cursor-pointer" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }} title="Edit event">

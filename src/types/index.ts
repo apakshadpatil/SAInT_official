@@ -290,6 +290,8 @@ export interface EventRecord {
   // Registration Portal Banner & Background Customization
   registrationBannerUrl?: string;
   registrationBackgroundUrl?: string;
+  // External Registration URL (Optional)
+  registrationUrl?: string;
   // Dynamic & Custom Sections
   customSections?: EventCustomSection[];
 }

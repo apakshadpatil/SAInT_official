@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { EventRecord, TicketTier, TicketSize } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
-import { Upload, Check, Copy, ToggleLeft, ToggleRight, QrCode, Plus, Trash2, Edit3, Users, Layers, Maximize2 } from 'lucide-react';
+import { Upload, Check, Copy, ToggleLeft, ToggleRight, QrCode, Plus, Trash2, Edit3, Users, Layers, Maximize2, ExternalLink } from 'lucide-react';
 import { uploadDataUrlToSupabase, SUPABASE_BUCKET } from '../../utils/supabase';
 
 interface TicketingTabProps {
@@ -305,6 +305,19 @@ export default function TicketingTab({ event, onUpdate, canEdit }: TicketingTabP
             {linkCopied ? 'Copied' : 'Copy Link'}
           </button>
         </div>
+        {event.registrationUrl && (
+          <div className="p-3.5 rounded-xl border border-blue-500/30 bg-blue-500/10 flex items-start gap-3">
+            <ExternalLink className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <p className="font-semibold text-blue-300">
+                External Registration URL Active
+              </p>
+              <p className="text-slate-300">
+                The public "Register" button currently opens: <a href={event.registrationUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline font-mono break-all">{event.registrationUrl}</a>
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Custom Ticket Size & Layout Selection */}

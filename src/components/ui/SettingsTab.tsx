@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { uploadDataUrlToSupabase, SUPABASE_BUCKET } from '../../utils/supabase';
 import { sendDirectEmail, openWebMailClient, validateEmail } from '../../services/emailService';
+import { isValidRegistrationUrl } from '../../utils/urlValidation';
 
 interface SettingsTabProps {
   event: EventRecord;
@@ -47,6 +48,7 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
   const [budget, setBudget] = useState(event.budget ? String(event.budget) : '');
   const [status, setStatus] = useState<EventRecord['status']>(event.status || 'published');
   const [imageURL, setImageURL] = useState(event.imageURL || '');
+  const [registrationUrl, setRegistrationUrl] = useState(event.registrationUrl || '');
   const [enableDomainSelection, setEnableDomainSelection] = useState(event.enableDomainSelection || false);
   const [autoAllocateByDomain, setAutoAllocateByDomain] = useState(event.autoAllocateByDomain || false);
 
@@ -76,6 +78,7 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
     setBudget(event.budget ? String(event.budget) : '');
     setStatus(event.status || 'published');
     setImageURL(event.imageURL || '');
+    setRegistrationUrl(event.registrationUrl || '');
     setEnableDomainSelection(event.enableDomainSelection || false);
     setAutoAllocateByDomain(event.autoAllocateByDomain || false);
     setTeamsEnabled(event.teamsEnabled || false);
@@ -193,6 +196,10 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
       showToast('Event date is required', 'error');
       return;
     }
+    if (registrationUrl && !isValidRegistrationUrl(registrationUrl)) {
+      showToast('Please enter a valid external registration URL (https://...).', 'error');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -207,6 +214,7 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
         budget: budget ? Number(budget) : undefined,
         status,
         imageURL: imageURL.trim() || undefined,
+        registrationUrl: registrationUrl.trim() || '',
         enableDomainSelection,
         autoAllocateByDomain
       });
@@ -512,6 +520,22 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
               placeholder="https://..."
               className="input-field w-full text-xs"
             />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--dash-text)' }}>
+              External Registration URL (Optional)
+            </label>
+            <input
+              type="url"
+              value={registrationUrl}
+              onChange={(e) => setRegistrationUrl(e.target.value)}
+              placeholder="https://unstop.com/... or https://forms.gle/..."
+              className="input-field w-full text-xs"
+            />
+            <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>
+              If provided, the "Register" button redirects to this external link. Leave blank to use SAInT's built-in registration flow.
+            </p>
           </div>
         </div>
       </form>

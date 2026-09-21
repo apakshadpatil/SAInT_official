@@ -56,6 +56,14 @@ export default function PublicEventDetailsPage() {
     setLoading(true);
     setError('');
 
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    } catch {
+      window.scrollTo(0, 0);
+    }
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+
     const unsub = subscribeEventById(eventId, (e) => {
       if (e) {
         setEvent(e);
@@ -81,6 +89,18 @@ export default function PublicEventDetailsPage() {
 
     return () => unsub();
   }, [eventId]);
+
+  useEffect(() => {
+    if (!loading && event) {
+      try {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      } catch {
+        window.scrollTo(0, 0);
+      }
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+  }, [loading, event?.id]);
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -532,26 +552,51 @@ export default function PublicEventDetailsPage() {
 
               {/* Primary Register CTA Button */}
               {isRegistrationOpen ? (
-                <Link
-                  to={`/events/${event.id}/register`}
-                  className="w-full py-3.5 px-6 rounded-2xl font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                  style={
-                    doomsdayMode
-                      ? {
-                          background: 'linear-gradient(135deg, #10b981, #059669)',
-                          color: '#000000',
-                          boxShadow: '0 8px 25px rgba(16,185,129,0.4)',
-                        }
-                      : {
-                          background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                          color: '#ffffff',
-                          boxShadow: '0 8px 25px rgba(37,99,235,0.4)',
-                        }
-                  }
-                >
-                  <Ticket className="w-5 h-5" />
-                  <span>Register &amp; Get Ticket</span>
-                </Link>
+                event.registrationUrl ? (
+                  <a
+                    href={event.registrationUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3.5 px-6 rounded-2xl font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                    style={
+                      doomsdayMode
+                        ? {
+                            background: 'linear-gradient(135deg, #10b981, #059669)',
+                            color: '#000000',
+                            boxShadow: '0 8px 25px rgba(16,185,129,0.4)',
+                          }
+                        : {
+                            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                            color: '#ffffff',
+                            boxShadow: '0 8px 25px rgba(37,99,235,0.4)',
+                          }
+                    }
+                  >
+                    <ExternalLink className="w-5 h-5" />
+                    <span>Register</span>
+                  </a>
+                ) : (
+                  <Link
+                    to={`/events/${event.id}/register`}
+                    className="w-full py-3.5 px-6 rounded-2xl font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                    style={
+                      doomsdayMode
+                        ? {
+                            background: 'linear-gradient(135deg, #10b981, #059669)',
+                            color: '#000000',
+                            boxShadow: '0 8px 25px rgba(16,185,129,0.4)',
+                          }
+                        : {
+                            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                            color: '#ffffff',
+                            boxShadow: '0 8px 25px rgba(37,99,235,0.4)',
+                          }
+                    }
+                  >
+                    <Ticket className="w-5 h-5" />
+                    <span>Register &amp; Get Ticket</span>
+                  </Link>
+                )
               ) : (
                 <div className="w-full py-3.5 px-6 rounded-2xl font-bold text-xs text-center bg-slate-800/80 text-slate-400 border border-slate-700">
                   {isCompleted ? 'This event has concluded' : 'Registration is currently closed'}

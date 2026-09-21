@@ -70,7 +70,16 @@ export default function PublicLayout() {
 
   useEffect(() => {
     setMobileOpen(false);
-  }, [location.pathname]);
+    if (!location.hash) {
+      try {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      } catch {
+        window.scrollTo(0, 0);
+      }
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+  }, [location.pathname, location.hash]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
