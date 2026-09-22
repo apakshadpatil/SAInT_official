@@ -61,26 +61,32 @@ export default function EventRegisterPage() {
     name: {
       enabled: evt?.registrationFields?.name?.enabled ?? true,
       required: evt?.registrationFields?.name?.required ?? true,
+      label: evt?.registrationFields?.name?.label?.trim() || 'Full Name',
     },
     email: {
       enabled: evt?.registrationFields?.email?.enabled ?? true,
       required: evt?.registrationFields?.email?.required ?? false,
+      label: evt?.registrationFields?.email?.label?.trim() || 'Email Address',
     },
     phone: {
       enabled: evt?.registrationFields?.phone?.enabled ?? true,
       required: evt?.registrationFields?.phone?.required ?? false,
+      label: evt?.registrationFields?.phone?.label?.trim() || 'Phone Number',
     },
     college: {
       enabled: evt?.registrationFields?.college?.enabled ?? true,
       required: evt?.registrationFields?.college?.required ?? false,
+      label: evt?.registrationFields?.college?.label?.trim() || 'College',
     },
     department: {
       enabled: evt?.registrationFields?.department?.enabled ?? true,
       required: evt?.registrationFields?.department?.required ?? false,
+      label: evt?.registrationFields?.department?.label?.trim() || 'Department',
     },
     year: {
       enabled: evt?.registrationFields?.year?.enabled ?? false,
       required: evt?.registrationFields?.year?.required ?? false,
+      label: evt?.registrationFields?.year?.label?.trim() || 'Year of Study',
     },
   });
 
@@ -1031,13 +1037,13 @@ export default function EventRegisterPage() {
                 {regFieldsConfig.name.enabled && (
                   <div>
                     <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                      Full Name {regFieldsConfig.name.required ? '*' : '(Optional)'}
+                      {regFieldsConfig.name.label} {regFieldsConfig.name.required ? '*' : '(Optional)'}
                     </label>
                     <input
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       required={regFieldsConfig.name.required}
-                      placeholder="Enter your full name"
+                      placeholder={`Enter your ${regFieldsConfig.name.label.toLowerCase()}`}
                       className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
                     />
                   </div>
@@ -1047,7 +1053,7 @@ export default function EventRegisterPage() {
                   {regFieldsConfig.email.enabled && (
                     <div>
                       <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                        Email Address {regFieldsConfig.email.required ? '*' : '(Optional)'}
+                        {regFieldsConfig.email.label} {regFieldsConfig.email.required ? '*' : '(Optional)'}
                       </label>
                       <input
                         type="email"
@@ -1063,7 +1069,7 @@ export default function EventRegisterPage() {
                   {regFieldsConfig.phone.enabled && (
                     <div>
                       <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                        Phone Number {regFieldsConfig.phone.required ? '*' : '(Optional)'}
+                        {regFieldsConfig.phone.label} {regFieldsConfig.phone.required ? '*' : '(Optional)'}
                       </label>
                       <input
                         type="tel"
@@ -1081,7 +1087,7 @@ export default function EventRegisterPage() {
                   {regFieldsConfig.college.enabled && (
                     <div>
                       <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                        College {regFieldsConfig.college.required ? '*' : '(Optional)'}
+                        {regFieldsConfig.college.label} {regFieldsConfig.college.required ? '*' : '(Optional)'}
                       </label>
                       <input
                         value={college}
@@ -1096,7 +1102,7 @@ export default function EventRegisterPage() {
                   {regFieldsConfig.department.enabled && (
                     <div>
                       <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                        Department {regFieldsConfig.department.required ? '*' : '(Optional)'}
+                        {regFieldsConfig.department.label} {regFieldsConfig.department.required ? '*' : '(Optional)'}
                       </label>
                       <input
                         value={department}
@@ -1112,7 +1118,7 @@ export default function EventRegisterPage() {
                 {regFieldsConfig.year.enabled && (
                   <div>
                     <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                      Year of Study {regFieldsConfig.year.required ? '*' : '(Optional)'}
+                      {regFieldsConfig.year.label} {regFieldsConfig.year.required ? '*' : '(Optional)'}
                     </label>
                     <select
                       value={year}
@@ -1121,7 +1127,7 @@ export default function EventRegisterPage() {
                       className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-slate-900 border border-white/15 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 cursor-pointer"
                       style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
                     >
-                      <option value="" style={{ backgroundColor: '#0f172a', color: '#94a3b8' }}>Select Year of Study</option>
+                      <option value="" style={{ backgroundColor: '#0f172a', color: '#94a3b8' }}>Select {regFieldsConfig.year.label}</option>
                       <option value="1st Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>1st Year</option>
                       <option value="2nd Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>2nd Year</option>
                       <option value="3rd Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>3rd Year</option>
@@ -1171,13 +1177,13 @@ export default function EventRegisterPage() {
                       {regFieldsConfig.name.enabled && (
                         <div>
                           <label className="block text-xs font-semibold mb-1 text-slate-300">
-                            Full Name {regFieldsConfig.name.required ? '*' : '(Optional)'}
+                            {regFieldsConfig.name.label} {regFieldsConfig.name.required ? '*' : '(Optional)'}
                           </label>
                           <input
                             value={member.name}
                             onChange={(e) => handleTeamMemberChange(idx, 'name', e.target.value)}
                             required={regFieldsConfig.name.required}
-                            placeholder={`Full name for teammate #${idx + 2}`}
+                            placeholder={`${regFieldsConfig.name.label} for teammate #${idx + 2}`}
                             className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
                           />
                         </div>
@@ -1187,7 +1193,7 @@ export default function EventRegisterPage() {
                         {regFieldsConfig.email.enabled && (
                           <div>
                             <label className="block text-xs font-semibold mb-1 text-slate-300">
-                              Email Address {regFieldsConfig.email.required ? '*' : '(Optional)'}
+                              {regFieldsConfig.email.label} {regFieldsConfig.email.required ? '*' : '(Optional)'}
                             </label>
                             <input
                               type="email"
@@ -1202,7 +1208,7 @@ export default function EventRegisterPage() {
                         {regFieldsConfig.phone.enabled && (
                           <div>
                             <label className="block text-xs font-semibold mb-1 text-slate-300">
-                              Phone Number {regFieldsConfig.phone.required ? '*' : '(Optional)'}
+                              {regFieldsConfig.phone.label} {regFieldsConfig.phone.required ? '*' : '(Optional)'}
                             </label>
                             <input
                               type="tel"
@@ -1220,7 +1226,7 @@ export default function EventRegisterPage() {
                         {regFieldsConfig.college.enabled && (
                           <div>
                             <label className="block text-xs font-semibold mb-1 text-slate-300">
-                              College {regFieldsConfig.college.required ? '*' : '(Optional)'}
+                              {regFieldsConfig.college.label} {regFieldsConfig.college.required ? '*' : '(Optional)'}
                             </label>
                             <input
                               value={member.college || ''}
@@ -1234,7 +1240,7 @@ export default function EventRegisterPage() {
                         {regFieldsConfig.department.enabled && (
                           <div>
                             <label className="block text-xs font-semibold mb-1 text-slate-300">
-                              Department {regFieldsConfig.department.required ? '*' : '(Optional)'}
+                              {regFieldsConfig.department.label} {regFieldsConfig.department.required ? '*' : '(Optional)'}
                             </label>
                             <input
                               value={member.department || ''}
@@ -1250,7 +1256,7 @@ export default function EventRegisterPage() {
                       {regFieldsConfig.year.enabled && (
                         <div>
                           <label className="block text-xs font-semibold mb-1 text-slate-300">
-                            Year of Study {regFieldsConfig.year.required ? '*' : '(Optional)'}
+                            {regFieldsConfig.year.label} {regFieldsConfig.year.required ? '*' : '(Optional)'}
                           </label>
                           <select
                             value={member.year || ''}
@@ -1259,7 +1265,7 @@ export default function EventRegisterPage() {
                             className="w-full px-4 py-2 rounded-xl text-xs text-white bg-slate-900 border border-white/15 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 cursor-pointer"
                             style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
                           >
-                            <option value="" style={{ backgroundColor: '#0f172a', color: '#94a3b8' }}>Select Year of Study</option>
+                            <option value="" style={{ backgroundColor: '#0f172a', color: '#94a3b8' }}>Select {regFieldsConfig.year.label}</option>
                             <option value="1st Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>1st Year</option>
                             <option value="2nd Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>2nd Year</option>
                             <option value="3rd Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>3rd Year</option>

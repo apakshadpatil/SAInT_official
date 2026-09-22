@@ -113,26 +113,32 @@ export default function SettingsTab({
     name: {
       enabled: evt.registrationFields?.name?.enabled ?? true,
       required: evt.registrationFields?.name?.required ?? true,
+      label: evt.registrationFields?.name?.label ?? '',
     },
     email: {
       enabled: evt.registrationFields?.email?.enabled ?? true,
       required: evt.registrationFields?.email?.required ?? false,
+      label: evt.registrationFields?.email?.label ?? '',
     },
     phone: {
       enabled: evt.registrationFields?.phone?.enabled ?? true,
       required: evt.registrationFields?.phone?.required ?? false,
+      label: evt.registrationFields?.phone?.label ?? '',
     },
     college: {
       enabled: evt.registrationFields?.college?.enabled ?? true,
       required: evt.registrationFields?.college?.required ?? false,
+      label: evt.registrationFields?.college?.label ?? '',
     },
     department: {
       enabled: evt.registrationFields?.department?.enabled ?? true,
       required: evt.registrationFields?.department?.required ?? false,
+      label: evt.registrationFields?.department?.label ?? '',
     },
     year: {
       enabled: evt.registrationFields?.year?.enabled ?? false,
       required: evt.registrationFields?.year?.required ?? false,
+      label: evt.registrationFields?.year?.label ?? '',
     },
   });
 
@@ -446,6 +452,7 @@ export default function SettingsTab({
         return {
           ...prev,
           [key]: {
+            ...current,
             enabled: nextEnabled,
             // If field is disabled, it cannot be required
             required: nextEnabled ? current.required : false,
@@ -461,6 +468,16 @@ export default function SettingsTab({
         };
       }
     });
+  };
+
+  const handleUpdateRegFieldLabel = (key: keyof RegistrationFieldsConfig, label: string) => {
+    setRegFields((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || { enabled: true, required: false }),
+        label,
+      },
+    }));
   };
 
   const handleSaveRegistrationSettings = async () => {
@@ -1130,6 +1147,7 @@ export default function SettingsTab({
               <thead>
                 <tr className="border-b bg-slate-900/60" style={{ borderColor: 'var(--dash-border)', color: 'var(--dash-text)' }}>
                   <th className="py-3 px-4 font-bold">Field Name</th>
+                  <th className="py-3 px-4 font-bold">Custom Label</th>
                   <th className="py-3 px-4 font-bold">Purpose &amp; Usage</th>
                   <th className="py-3 px-4 font-bold text-center">Show on Form</th>
                   <th className="py-3 px-4 font-bold text-center">Required</th>
@@ -1189,6 +1207,21 @@ export default function SettingsTab({
                             </span>
                           )}
                         </div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <input
+                          type="text"
+                          value={cfg.label || ''}
+                          onChange={(e) => handleUpdateRegFieldLabel(field.key, e.target.value)}
+                          placeholder={field.label}
+                          maxLength={60}
+                          className="input-field w-full text-xs !py-1.5 !px-2.5"
+                          style={{ minWidth: '130px' }}
+                          title="Custom label shown on the registration form. Leave empty to use the default."
+                        />
+                        {cfg.label && cfg.label.trim() !== '' && (
+                          <p className="text-[10px] mt-0.5 text-emerald-400">✓ Custom label active</p>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-[11px]" style={{ color: 'var(--dash-muted)' }}>
                         {field.desc}

@@ -238,6 +238,7 @@ export interface EventCustomSection {
 export interface RegistrationFieldConfig {
   enabled: boolean;
   required: boolean;
+  label?: string; // Custom display label shown on the registration form
 }
 
 export interface RegistrationFieldsConfig {
