@@ -109,6 +109,7 @@ export default function AccessControlPage() {
       items: [
         { key: 'dashboard', label: 'Dashboard' },
         { key: 'events', label: 'Events' },
+        { key: 'eventSettings', label: 'Event Settings & All Options' },
         { key: 'calendar', label: 'Calendar' },
         { key: 'agenda', label: 'Agenda & Meetings' },
         { key: 'tasks', label: 'Tasks' },

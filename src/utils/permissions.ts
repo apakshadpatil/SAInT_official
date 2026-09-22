@@ -33,6 +33,17 @@ export function canManageUsers(profile: UserProfile | null): boolean {
   return isSuperAdmin(profile);
 }
 
+export function canAccessEventSettings(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  if (isSuperAdmin(profile) || isCoreMember(profile)) return true;
+  return profile.permissions?.eventSettings ?? false;
+}
+
+export function canDeleteEvent(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  return isSuperAdmin(profile) || isCoreMember(profile);
+}
+
 export function canAssignTasks(profile: UserProfile | null): boolean {
   return isCoreMember(profile);
 }

@@ -40,6 +40,7 @@ export interface SidebarPermissions {
   winners?: boolean;
   gallery?: boolean;
   support?: boolean;
+  eventSettings?: boolean;
 }
 
 export interface UserProfile {
@@ -717,6 +718,7 @@ export const DEFAULT_MEMBER_PERMISSIONS: SidebarPermissions = {
   deploymentStats: false,
   userInteractions: false,
   participants: false,
+  eventSettings: false,
 };
 
 export const DEFAULT_PARTICIPANT_PERMISSIONS: SidebarPermissions = {
@@ -749,6 +751,7 @@ export const DEFAULT_PARTICIPANT_PERMISSIONS: SidebarPermissions = {
   deploymentStats: false,
   userInteractions: false,
   participants: false,
+  eventSettings: false,
 };
 
 export const DEFAULT_CORE_PERMISSIONS: SidebarPermissions = {
@@ -765,6 +768,7 @@ export const DEFAULT_CORE_PERMISSIONS: SidebarPermissions = {
   deploymentStats: false,
   userInteractions: false,
   participants: false,
+  eventSettings: true,
 };
 
 export const DEFAULT_SUPERADMIN_PERMISSIONS: SidebarPermissions = {
@@ -797,6 +801,7 @@ export const DEFAULT_SUPERADMIN_PERMISSIONS: SidebarPermissions = {
   deploymentStats: true,
   userInteractions: true,
   participants: true,
+  eventSettings: true,
 };
 
 export type DBOperationType = 'read' | 'write' | 'update' | 'delete' | 'fetch' | 'listener';

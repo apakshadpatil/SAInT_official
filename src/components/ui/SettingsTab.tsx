@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import type { EventRecord, TicketTier } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { canAccessEventSettings } from '../../utils/permissions';
 import {
   Archive,
   Send,
@@ -21,6 +23,8 @@ import {
   ToggleRight,
   Sparkles,
   Check,
+  ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 import { uploadDataUrlToSupabase, SUPABASE_BUCKET } from '../../utils/supabase';
 import { sendDirectEmail, openWebMailClient, validateEmail } from '../../services/emailService';
@@ -29,12 +33,26 @@ import { isValidRegistrationUrl } from '../../utils/urlValidation';
 interface SettingsTabProps {
   event: EventRecord;
   onUpdate: (updates: Partial<EventRecord>) => Promise<void>;
-  isSuperAdmin: boolean;
+  isSuperAdmin?: boolean;
+  canManageSettings?: boolean;
+  onDelete?: () => Promise<void>;
 }
 
-export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsTabProps) {
+export default function SettingsTab({
+  event,
+  onUpdate,
+  isSuperAdmin: propIsSuperAdmin,
+  canManageSettings: propCanManageSettings,
+  onDelete,
+}: SettingsTabProps) {
+  const { profile } = useAuth();
+  const canAccess =
+    propCanManageSettings !== undefined
+      ? propCanManageSettings
+      : Boolean(propIsSuperAdmin || canAccessEventSettings(profile));
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [sendingBulkEmail, setSendingBulkEmail] = useState(false);
 
   // Event Details State
@@ -178,10 +196,10 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
     }
   };
 
-  if (!isSuperAdmin) {
+  if (!canAccess) {
     return (
       <div className="rounded-2xl border p-12 text-center" style={{ borderColor: 'var(--dash-border)' }}>
-        <p style={{ color: 'var(--dash-muted)' }}>Only superadmins can access event settings</p>
+        <p style={{ color: 'var(--dash-muted)' }}>Only superadmins and core team members can access event settings</p>
       </div>
     );
   }
@@ -366,6 +384,34 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
 
   return (
     <div className="space-y-6">
+      {/* Access Permission Status Banner */}
+      <div
+        className="rounded-2xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        style={{
+          borderColor: 'rgba(16, 185, 129, 0.25)',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), var(--dash-card))',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-bold" style={{ color: 'var(--dash-text)' }}>
+                Event Administration &amp; Settings
+              </p>
+              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                Core &amp; Admin Full Access
+              </span>
+            </div>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--dash-muted)' }}>
+              Core members and administrators have full permission to modify event information, team orchestrator, bulk communications, domain controls, and export records.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* 1. Event Information & Schedule Editor */}
       <form onSubmit={handleSaveEventDetails} className="rounded-2xl border p-6 space-y-4" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b" style={{ borderColor: 'var(--dash-border)' }}>
@@ -849,8 +895,8 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
         </div>
       </div>
 
-      {/* 5. Export Data & Archive */}
-      <div className="grid sm:grid-cols-2 gap-4">
+      {/* 5. Export Data, Archive & Danger Zone */}
+      <div className={`grid gap-4 ${onDelete ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
         <div className="rounded-2xl border p-5 space-y-3" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }}>
           <h4 className="font-semibold text-sm flex items-center gap-2" style={{ color: 'var(--dash-text)' }}>
             <Download className="w-4 h-4 text-blue-500" />
@@ -864,18 +910,44 @@ export default function SettingsTab({ event, onUpdate, isSuperAdmin }: SettingsT
           </button>
         </div>
 
-        <div className="rounded-2xl border p-5 space-y-3" style={{ borderColor: 'rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.03)' }}>
-          <h4 className="font-semibold text-sm flex items-center gap-2 text-red-500">
+        <div className="rounded-2xl border p-5 space-y-3" style={{ borderColor: 'rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.03)' }}>
+          <h4 className="font-semibold text-sm flex items-center gap-2 text-amber-500">
             <Archive className="w-4 h-4" />
             Archive Event
           </h4>
           <p className="text-xs" style={{ color: 'var(--dash-muted)' }}>
             Hide this event from public discovery and active lists while preserving historical tickets and attendee logs.
           </p>
-          <button onClick={handleArchiveEvent} className="btn-secondary !text-xs !py-2 text-red-400 border-red-500/30 hover:bg-red-500/10 w-full cursor-pointer">
+          <button onClick={handleArchiveEvent} className="btn-secondary !text-xs !py-2 text-amber-400 border-amber-500/30 hover:bg-amber-500/10 w-full cursor-pointer">
             Archive Event
           </button>
         </div>
+
+        {onDelete && (
+          <div className="rounded-2xl border p-5 space-y-3" style={{ borderColor: 'rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.03)' }}>
+            <h4 className="font-semibold text-sm flex items-center gap-2 text-red-500">
+              <Trash2 className="w-4 h-4" />
+              Delete Event
+            </h4>
+            <p className="text-xs" style={{ color: 'var(--dash-muted)' }}>
+              Permanently erase this event and all associated records from the database.
+            </p>
+            <button
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  await onDelete();
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+              disabled={deleting}
+              className="btn-secondary !text-xs !py-2 text-red-400 border-red-500/30 hover:bg-red-500/10 w-full cursor-pointer"
+            >
+              {deleting ? 'Deleting...' : 'Delete Event (Permanent)'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

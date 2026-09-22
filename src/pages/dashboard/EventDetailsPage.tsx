@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { subscribeEventById, subscribeEventTickets, mergeEventWithTickets, updateEvent, deleteEvent } from '../../services/eventService';
 import type { EventRecord, EventTicket } from '../../types';
-import { isSuperAdmin, isCoreMember } from '../../utils/permissions';
+import { isSuperAdmin, isCoreMember, canAccessEventSettings, canDeleteEvent } from '../../utils/permissions';
 import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award, Users2, ClipboardCheck, ExternalLink, Palette, LayoutList } from 'lucide-react';
 import { isValidRegistrationUrl } from '../../utils/urlValidation';
 import TicketingTab from '../../components/ui/TicketingTab';
@@ -41,7 +41,8 @@ export default function EventDetailsPage() {
   const [editRegistrationUrl, setEditRegistrationUrl] = useState('');
   
   const canEdit = isSuperAdmin(profile) || isCoreMember(profile);
-  const canDelete = isSuperAdmin(profile);
+  const canManageSettings = canAccessEventSettings(profile);
+  const canDelete = canDeleteEvent(profile);
 
   useEffect(() => {
     if (!eventId) {
@@ -165,7 +166,7 @@ export default function EventDetailsPage() {
     { id: 'allocation', label: 'Space Allocation', icon: MapPin },
     ...(event.enableDomainSelection ? [{ id: 'domains' as TabType, label: 'Domains', icon: Layers }] : []),
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    ...(canDelete ? [{ id: 'settings' as TabType, label: 'Settings', icon: Settings }] : []),
+    ...(canManageSettings ? [{ id: 'settings' as TabType, label: 'Settings', icon: Settings }] : []),
   ];
 
   return (
@@ -461,6 +462,8 @@ export default function EventDetailsPage() {
             event={event}
             onUpdate={handleEventUpdate}
             isSuperAdmin={isSuperAdmin(profile)}
+            canManageSettings={canManageSettings}
+            onDelete={canDelete ? handleDeleteEvent : undefined}
           />
         )}
       </div>
