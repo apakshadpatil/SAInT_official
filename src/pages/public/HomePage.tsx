@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, Users, Sparkles, ArrowRight, ChevronRight, MapPin, Ticket, Zap, AlertCircle, Eye, History, ExternalLink } from 'lucide-react';
-import { getSiteMembers, getFacultyCoordinator, getHomeImagesConfig, subscribeSiteSettings } from '../../services/applicationService';
+import { getSiteMembers, getFacultyCoordinator, getHomeImagesConfig } from '../../services/applicationService';
 import { getPositionHolders } from '../../services/positionService';
-import { getPastEvents, getUpcomingEvents, subscribeEvents } from '../../services/eventService';
+import { getEvents, getPastEvents, getPublishedUpcomingEvents } from '../../services/eventService';
 import { getStoredTotalVisitCount, subscribeTotalVisitCount } from '../../services/visitorTrackingService';
 import type { EventRecord } from '../../types';
 import Lightning from '../../components/animation/Lightning';
 import { EventCardSkeleton } from '../../components/ui/skeleton';
 import SponsorsSection from '../../components/ui/SponsorsSection';
+import EventBanner from '../../components/ui/EventBanner';
 
 function AnimatedStatisticValue({ value, loading }: { value: number; loading: boolean }) {
   const [displayValue, setDisplayValue] = useState(0);
@@ -58,20 +59,24 @@ export default function HomePage() {
   const [visitsLoading, setVisitsLoading] = useState(true);
   const [conductedEventsLoading, setConductedEventsLoading] = useState(true);
 
-  // Instantaneous read from localStorage
+  // Synchronous read from DOM / localStorage synced by PublicLayout
   const [doomsdayMode, setDoomsdayMode] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('saint_doomsday_mode') === 'true';
+      if (typeof document !== 'undefined') {
+        return document.documentElement.getAttribute('data-doomsday') === 'true' || localStorage.getItem('saint_doomsday_mode') === 'true';
+      }
+      return false;
     } catch {
       return false;
     }
   });
 
   useEffect(() => {
-    const unsub = subscribeSiteSettings((settings) => {
-      setDoomsdayMode(Boolean(settings?.doomsdayMode));
+    const observer = new MutationObserver(() => {
+      setDoomsdayMode(document.documentElement.getAttribute('data-doomsday') === 'true');
     });
-    return () => unsub();
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-doomsday'] });
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -86,46 +91,61 @@ export default function HomePage() {
       }
     });
 
-    const unsubscribeEvents = subscribeEvents((allEvents) => {
-      if (isMounted) {
-        setEvents(getUpcomingEvents(allEvents));
-        setEventsLoading(false);
-        setConductedEvents(getPastEvents(allEvents).length);
-        setConductedEventsLoading(false);
-      }
-    });
-
-    getSiteMembers()
-      .then((m: unknown[]) => {
-        if (m.length && isMounted) setMembers(m as typeof members);
-      })
-      .catch(() => { });
-
-    getFacultyCoordinator()
-      .then((f: unknown) => {
-        if (f && isMounted) setFaculty(f as typeof faculty);
-      })
-      .catch(() => { });
-
-    getHomeImagesConfig()
-      .then((config) => {
+    // Efficient cached fetch of published upcoming events instead of full-collection live subscription
+    getPublishedUpcomingEvents()
+      .then((upcoming) => {
         if (isMounted) {
-          setImages(config.images || []);
-          setShowHomeImages(config.showHomeImages !== false);
+          setEvents(upcoming);
+          setEventsLoading(false);
         }
       })
-      .catch(() => { });
+      .catch((err) => {
+        console.error('Failed to load upcoming events', err);
+        if (isMounted) {
+          setEventsError('Failed to load upcoming events');
+          setEventsLoading(false);
+        }
+      });
 
-    getPositionHolders()
-      .then((p) => {
-        if (isMounted) setPositions(p as typeof positions);
+    // Cached count for past conducted events
+    getEvents()
+      .then((all) => {
+        if (isMounted) {
+          setConductedEvents(getPastEvents(all).length);
+          setConductedEventsLoading(false);
+        }
       })
-      .catch(() => { });
+      .catch(() => {
+        if (isMounted) setConductedEventsLoading(false);
+      });
+
+    // Batched auxiliary data fetch to prevent cascading re-renders
+    Promise.allSettled([
+      getSiteMembers(),
+      getFacultyCoordinator(),
+      getHomeImagesConfig(),
+      getPositionHolders(),
+    ]).then(([membersRes, facultyRes, homeImagesRes, positionsRes]) => {
+      if (!isMounted) return;
+      if (membersRes.status === 'fulfilled' && Array.isArray(membersRes.value) && membersRes.value.length) {
+        setMembers(membersRes.value as typeof members);
+      }
+      if (facultyRes.status === 'fulfilled' && facultyRes.value) {
+        setFaculty(facultyRes.value as typeof faculty);
+      }
+      if (homeImagesRes.status === 'fulfilled' && homeImagesRes.value) {
+        const config = homeImagesRes.value;
+        setImages(config.images || []);
+        setShowHomeImages(config.showHomeImages !== false);
+      }
+      if (positionsRes.status === 'fulfilled' && Array.isArray(positionsRes.value)) {
+        setPositions(positionsRes.value as typeof positions);
+      }
+    });
 
     return () => {
       isMounted = false;
       unsubscribeVisits();
-      unsubscribeEvents();
     };
   }, []);
 
@@ -320,22 +340,14 @@ export default function HomePage() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {events.map((event) => (
                 <div key={event.id} className="card group hover:shadow-lg hover:border-blue-200 transition-all duration-300 !p-0 overflow-hidden flex flex-col">
-                  <Link to={`/events/${event.id}`} className="block">
-                    {event.imageURL ? (
-                      <div className="h-44 overflow-hidden shrink-0">
-                        <img
-                          src={event.imageURL}
-                          alt={event.title}
-                          loading="lazy"
-                          decoding="async"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                      </div>
-                    ) : (
-                      <div className="h-44 bg-gradient-to-br from-blue-500 to-blue-800 flex items-center justify-center shrink-0">
-                        <Calendar className="w-12 h-12 text-white/30" />
-                      </div>
-                    )}
+                  <Link to={`/events/${event.id}`} className="block overflow-hidden">
+                    <EventBanner
+                      src={event.imageURL || event.registrationBannerUrl}
+                      alt={event.title}
+                      aspectRatioClass="aspect-video"
+                      imgClassName="group-hover:scale-105 transition-transform duration-500"
+                      doomsdayMode={doomsdayMode}
+                    />
                   </Link>
                   <div className="p-6 flex flex-col flex-1">
                     <div className="flex items-center gap-2 text-blue-600 text-sm font-medium mb-3">

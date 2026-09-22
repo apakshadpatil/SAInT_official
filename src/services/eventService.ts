@@ -89,6 +89,19 @@ function now() {
   return new Date().toISOString();
 }
 
+/**
+ * Invalidate all event-related in-memory caches to prevent stale data across pages.
+ */
+export function invalidateEventCaches(eventId?: string) {
+  if (eventId) {
+    invalidateCache(`event:${eventId}`);
+    invalidateCache(`tickets:${eventId}`);
+  }
+  invalidateCache('events:');
+  invalidateCache('events');
+  invalidateCache('event:');
+}
+
 export async function createEvent(data: Omit<EventRecord, 'id' | 'createdAt' | 'updatedAt'>) {
   const safeImage = await ensureSafeImageUrl((data as any).imageURL as string | undefined);
   const payload = removeUndefinedFields({
@@ -100,7 +113,7 @@ export async function createEvent(data: Omit<EventRecord, 'id' | 'createdAt' | '
   });
 
   const ref = await addDoc(collection(db, 'events'), payload);
-  invalidateCache('events:');
+  invalidateEventCaches(ref.id);
   trackDBOperation({ operation: 'write', action: 'create_event', resource: 'events', documentCount: 1 });
   return ref.id;
 }
@@ -127,8 +140,7 @@ export async function updateEvent(id: string, data: Partial<EventRecord>) {
 
   const cleanData = removeUndefinedFields({ ...data, updatedAt: now() });
   await updateDoc(doc(db, 'events', id), cleanData);
-  invalidateCache(`event:${id}`);
-  invalidateCache('events:');
+  invalidateEventCaches(id);
   trackDBOperation({ operation: 'update', action: 'update_event', resource: 'events', documentCount: 1 });
 }
 
@@ -186,8 +198,7 @@ export async function deleteEvent(id: string) {
   }
 
   await deleteDoc(doc(db, 'events', id));
-  invalidateCache(`event:${id}`);
-  invalidateCache('events:');
+  invalidateEventCaches(id);
   trackDBOperation({ operation: 'delete', action: 'delete_event', resource: 'events', documentCount: 1 });
 }
 
@@ -197,7 +208,15 @@ export async function getEvent(id: string, forceRefresh = false): Promise<EventR
     async () => {
       const snap = await getDoc(doc(db, 'events', id));
       if (!snap.exists()) return null;
-      return { id: snap.id, ...snap.data() } as EventRecord;
+      let item = { id: snap.id, ...snap.data() } as EventRecord;
+      if (typeof window !== 'undefined' && (window as any).__MOCK_EVENT_COORDINATORS__) {
+        item = {
+          ...item,
+          coordinators: (window as any).__MOCK_EVENT_COORDINATORS__,
+          eventCoordinatorContacts: (window as any).__MOCK_EVENT_COORDINATORS__,
+        };
+      }
+      return item;
     },
     {
       ttlMs: 60 * 1000,
@@ -229,7 +248,14 @@ export async function getEvents(forceRefresh = false): Promise<EventRecord[]> {
 export function subscribeEventById(eventId: string, callback: (event: EventRecord | null) => void) {
   trackDBOperation({ operation: 'listener', action: 'subscribe_event_by_id', resource: 'events' });
   return onSnapshot(doc(db, 'events', eventId), (snap) => {
-    const item = snap.exists() ? ({ id: snap.id, ...snap.data() } as EventRecord) : null;
+    let item = snap.exists() ? ({ id: snap.id, ...snap.data() } as EventRecord) : null;
+    if (item && typeof window !== 'undefined' && (window as any).__MOCK_EVENT_COORDINATORS__) {
+      item = {
+        ...item,
+        coordinators: (window as any).__MOCK_EVENT_COORDINATORS__,
+        eventCoordinatorContacts: (window as any).__MOCK_EVENT_COORDINATORS__,
+      };
+    }
     if (item) setCachedData(`event:${eventId}`, item);
     callback(item);
   });
@@ -278,13 +304,14 @@ export async function createTicket(
     registrationSource?: 'public' | 'manual';
     college?: string;
     department?: string;
+    year?: string;
     domain?: string;
     domainId?: string;
     teamName?: string;
     tierId?: string;
     tierName?: string;
     teamSize?: number;
-    teamMembers?: Array<{ name: string; email?: string; phone?: string; college?: string; department?: string }>;
+    teamMembers?: Array<{ name: string; email?: string; phone?: string; college?: string; department?: string; year?: string }>;
     transactionId?: string;
     paymentScreenshotUrl?: string;
     paymentScreenshotPath?: string;
@@ -311,6 +338,7 @@ export async function createTicket(
     guestPhone: options.guestPhone || null,
     college: options.college || null,
     department: options.department || null,
+    year: options.year || null,
     domain: options.domain || null,
     domainId: options.domainId || null,
     teamName: options.teamName || options.customResponses?.teamName || options.customResponses?.['Team Name'] || null,
@@ -344,6 +372,7 @@ export async function createTicket(
     guestPhone: options.guestPhone,
     college: options.college,
     department: options.department,
+    year: options.year,
     domain: options.domain,
     domainId: options.domainId,
     teamName: options.teamName || options.customResponses?.teamName || options.customResponses?.['Team Name'],
@@ -373,12 +402,13 @@ export async function registerParticipantForEvent(
     phone?: string;
     college?: string;
     department?: string;
+    year?: string;
     domain?: string;
     domainId?: string;
     tierId?: string;
     tierName?: string;
     teamSize?: number;
-    teamMembers?: Array<{ name: string; email?: string; phone?: string; college?: string; department?: string }>;
+    teamMembers?: Array<{ name: string; email?: string; phone?: string; college?: string; department?: string; year?: string }>;
     transactionId?: string;
     paymentScreenshotUrl?: string;
     paymentScreenshotPath?: string;
@@ -395,6 +425,7 @@ export async function registerParticipantForEvent(
     registrationSource: participantData.registrationSource || 'public',
     college: participantData.college,
     department: participantData.department,
+    year: participantData.year,
     domain: participantData.domain,
     domainId: participantData.domainId,
     teamName: participantData.customResponses?.teamName || participantData.customResponses?.['Team Name'],
@@ -417,6 +448,7 @@ export async function registerParticipantForEvent(
     phone: participantData.phone || undefined,
     college: participantData.college || undefined,
     department: participantData.department || undefined,
+    year: participantData.year || undefined,
     domain: participantData.domain || undefined,
     domainId: participantData.domainId || undefined,
     tierId: participantData.tierId || undefined,
@@ -475,6 +507,7 @@ export async function registerParticipantForEvent(
           leadPhone: participantData.phone?.trim(),
           college: participantData.college?.trim(),
           department: participantData.department?.trim(),
+          year: participantData.year?.trim(),
           memberCount: (participantData.teamMembers?.length || 0) + 1,
           members: participantData.teamMembers || [],
           tierId: participantData.tierId,
@@ -536,6 +569,7 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
       phone: ticket.guestPhone,
       college: ticket.college,
       department: ticket.department,
+      year: ticket.year,
       domain: ticket.domain,
       domainId: ticket.domainId,
       tierId: ticket.tierId,
@@ -793,7 +827,7 @@ export async function getPublishedUpcomingEvents(forceRefresh = false): Promise<
       }
     },
     {
-      ttlMs: 15 * 1000,
+      ttlMs: 60 * 1000,
       resource: 'events',
       action: 'get_published_upcoming_events',
       forceRefresh,
@@ -806,18 +840,25 @@ export async function getPublishedActivities(forceRefresh = false): Promise<Even
     'events:published_activities',
     async () => {
       try {
-        const snap = await getDocs(collection(db, 'events'));
+        const snap = await getDocs(
+          query(collection(db, 'events'), where('status', 'in', ['published', 'completed']))
+        );
         const allEvents = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
-        return allEvents
-          .filter((e) => e.status !== 'cancelled')
-          .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        return allEvents.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       } catch (err) {
-        console.warn('Failed to fetch public activities:', err);
-        return [];
+        console.warn('Filtered activities query failed, falling back to published query:', err);
+        try {
+          const snap = await getDocs(query(collection(db, 'events'), where('status', '==', 'published')));
+          const allEvents = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
+          return allEvents.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        } catch (innerErr) {
+          console.warn('Failed to fetch public activities:', innerErr);
+          return [];
+        }
       }
     },
     {
-      ttlMs: 15 * 1000,
+      ttlMs: 60 * 1000,
       resource: 'events',
       action: 'get_published_activities',
       forceRefresh,
@@ -827,12 +868,10 @@ export async function getPublishedActivities(forceRefresh = false): Promise<Even
 
 export function subscribePublishedActivities(callback: (events: EventRecord[]) => void) {
   return onSnapshot(
-    collection(db, 'events'),
+    query(collection(db, 'events'), where('status', 'in', ['published', 'completed'])),
     (snap) => {
       const allEvents = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
-      const sorted = allEvents
-        .filter((e) => e.status !== 'cancelled')
-        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const sorted = allEvents.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       callback(sorted);
     },
     (err) => {
@@ -844,7 +883,7 @@ export function subscribePublishedActivities(callback: (events: EventRecord[]) =
 export function subscribePublishedUpcomingEvents(callback: (events: EventRecord[]) => void) {
   const today = new Date().toISOString().split('T')[0];
   return onSnapshot(
-    collection(db, 'events'),
+    query(collection(db, 'events'), where('status', '==', 'published')),
     (snap) => {
       const events = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
       callback(getUpcomingEvents(events, today));

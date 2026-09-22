@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, MapPin, Users, Award, Ticket, ArrowRight, ExternalLink } from 'lucide-react';
-import { subscribePublishedActivities } from '../../services/eventService';
+import { getPublishedActivities } from '../../services/eventService';
 import type { EventRecord } from '../../types';
 import { EventCardSkeleton } from '../../components/ui/skeleton';
 
@@ -10,12 +10,22 @@ export default function ActivitiesPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
     setLoading(true);
-    const unsub = subscribePublishedActivities((list) => {
-      setActivities(list);
-      setLoading(false);
-    });
-    return () => unsub();
+    getPublishedActivities()
+      .then((list) => {
+        if (isMounted) {
+          setActivities(list);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load published activities', err);
+        if (isMounted) setLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const formatDate = (start: string, end?: string) => {

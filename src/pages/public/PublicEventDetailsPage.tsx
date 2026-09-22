@@ -10,20 +10,22 @@ import {
   Users,
   CheckCircle2,
   ExternalLink,
-  MessageCircle,
   Sparkles,
   AlertTriangle,
   FileText,
   Check,
   ShieldCheck,
   CalendarPlus,
-  Compass
+  Compass,
+  Phone,
+  User
 } from 'lucide-react';
 import { getEvent, subscribeEventById } from '../../services/eventService';
-import { subscribeSiteSettings } from '../../services/applicationService';
 import type { EventRecord } from '../../types';
+import { getEventCoordinators } from '../../types';
 import { getSectionIcon } from '../../utils/eventSectionIcons';
 import { useToast } from '../../contexts/ToastContext';
+import EventBanner from '../../components/ui/EventBanner';
 
 export default function PublicEventDetailsPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -34,21 +36,24 @@ export default function PublicEventDetailsPage() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // Site-wide doomsday mode check
+  // Synchronous read from DOM / localStorage synced by PublicLayout
   const [doomsdayMode, setDoomsdayMode] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('saint_doomsday_mode') === 'true';
+      if (typeof document !== 'undefined') {
+        return document.documentElement.getAttribute('data-doomsday') === 'true' || localStorage.getItem('saint_doomsday_mode') === 'true';
+      }
+      return false;
     } catch {
       return false;
     }
   });
 
   useEffect(() => {
-    const unsub = subscribeSiteSettings((settings) => {
-      const active = Boolean(settings?.doomsdayMode);
-      setDoomsdayMode(active);
+    const observer = new MutationObserver(() => {
+      setDoomsdayMode(document.documentElement.getAttribute('data-doomsday') === 'true');
     });
-    return () => unsub();
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-doomsday'] });
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -153,6 +158,9 @@ export default function PublicEventDetailsPage() {
       .sort((a, b) => a.order - b.order);
   }, [event?.customSections]);
 
+  // Event Coordinators / Contact Persons
+  const coordinators = useMemo(() => getEventCoordinators(event), [event]);
+
   // Check if standard rules exist
   const hasStandardRules = Boolean(event?.rules && event.rules.length > 0);
 
@@ -162,8 +170,13 @@ export default function PublicEventDetailsPage() {
   const isDraft = event?.status === 'draft';
   const isRegistrationOpen = !isCancelled && !isCompleted;
 
-  // Banner image priority: registrationBannerUrl -> imageURL
-  const displayBannerUrl = event?.registrationBannerUrl || event?.imageURL;
+  // Banner image priority: imageURL -> registrationBannerUrl -> bannerUrl -> imageUrl
+  const displayBannerUrl =
+    (event?.imageURL && event.imageURL.trim()) ||
+    (event?.registrationBannerUrl && event.registrationBannerUrl.trim()) ||
+    ((event as any)?.bannerUrl && (event as any).bannerUrl.trim()) ||
+    ((event as any)?.imageUrl && (event as any).imageUrl.trim()) ||
+    null;
 
   // Loading State
   if (loading) {
@@ -258,29 +271,17 @@ export default function PublicEventDetailsPage() {
             backdropFilter: 'blur(20px)',
           }}
         >
-          {/* Banner Image */}
-          {displayBannerUrl ? (
-            <div className="relative w-full h-56 sm:h-80 md:h-96 overflow-hidden bg-slate-900">
-              <img
-                src={displayBannerUrl}
-                alt={event.title}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0a0f1d] via-[#0a0f1d]/40 to-transparent" />
-            </div>
-          ) : (
-            <div
-              className="w-full h-44 sm:h-60 flex items-center justify-center relative overflow-hidden"
-              style={{
-                background: doomsdayMode
-                  ? 'linear-gradient(135deg, #064e3b, #022c22)'
-                  : 'linear-gradient(135deg, #1e3a8a, #0f172a)',
-              }}
-            >
-              <div className="public-liquid-blob-1" style={{ opacity: 0.5 }} />
-              <Compass className="w-16 h-16 text-white/20 relative z-10" />
-            </div>
-          )}
+          {/* Standardized 16:9 Banner Image Container */}
+          <EventBanner
+            src={displayBannerUrl}
+            alt={event.title}
+            aspectRatioClass="aspect-video"
+            maxHeightClass="max-h-[440px]"
+            showOverlay={true}
+            doomsdayMode={doomsdayMode}
+            priority={true}
+            fallbackIcon={<Compass className="w-12 h-12 text-emerald-400/35" />}
+          />
 
           {/* Hero Content Overlay */}
           <div className="p-6 sm:p-8 md:p-10 relative z-10 -mt-16 sm:-mt-20">
@@ -616,18 +617,6 @@ export default function PublicEventDetailsPage() {
                     <span>Download Official Rulebook PDF</span>
                   </a>
                 )}
-
-                {event.whatsappGroupUrl && (
-                  <a
-                    href={event.whatsappGroupUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full py-2.5 px-4 rounded-xl text-xs font-semibold border border-emerald-500/30 hover:border-emerald-500/50 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 transition-all flex items-center justify-center gap-2"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Join Participant WhatsApp Group</span>
-                  </a>
-                )}
               </div>
 
               {/* Location Note */}
@@ -637,6 +626,65 @@ export default function PublicEventDetailsPage() {
                 </p>
               </div>
             </div>
+
+            {/* Event Coordinators / Contact Persons */}
+            {coordinators.length > 0 && (
+              <div
+                className="rounded-3xl border p-5 sm:p-6 space-y-3.5 shadow-xl"
+                style={{
+                  borderColor: doomsdayMode ? 'rgba(16,185,129,0.25)' : 'rgba(255,255,255,0.08)',
+                  background: doomsdayMode ? 'rgba(10,15,10,0.85)' : 'rgba(15,23,42,0.6)',
+                  backdropFilter: 'blur(20px)',
+                }}
+              >
+                <div className="flex items-center gap-2.5 pb-2.5 border-b border-white/10">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                    <Phone className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white leading-none">
+                      {coordinators.length === 1 ? 'Event Coordinator' : 'Event Coordinators'}
+                    </h4>
+                    <span className="text-[11px] text-slate-400">Questions? Reach out directly</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {coordinators.map((coord, idx) => {
+                    const cleanPhone = coord.phone.trim();
+                    const dialUrl = `tel:${cleanPhone.replace(/\s+/g, '')}`;
+
+                    return (
+                      <div
+                        key={coord.id || idx}
+                        className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-white/15 transition-all"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="text-xs sm:text-sm font-bold text-white truncate block">
+                              {coord.name}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-400 block pl-5">
+                            {cleanPhone}
+                          </span>
+                        </div>
+
+                        <a
+                          href={dialUrl}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 hover:border-emerald-500/50 transition-all shrink-0 cursor-pointer"
+                          title={`Call ${coord.name}`}
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>Call</span>
+                        </a>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

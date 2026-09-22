@@ -235,6 +235,20 @@ export interface EventCustomSection {
   order: number;
 }
 
+export interface RegistrationFieldConfig {
+  enabled: boolean;
+  required: boolean;
+}
+
+export interface RegistrationFieldsConfig {
+  name?: RegistrationFieldConfig;
+  email?: RegistrationFieldConfig;
+  phone?: RegistrationFieldConfig;
+  college?: RegistrationFieldConfig;
+  department?: RegistrationFieldConfig;
+  year?: RegistrationFieldConfig;
+}
+
 export interface EventRecord {
   id: string;
   title: string;
@@ -286,6 +300,7 @@ export interface EventRecord {
   requireTeamName?: boolean;
   // Rules & post-registration actions
   rules?: string[];
+  registrationTerms?: string;
   rulebookUrl?: string;
   whatsappGroupUrl?: string;
   // Registration Portal Banner & Background Customization
@@ -295,6 +310,34 @@ export interface EventRecord {
   registrationUrl?: string;
   // Dynamic & Custom Sections
   customSections?: EventCustomSection[];
+  // Configurable Registration Form Fields
+  registrationFields?: RegistrationFieldsConfig;
+  // Event Coordinators / Contact Persons
+  coordinators?: EventCoordinatorContact[];
+  eventCoordinatorContacts?: EventCoordinatorContact[];
+}
+
+export interface EventCoordinatorContact {
+  id?: string;
+  name: string;
+  phone: string;
+}
+
+/**
+ * Safely extracts valid coordinator contacts from an event record.
+ */
+export function getEventCoordinators(event: Partial<EventRecord> | null | undefined): EventCoordinatorContact[] {
+  if (!event) return [];
+  const list = event.coordinators || event.eventCoordinatorContacts;
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((c): c is EventCoordinatorContact => Boolean(c && typeof c === 'object'))
+    .map((c) => ({
+      name: (c.name || '').trim(),
+      phone: (c.phone || '').trim(),
+      id: c.id,
+    }))
+    .filter((c) => c.name.length > 0 || c.phone.length > 0);
 }
 
 export interface EventRuleAgreement {
@@ -345,6 +388,7 @@ export interface TeamMemberDetail {
   phone?: string;
   college?: string;
   department?: string;
+  year?: string;
   certificateUrl?: string;
 }
 
@@ -357,6 +401,7 @@ export interface EventTeam {
   leadPhone?: string;
   college?: string;
   department?: string;
+  year?: string;
   memberCount: number;
   members: TeamMemberDetail[];
   tierId?: string;
@@ -389,6 +434,7 @@ export interface EventTicket {
   guestPhone?: string;
   college?: string;
   department?: string;
+  year?: string;
   domain?: string;
   domainId?: string;
   teamName?: string;
@@ -425,6 +471,7 @@ export interface EventParticipant {
   phone?: string;
   college?: string;
   department?: string;
+  year?: string;
   teamName?: string;
   domain?: string;
   domainId?: string;

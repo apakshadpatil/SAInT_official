@@ -5,7 +5,7 @@ import { ThemeProvider, DashboardThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import PublicLayout from './components/layout/PublicLayout';
-import DashboardLayout from './components/layout/DashboardLayout';
+const DashboardLayout = lazy(() => import('./components/layout/DashboardLayout'));
 
 // Public pages — HomePage is loaded eagerly for instant first paint
 import HomePage from './pages/public/HomePage';

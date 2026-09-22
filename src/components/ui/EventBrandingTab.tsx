@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { EventRecord } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
 import {
@@ -13,10 +13,12 @@ import {
   RefreshCw,
   Save,
   Layers,
-  Palette
+  Palette,
+  Info
 } from 'lucide-react';
 import { uploadFileToSupabase } from '../../utils/supabase';
 import { uploadFileToStorage, formatFileSize } from '../../utils/fileUtils';
+import { compressEventBanner } from '../../utils/imageOptimizer';
 
 interface EventBrandingTabProps {
   event: EventRecord;
@@ -45,6 +47,16 @@ export default function EventBrandingTab({ event, onUpdate, canEdit }: EventBran
   const bannerInputRef = useRef<HTMLInputElement>(null);
   const bgInputRef = useRef<HTMLInputElement>(null);
 
+  // Sync state when event updates from Firestore or parent
+  useEffect(() => {
+    if (!bannerFile) {
+      setBannerPreview(event.registrationBannerUrl || '');
+    }
+    if (!bgFile) {
+      setBgPreview(event.registrationBackgroundUrl || '');
+    }
+  }, [event.registrationBannerUrl, event.registrationBackgroundUrl, bannerFile, bgFile]);
+
   // Helper validation
   const validateFile = (file: File): boolean => {
     if (!ALLOWED_MIME_TYPES.includes(file.type.toLowerCase())) {
@@ -59,13 +71,41 @@ export default function EventBrandingTab({ event, onUpdate, canEdit }: EventBran
   };
 
   // ── Handle Banner File Selection ──────────────────────────────────────────
-  const handleBannerSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBannerSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!validateFile(file)) {
       if (bannerInputRef.current) bannerInputRef.current.value = '';
       return;
     }
+
+    // Inspect image aspect ratio before staging
+    try {
+      const dimensions = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+        const img = new window.Image();
+        const objectUrl = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error('Failed to load image preview'));
+        };
+        img.src = objectUrl;
+      });
+
+      const ratio = dimensions.width / dimensions.height;
+      if (ratio < 1.45 || ratio > 2.05) {
+        showToast(
+          `Notice: Uploaded image is ${dimensions.width}×${dimensions.height} (${ratio.toFixed(2)}:1). Recommended standard is 16:9 (e.g. 1920×1080). Image will be accepted, but may crop to 16:9 on the registration page.`,
+          'info'
+        );
+      }
+    } catch {
+      // Proceed even if aspect ratio inspect fails
+    }
+
     setBannerFile(file);
     const objectUrl = URL.createObjectURL(file);
     setBannerPreview(objectUrl);
@@ -106,14 +146,15 @@ export default function EventBrandingTab({ event, onUpdate, canEdit }: EventBran
 
   // ── Upload Helper ─────────────────────────────────────────────────────────
   const uploadImage = async (file: File, folder: string): Promise<string> => {
-    const ext = file.name.split('.').pop() || 'png';
+    const compressed = await compressEventBanner(file);
+    const ext = compressed.type === 'image/webp' ? 'webp' : (compressed.name.split('.').pop() || 'png');
     const dest = `${folder}/${event.id}_${Date.now()}.${ext}`;
     try {
-      return await uploadFileToSupabase(file, dest);
+      return await uploadFileToSupabase(compressed, dest);
     } catch (supabaseErr) {
       console.warn('Supabase storage upload failed, attempting Firebase Storage fallback...', supabaseErr);
       try {
-        return await uploadFileToStorage(file, dest);
+        return await uploadFileToStorage(compressed, dest);
       } catch (fbErr) {
         console.error('All storage upload attempts failed:', fbErr);
         throw new Error('Image upload failed. Please verify storage permissions and try again.');
@@ -151,10 +192,14 @@ export default function EventBrandingTab({ event, onUpdate, canEdit }: EventBran
         finalBgUrl = '';
       }
 
-      await onUpdate({
-        registrationBannerUrl: finalBannerUrl || undefined,
-        registrationBackgroundUrl: finalBgUrl || undefined,
-      });
+      const updates: Partial<EventRecord> = {
+        registrationBannerUrl: finalBannerUrl,
+        registrationBackgroundUrl: finalBgUrl,
+      };
+      if (!event.imageURL && finalBannerUrl) {
+        updates.imageURL = finalBannerUrl;
+      }
+      await onUpdate(updates);
 
       showToast('Registration portal branding saved successfully!', 'success');
     } catch (err: any) {
@@ -270,10 +315,23 @@ export default function EventBrandingTab({ event, onUpdate, canEdit }: EventBran
               )}
             </div>
 
+            {/* Banner Dimension Hint */}
+            <div className="rounded-xl border p-2.5 flex items-start gap-2 bg-blue-500/5 border-blue-500/20 text-xs">
+              <Info className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="font-semibold text-blue-300 text-[11px]">
+                  Recommended size: 1920 × 1080 px (16:9 aspect ratio)
+                </p>
+                <p className="text-[10px]" style={{ color: 'var(--dash-muted)' }}>
+                  Accepts 1280 × 720 px or any 16:9 image. For best results, keep important text and logos away from the extreme edges.
+                </p>
+              </div>
+            </div>
+
             {/* Banner Preview Area */}
             {bannerPreview ? (
               <div className="space-y-3">
-                <div className="relative rounded-xl overflow-hidden border border-slate-700/80 bg-slate-900 group aspect-[21/9]">
+                <div className="relative rounded-xl overflow-hidden border border-slate-700/80 bg-slate-900 group aspect-video">
                   <img
                     src={bannerPreview}
                     alt="Registration Banner Preview"
@@ -281,7 +339,7 @@ export default function EventBrandingTab({ event, onUpdate, canEdit }: EventBran
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
                     <span className="text-[11px] text-white font-medium">
-                      Aspect Ratio: ~21:9 (Recommended: 1200x500px)
+                      Aspect Ratio: 16:9 (Recommended: 1920×1080 px)
                     </span>
                   </div>
                 </div>
@@ -323,7 +381,7 @@ export default function EventBrandingTab({ event, onUpdate, canEdit }: EventBran
                     Click to Upload Registration Banner
                   </p>
                   <p className="text-[11px] mt-0.5" style={{ color: 'var(--dash-muted)' }}>
-                    PNG, JPG, WebP up to 5MB (1200x500px recommended)
+                    PNG, JPG, WebP up to 5MB (1920×1080 px recommended, 16:9)
                   </p>
                 </div>
                 <span className="inline-block text-[11px] text-blue-400 font-semibold">
@@ -542,21 +600,21 @@ export default function EventBrandingTab({ event, onUpdate, canEdit }: EventBran
                   backdropFilter: 'blur(20px)',
                 }}
               >
-                {/* Banner in simulator */}
+                {/* Banner in simulator (16:9 standard) */}
                 {bannerPreview ? (
                   <img
                     src={bannerPreview}
                     alt="Banner"
-                    className="w-full h-32 sm:h-44 object-cover"
+                    className="w-full aspect-video object-cover"
                   />
                 ) : event.imageURL ? (
                   <img
                     src={event.imageURL}
                     alt="Default Event Cover"
-                    className="w-full h-32 sm:h-44 object-cover"
+                    className="w-full aspect-video object-cover"
                   />
                 ) : (
-                  <div className="w-full h-28 bg-gradient-to-r from-blue-600 to-indigo-700 flex items-center justify-center text-white/50 text-xs">
+                  <div className="w-full aspect-video bg-gradient-to-r from-blue-600 to-indigo-700 flex items-center justify-center text-white/50 text-xs">
                     Default Event Banner
                   </div>
                 )}

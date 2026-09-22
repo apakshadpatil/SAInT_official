@@ -235,22 +235,30 @@ img, video, canvas {
 
 /* Covers light utility surfaces used in Gallery, Activities, Apply, Support,
    About, and all future public pages without changing their normal theme. */
-[data-doomsday="true"] main [class*="bg-white"],
-[data-doomsday="true"] main [class*="bg-slate-"],
-[data-doomsday="true"] main [class*="bg-gray-"],
-[data-doomsday="true"] main [class*="bg-blue-50"],
-[data-doomsday="true"] main [class*="bg-blue-100"],
-[data-doomsday="true"] main [class*="bg-indigo-50"],
-[data-doomsday="true"] main [class*="bg-amber-50"],
-[data-doomsday="true"] main [class*="bg-rose-50"] {
+[data-doomsday="true"] main [class*="bg-white"]:not(.banner-overlay):not([data-allow-gradient="true"]),
+[data-doomsday="true"] main [class*="bg-slate-"]:not(.banner-overlay):not([data-allow-gradient="true"]),
+[data-doomsday="true"] main [class*="bg-gray-"]:not(.banner-overlay):not([data-allow-gradient="true"]),
+[data-doomsday="true"] main [class*="bg-blue-50"]:not(.banner-overlay):not([data-allow-gradient="true"]),
+[data-doomsday="true"] main [class*="bg-blue-100"]:not(.banner-overlay):not([data-allow-gradient="true"]),
+[data-doomsday="true"] main [class*="bg-indigo-50"]:not(.banner-overlay):not([data-allow-gradient="true"]),
+[data-doomsday="true"] main [class*="bg-amber-50"]:not(.banner-overlay):not([data-allow-gradient="true"]),
+[data-doomsday="true"] main [class*="bg-rose-50"]:not(.banner-overlay):not([data-allow-gradient="true"]) {
   background-color: #07110d !important;
   background-image: none !important;
   border-color: rgba(52, 211, 153, 0.22) !important;
 }
 
-[data-doomsday="true"] main [class*="bg-gradient-to-"] {
+[data-doomsday="true"] main [class*="bg-gradient-to-"]:not(.banner-overlay):not([data-allow-gradient="true"]) {
   background-color: #07110d !important;
   background-image: none !important;
+}
+
+/* ── Explicit support for image banners and photographic gradient overlays ── */
+[data-doomsday="true"] main .banner-overlay,
+[data-doomsday="true"] main [data-allow-gradient="true"] {
+  background-color: transparent !important;
+  background-image: linear-gradient(to top, rgba(2, 6, 23, 0.8) 0%, rgba(2, 6, 23, 0.15) 50%, transparent 100%) !important;
+  pointer-events: none;
 }
 
 [data-doomsday="true"] main input:not([type="checkbox"]):not([type="radio"]),
@@ -269,6 +277,22 @@ img, video, canvas {
 [data-doomsday="true"] main select option {
   background: #07110d;
   color: #f0fdf4;
+}
+
+/* ── Ensure all select dropdown options are high-contrast and readable in all themes ── */
+select option {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+[data-doomsday="true"] select {
+  background-color: #030712 !important;
+  color: #ffffff !important;
+}
+
+[data-doomsday="true"] select option {
+  background-color: #030712 !important;
+  color: #ffffff !important;
 }
 
 /* The selected Support priority needs a saturated, readable state rather than

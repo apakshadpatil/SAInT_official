@@ -1,4 +1,4 @@
-import { doc, setDoc, getDocs, collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, getDocs, collection, query, orderBy, limit, getCountFromServer } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { VisitorInteraction, VisitorStatsOverview, UserProfile } from '../types';
 
@@ -136,19 +136,49 @@ export async function trackVisitorPageView(profile?: UserProfile | null): Promis
   }
 }
 
-/** A lightweight live count for the public landing-page statistic. */
-export function subscribeTotalVisitCount(callback: (total: number) => void) {
-  return onSnapshot(collection(db, 'visitor_interactions'), (snapshot) => {
-    // Total visits must never visually decrease during a transient offline/cache
-    // snapshot. Store the highest confirmed count and only advance it.
-    const total = Math.max(snapshot.size, getStoredTotalVisitCount());
-    storeTotalVisitCount(total);
-    callback(total);
-  }, (error) => {
-    // Keep the last confirmed statistic on screen during reconnects; do not
-    // overwrite it with zero when Firestore temporarily cannot respond.
-    console.warn('Live visit statistic is temporarily unavailable', error);
+let cachedVisitCount: number | null = null;
+let lastVisitCountFetch = 0;
+const VISIT_COUNT_CACHE_TTL = 120_000; // 2 minutes
+
+export async function fetchTotalVisitCount(): Promise<number> {
+  const now = Date.now();
+  if (cachedVisitCount !== null && now - lastVisitCountFetch < VISIT_COUNT_CACHE_TTL) {
+    return cachedVisitCount;
+  }
+
+  try {
+    if (db) {
+      const coll = collection(db, 'visitor_interactions');
+      const snap = await getCountFromServer(coll);
+      const serverCount = snap.data().count;
+      const total = Math.max(serverCount, getStoredTotalVisitCount());
+      storeTotalVisitCount(total);
+      cachedVisitCount = total;
+      lastVisitCountFetch = now;
+      return total;
+    }
+  } catch (err) {
+    console.debug('Failed to get server visit count, using stored count:', err);
+  }
+
+  return getStoredTotalVisitCount();
+}
+
+/** A lightweight count reader for the public landing-page statistic. */
+export function subscribeTotalVisitCount(callback: (total: number) => void): () => void {
+  // 1. Immediately invoke with stored count for instantaneous render
+  const initial = getStoredTotalVisitCount();
+  callback(initial);
+
+  // 2. Fetch authoritative count from server once without streaming document payloads
+  let active = true;
+  fetchTotalVisitCount().then((total) => {
+    if (active) callback(total);
   });
+
+  return () => {
+    active = false;
+  };
 }
 
 // Generate seeded initial visitor history if database is clean

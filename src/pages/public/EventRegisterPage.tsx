@@ -22,13 +22,18 @@ import {
   Check,
   AlertCircle,
   Maximize2,
+  Phone,
+  User,
 } from 'lucide-react';
 import { createRuleAgreement, getEvent, subscribeEventById, registerParticipantForEvent } from '../../services/eventService';
 import type { EventRecord, EventTicket, TicketTier, TeamMemberDetail } from '../../types';
+import { getEventCoordinators } from '../../types';
 import { downloadTicketImage } from '../../utils/ticketDownload';
 import { uploadFileToSupabase } from '../../utils/supabase';
+import { compressPaymentProof } from '../../utils/imageOptimizer';
 import { isValidRegistrationUrl } from '../../utils/urlValidation';
 import QRCode from 'qrcode';
+import EventBanner from '../../components/ui/EventBanner';
 
 export default function EventRegisterPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -38,7 +43,6 @@ export default function EventRegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [ticket, setTicket] = useState<EventTicket | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
-  const [showParticipantPrompt, setShowParticipantPrompt] = useState(false);
 
   // Form Fields
   const [teamName, setTeamName] = useState('');
@@ -47,9 +51,38 @@ export default function EventRegisterPage() {
   const [phone, setPhone] = useState('');
   const [college, setCollege] = useState('');
   const [department, setDepartment] = useState('');
+  const [year, setYear] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [selectedDomainId, setSelectedDomainId] = useState('');
   const [customResponses, setCustomResponses] = useState<Record<string, string>>({});
+
+  // Dynamic Registration Fields Configuration Helper
+  const getEffectiveRegistrationFields = (evt: EventRecord | null) => ({
+    name: {
+      enabled: evt?.registrationFields?.name?.enabled ?? true,
+      required: evt?.registrationFields?.name?.required ?? true,
+    },
+    email: {
+      enabled: evt?.registrationFields?.email?.enabled ?? true,
+      required: evt?.registrationFields?.email?.required ?? false,
+    },
+    phone: {
+      enabled: evt?.registrationFields?.phone?.enabled ?? true,
+      required: evt?.registrationFields?.phone?.required ?? false,
+    },
+    college: {
+      enabled: evt?.registrationFields?.college?.enabled ?? true,
+      required: evt?.registrationFields?.college?.required ?? false,
+    },
+    department: {
+      enabled: evt?.registrationFields?.department?.enabled ?? true,
+      required: evt?.registrationFields?.department?.required ?? false,
+    },
+    year: {
+      enabled: evt?.registrationFields?.year?.enabled ?? false,
+      required: evt?.registrationFields?.year?.required ?? false,
+    },
+  });
 
   // Payment Proof Fields
   const [paymentScreenshotFile, setPaymentScreenshotFile] = useState<File | null>(null);
@@ -92,7 +125,7 @@ export default function EventRegisterPage() {
               prev.length > 0
                 ? prev
                 : Array.from({ length: initialTeamSize - 1 }, () => ({
-                  name: '', email: '', phone: '', college: '', department: '',
+                  name: '', email: '', phone: '', college: '', department: '', year: '',
                 }))
             );
           }
@@ -103,7 +136,7 @@ export default function EventRegisterPage() {
             prev.length > 0
               ? prev
               : Array.from({ length: minMembers }, () => ({
-                name: '', email: '', phone: '', college: '', department: '',
+                name: '', email: '', phone: '', college: '', department: '', year: '',
               }))
           );
         }
@@ -165,7 +198,7 @@ export default function EventRegisterPage() {
       setTeamMembers((prev) => {
         const next: TeamMemberDetail[] = [];
         for (let i = 0; i < size - 1; i++) {
-          next.push(prev[i] || { name: '', email: '', phone: '', college: '', department: '' });
+          next.push(prev[i] || { name: '', email: '', phone: '', college: '', department: '', year: '' });
         }
         return next;
       });
@@ -181,7 +214,7 @@ export default function EventRegisterPage() {
       return;
     }
     setError('');
-    setTeamMembers((prev) => [...prev, { name: '', email: '', phone: '', college: '', department: '' }]);
+    setTeamMembers((prev) => [...prev, { name: '', email: '', phone: '', college: '', department: '', year: '' }]);
   };
 
   const handleRemoveTeammate = (index: number) => {
@@ -255,9 +288,50 @@ export default function EventRegisterPage() {
       setError('Registration is closed for this event.');
       return;
     }
+
+    const regFieldsConfig = getEffectiveRegistrationFields(event);
     const guestName = name.trim();
-    if (!guestName) {
+
+    // 1. Dynamic validation for primary registrant
+    if (regFieldsConfig.name.enabled && regFieldsConfig.name.required && !guestName) {
       setError('Please enter your full name.');
+      return;
+    }
+
+    if (regFieldsConfig.email.enabled) {
+      if (regFieldsConfig.email.required && !email.trim()) {
+        setError('Please enter your email address.');
+        return;
+      }
+      if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        setError('Please enter a valid email address.');
+        return;
+      }
+    }
+
+    if (regFieldsConfig.phone.enabled) {
+      if (regFieldsConfig.phone.required && !phone.trim()) {
+        setError('Please enter your phone number.');
+        return;
+      }
+      if (phone.trim() && phone.trim().replace(/[^0-9]/g, '').length < 10) {
+        setError('Please enter a valid 10-digit phone number.');
+        return;
+      }
+    }
+
+    if (regFieldsConfig.college.enabled && regFieldsConfig.college.required && !college.trim()) {
+      setError('Please enter your college / institute name.');
+      return;
+    }
+
+    if (regFieldsConfig.department.enabled && regFieldsConfig.department.required && !department.trim()) {
+      setError('Please enter your department / branch.');
+      return;
+    }
+
+    if (regFieldsConfig.year.enabled && regFieldsConfig.year.required && !year.trim()) {
+      setError('Please select your year of study.');
       return;
     }
 
@@ -266,11 +340,51 @@ export default function EventRegisterPage() {
       return;
     }
 
-    // Validate team members if in team mode
+    // 2. Dynamic validation for team members if in team mode
     if (isTeam && teamMembers.length > 0) {
       for (let i = 0; i < teamMembers.length; i++) {
-        if (!teamMembers[i].name?.trim()) {
-          setError(`Please enter the full name for Teammate #${i + 2}`);
+        const m = teamMembers[i];
+        const num = i + 2;
+
+        if (regFieldsConfig.name.enabled && regFieldsConfig.name.required && !m.name?.trim()) {
+          setError(`Please enter the full name for Teammate #${num}.`);
+          return;
+        }
+
+        if (regFieldsConfig.email.enabled) {
+          if (regFieldsConfig.email.required && !m.email?.trim()) {
+            setError(`Please enter the email address for Teammate #${num}.`);
+            return;
+          }
+          if (m.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email.trim())) {
+            setError(`Please enter a valid email address for Teammate #${num}.`);
+            return;
+          }
+        }
+
+        if (regFieldsConfig.phone.enabled) {
+          if (regFieldsConfig.phone.required && !m.phone?.trim()) {
+            setError(`Please enter the phone number for Teammate #${num}.`);
+            return;
+          }
+          if (m.phone?.trim() && m.phone.trim().replace(/[^0-9]/g, '').length < 10) {
+            setError(`Please enter a valid 10-digit phone number for Teammate #${num}.`);
+            return;
+          }
+        }
+
+        if (regFieldsConfig.college.enabled && regFieldsConfig.college.required && !m.college?.trim()) {
+          setError(`Please enter the college name for Teammate #${num}.`);
+          return;
+        }
+
+        if (regFieldsConfig.department.enabled && regFieldsConfig.department.required && !m.department?.trim()) {
+          setError(`Please enter the department for Teammate #${num}.`);
+          return;
+        }
+
+        if (regFieldsConfig.year.enabled && regFieldsConfig.year.required && !m.year?.trim()) {
+          setError(`Please select the year of study for Teammate #${num}.`);
           return;
         }
       }
@@ -313,9 +427,10 @@ export default function EventRegisterPage() {
 
       if (showPaymentQR && paymentScreenshotFile) {
         try {
-          const cleanFileName = paymentScreenshotFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+          const fileToUpload = await compressPaymentProof(paymentScreenshotFile);
+          const cleanFileName = fileToUpload.name.replace(/[^a-zA-Z0-9.-]/g, '_');
           uploadedScreenshotPath = `payment_proofs/${eventId}/${Date.now()}_${cleanFileName}`;
-          uploadedScreenshotUrl = await uploadFileToSupabase(paymentScreenshotFile, uploadedScreenshotPath);
+          uploadedScreenshotUrl = await uploadFileToSupabase(fileToUpload, uploadedScreenshotPath);
         } catch (uploadErr: any) {
           console.error('[Payment] Screenshot upload failed:', uploadErr);
           setError(uploadErr.message || 'Failed to upload payment screenshot. Please check your connection and try again.');
@@ -334,6 +449,7 @@ export default function EventRegisterPage() {
         : isTeam
           ? 1 + teamMembers.length
           : 1;
+
       console.log('[Ticket] Starting registration...', { eventId });
       const { ticket: newTicket } = await registerParticipantForEvent(eventId, {
         name: guestName,
@@ -341,6 +457,7 @@ export default function EventRegisterPage() {
         phone: phone.trim() || undefined,
         college: college.trim() || undefined,
         department: department.trim() || undefined,
+        year: year.trim() || undefined,
         domain: event.participantDomains?.find((domain) => domain.id === selectedDomainId)?.name,
         domainId: selectedDomainId || undefined,
         tierId: selectedTier?.id,
@@ -355,7 +472,6 @@ export default function EventRegisterPage() {
         registrationSource: 'public',
       });
 
-
       console.log('[Ticket] Registration successful:', newTicket);
 
       console.log('[Ticket] Generating QR...');
@@ -364,7 +480,6 @@ export default function EventRegisterPage() {
 
       setTicket(newTicket);
       setQrDataUrl(qr);
-      setShowParticipantPrompt(true);
       sessionStorage.setItem(ticketStorageKey, JSON.stringify(newTicket));
       sessionStorage.setItem('saint-participant-registration', JSON.stringify({
         name: newTicket.guestName,
@@ -372,10 +487,10 @@ export default function EventRegisterPage() {
       }));
 
       console.log('[Ticket] Starting ticket download...');
-
-      await downloadTicketImage(event, newTicket, qr);
-
-      console.log('[Ticket] Ticket download completed');
+      downloadTicketImage(event, newTicket, qr).catch((dlErr) => {
+        console.warn('[Ticket] Auto download failed or skipped by browser:', dlErr);
+      });
+      console.log('[Ticket] Ticket download triggered');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {
@@ -453,34 +568,43 @@ export default function EventRegisterPage() {
     (f) => !f.tierId || f.tierId === selectedTierId
   );
 
-  const registrationBanner = event.registrationBannerUrl || event.imageURL;
+  const regFieldsConfig = getEffectiveRegistrationFields(event);
+  const coordinators = getEventCoordinators(event);
+
+  const registrationBanner =
+    (event.registrationBannerUrl && event.registrationBannerUrl.trim()) ||
+    (event.imageURL && event.imageURL.trim()) ||
+    ((event as any).bannerUrl && (event as any).bannerUrl.trim()) ||
+    ((event as any).imageUrl && (event as any).imageUrl.trim()) ||
+    null;
   const hasCustomBg = Boolean(event.registrationBackgroundUrl);
 
   return (
-    <div
-      className="min-h-screen relative overflow-hidden"
-      style={
-        hasCustomBg
-          ? {
-              backgroundImage: `url(${event.registrationBackgroundUrl})`,
-              backgroundPosition: 'center',
-              backgroundSize: 'cover',
-              backgroundAttachment: 'fixed',
-            }
-          : { background: 'linear-gradient(135deg,#020617 0%,#0f172a 50%,#1e1b4b 100%)' }
-      }
-    >
-      {/* If custom background is set, apply readability scrim overlay; otherwise standard blobs */}
-      {hasCustomBg ? (
-        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-[2px]" aria-hidden="true" />
-      ) : (
-        /* Large animated background blobs */
-        <div className="public-bg-blobs" aria-hidden="true">
-          <div className="public-liquid-blob-1" style={{ opacity: 0.7 }} />
-          <div className="public-liquid-blob-2" style={{ opacity: 0.65 }} />
-          <div className="public-liquid-blob-3" style={{ opacity: 0.55 }} />
-        </div>
-      )}
+    <div className="min-h-screen relative text-white">
+      {/* ── Fixed Full-Viewport Background Layer ────────────────────── */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
+        {hasCustomBg ? (
+          <>
+            <div
+              className="w-full h-full bg-cover bg-center bg-no-repeat"
+              style={{ backgroundImage: `url(${event.registrationBackgroundUrl})` }}
+            />
+            {/* Scrim overlay for high-contrast accessibility & readability */}
+            <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-[3px]" />
+          </>
+        ) : (
+          <div
+            className="w-full h-full"
+            style={{ background: 'linear-gradient(135deg,#020617 0%,#0f172a 50%,#1e1b4b 100%)' }}
+          >
+            <div className="public-bg-blobs">
+              <div className="public-liquid-blob-1" style={{ opacity: 0.7 }} />
+              <div className="public-liquid-blob-2" style={{ opacity: 0.65 }} />
+              <div className="public-liquid-blob-3" style={{ opacity: 0.55 }} />
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="relative z-10 max-w-3xl mx-auto px-4 py-8 sm:py-12 min-h-screen flex flex-col justify-center">
         <div className="flex items-center justify-between gap-4 mb-6">
@@ -499,21 +623,21 @@ export default function EventRegisterPage() {
         </div>
 
         {/* Event Header Banner */}
-        <div className="rounded-2xl overflow-hidden mb-6 shadow-2xl" style={{
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.08)',
+        <div className="rounded-2xl overflow-hidden mb-6 shadow-2xl border" style={{
+          background: 'rgba(15, 23, 42, 0.65)',
+          borderColor: 'rgba(255, 255, 255, 0.1)',
           backdropFilter: 'blur(24px)',
         }}>
-          {registrationBanner && (
-            <div className="w-full h-44 sm:h-56 md:h-64 overflow-hidden relative bg-slate-900">
-              <img
-                src={registrationBanner}
-                alt={event.title}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
-            </div>
-          )}
+          {/* Standardized 16:9 Banner Image Container */}
+          <EventBanner
+            src={registrationBanner}
+            alt={event.title}
+            aspectRatioClass="aspect-video"
+            maxHeightClass="max-h-[380px]"
+            showOverlay={false}
+            priority={true}
+            fallbackIcon={<Ticket className="w-10 h-10 text-emerald-400/40" />}
+          />
           <div className="p-5 sm:p-7">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold mb-3"
               style={{ background: 'rgba(59,130,246,0.15)', color: '#93c5fd', border: '1px solid rgba(59,130,246,0.3)' }}>
@@ -534,69 +658,264 @@ export default function EventRegisterPage() {
                 {event.location}, {event.venue}
               </div>
             </div>
+
+            {/* Event Coordinators / Contact Persons */}
+            {coordinators.length > 0 && (
+              <div className="mt-5 pt-4 border-t border-white/10">
+                <span className="text-xs font-semibold text-slate-400 block mb-2.5">
+                  {coordinators.length === 1 ? 'Event Coordinator' : 'Event Coordinators'}
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {coordinators.map((coord, idx) => {
+                    const cleanPhone = coord.phone.trim();
+                    const dialUrl = `tel:${cleanPhone.replace(/\s+/g, '')}`;
+
+                    return (
+                      <div
+                        key={coord.id || idx}
+                        className="flex items-center justify-between gap-2.5 p-2.5 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/20 transition-all"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="text-xs sm:text-sm font-bold text-white truncate block">
+                              {coord.name}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-400 block pl-5">
+                            {cleanPhone}
+                          </span>
+                        </div>
+                        <a
+                          href={dialUrl}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 hover:border-emerald-500/50 transition-all shrink-0 cursor-pointer"
+                          title={`Call ${coord.name}`}
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>Call</span>
+                        </a>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {ticket ? (
-          /* Confirmation & Ticket View */
-          <div className="rounded-2xl p-6 sm:p-8 text-center space-y-6 animate-fade-in-up" style={{
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(59,130,246,0.3)',
-            backdropFilter: 'blur(24px)',
+          /* ── Dedicated Registration Success State ─────────────────────── */
+          <div className="rounded-3xl p-6 sm:p-9 text-center space-y-7 animate-fade-in-up shadow-2xl" style={{
+            background: 'rgba(15, 23, 42, 0.75)',
+            border: '1px solid rgba(59, 130, 246, 0.4)',
+            backdropFilter: 'blur(28px)',
           }}>
-            <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto"
-              style={{ background: 'rgba(16,185,129,0.15)', border: '2px solid rgba(16,185,129,0.4)' }}>
-              <CheckCircle className="w-8 h-8 text-emerald-400" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-white mb-1">Registration Confirmed!</h2>
-              <p className="text-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                Welcome, <strong className="text-white">{ticket.guestName}</strong>!
-                {ticket.tierName && <span> ({ticket.tierName})</span>} Your digital entry pass has been generated.
-              </p>
-            </div>
-
-            <div className="inline-block p-4 bg-white rounded-2xl shadow-2xl">
-              <img src={qrDataUrl} alt="Your Ticket QR" className="w-52 h-52 block" />
-            </div>
-
-            <div className="rounded-xl px-5 py-3 text-sm max-w-md mx-auto" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div className="flex items-center justify-between">
-                <span style={{ color: 'rgba(255,255,255,0.5)' }}>Pass Number:</span>
-                <span className="text-white font-mono font-bold">{ticket.ticketNumber}</span>
+            {/* Header: Registration Successful */}
+            <div className="space-y-3">
+              <div
+                className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20 animate-scale-in"
+                style={{ background: 'rgba(16, 185, 129, 0.15)', border: '2px solid rgba(16, 185, 129, 0.5)' }}
+              >
+                <CheckCircle className="w-9 h-9 text-emerald-400" />
               </div>
+
+              <div>
+                <span className="text-xs font-bold uppercase tracking-widest text-emerald-400 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 inline-block mb-2">
+                  Pass Confirmed &amp; Issued
+                </span>
+                <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
+                  Registration Successful!
+                </h2>
+                <p className="text-sm sm:text-base mt-2 max-w-lg mx-auto leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                  Welcome aboard, <strong className="text-white font-bold">{ticket.guestName}</strong>!
+                  {ticket.tierName && <span className="text-blue-300"> ({ticket.tierName})</span>} Your official entry ticket pass is ready.
+                </p>
+              </div>
+            </div>
+
+            {/* QR Code Presentation Box */}
+            <div className="inline-block p-4 sm:p-5 bg-white rounded-3xl shadow-2xl transition-transform hover:scale-[1.02] duration-300">
+              <img src={qrDataUrl} alt="Your Official Ticket QR" className="w-56 h-56 sm:w-64 sm:h-64 block" />
+            </div>
+
+            {/* Ticket Info Card */}
+            <div
+              className="rounded-2xl px-5 py-4 text-sm max-w-md mx-auto space-y-2 text-left"
+              style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)' }}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs uppercase font-semibold text-slate-400 tracking-wider">Pass Number:</span>
+                <span className="text-white font-mono font-bold text-base px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/30">
+                  {ticket.ticketNumber}
+                </span>
+              </div>
+              {ticket.guestEmail && (
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-white/5">
+                  <span className="text-slate-400">Email:</span>
+                  <span className="text-slate-200 font-medium">{ticket.guestEmail}</span>
+                </div>
+              )}
+              {ticket.teamName && (
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-white/5">
+                  <span className="text-slate-400">Team:</span>
+                  <span className="text-blue-300 font-semibold">{ticket.teamName}</span>
+                </div>
+              )}
               {ticket.teamMembers && ticket.teamMembers.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-white/10 text-left text-xs text-slate-300">
-                  <span className="font-semibold text-blue-400">Teammates: </span>
-                  {ticket.teamMembers.map((m) => m.name).join(', ')}
+                <div className="pt-2 border-t border-white/10 text-xs">
+                  <span className="font-semibold text-blue-400 block mb-1">Registered Teammates:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ticket.teamMembers.map((m, idx) => (
+                      <span key={idx} className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-300 text-[11px]">
+                        {m.name}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
 
-            <button
-              onClick={handleDownload}
-              className="inline-flex items-center gap-2 px-8 py-3 rounded-xl font-semibold text-white text-sm transition-all hover:opacity-90 active:scale-[0.98] cursor-pointer"
-              style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)', border: 'none' }}
-            >
-              <Download className="w-4 h-4" />
-              Download Ticket Image
-            </button>
+            {/* Download Ticket Action Button */}
+            <div>
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-2xl font-bold text-white text-sm transition-all hover:opacity-95 hover:shadow-xl active:scale-[0.98] cursor-pointer shadow-lg shadow-blue-500/25 w-full sm:w-auto"
+                style={{ background: 'linear-gradient(135deg, #2563eb, #1d4ed8)' }}
+              >
+                <Download className="w-4 h-4" />
+                Download Ticket Image (.PNG)
+              </button>
+              <p className="text-xs mt-2" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                Present this QR code on your phone at event check-in.
+              </p>
+            </div>
 
-            <div className="mt-5 rounded-2xl border border-violet-400/30 bg-violet-500/10 p-4 max-w-md mx-auto text-left">
-              <div className="flex items-start gap-3">
-                <Sparkles className="w-5 h-5 text-violet-300 mt-0.5 shrink-0" />
-                <div><p className="font-bold text-sm text-white">Keep this pass in your participant space</p><p className="text-xs mt-1 text-violet-100/75">Create a username and password to view this QR, download the ticket, and manage your team anytime.</p><div className="flex gap-3 mt-3"><button onClick={() => navigate('/participant-auth?mode=signup')} className="text-xs font-bold text-violet-200 hover:text-white">Create account →</button><button onClick={() => navigate('/participant-auth')} className="text-xs font-bold text-blue-200 hover:text-white">I already have one →</button></div></div>
+            {/* ── DOOMSDAY THEME PARTICIPANT PORTAL ONBOARDING CARD ───────────── */}
+            <div
+              className="rounded-3xl border border-blue-500/35 p-6 sm:p-7 max-w-xl mx-auto text-left shadow-2xl space-y-4"
+              style={{
+                background: 'linear-gradient(145deg, rgba(15, 23, 42, 0.95) 0%, rgba(2, 6, 23, 0.98) 100%)',
+                boxShadow: '0 12px 36px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+              }}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/10">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-mono font-bold tracking-widest uppercase text-blue-400 block">
+                      Participant Portal Access
+                    </span>
+                    <h3 className="text-base sm:text-lg font-bold text-white leading-tight">
+                      Link &amp; Secure Pass #{ticket.ticketNumber}
+                    </h3>
+                  </div>
+                </div>
+                <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                  1-Click Setup
+                </span>
+              </div>
+
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Create a participant account to claim this pass. Your username and password keep your tickets, schedule, and team credentials organized in one central portal:
+              </p>
+
+              {/* Value proposition chips */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-300">
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-white/[0.03] border border-white/5">
+                  <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>Instant offline QR pass access</span>
+                </div>
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-white/[0.03] border border-white/5">
+                  <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>Real-time round &amp; venue alerts</span>
+                </div>
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-white/[0.03] border border-white/5">
+                  <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>Manage team members &amp; roster</span>
+                </div>
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-white/[0.03] border border-white/5">
+                  <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>Verified completion certificates</span>
+                </div>
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => navigate('/participant-auth?mode=signup')}
+                  className="flex-1 py-3 px-6 rounded-xl font-bold text-white text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-blue-600/30 hover:shadow-blue-600/50 active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, #2563eb, #1d4ed8)' }}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Create Participant Account →
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/participant-auth')}
+                  className="py-3 px-4 rounded-xl font-semibold text-slate-300 hover:text-white text-xs sm:text-sm border border-slate-700/80 hover:bg-white/5 transition-all text-center cursor-pointer"
+                >
+                  Already have an account? Sign in
+                </button>
               </div>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-3 max-w-md mx-auto">
-              {event.rulebookUrl && <a href={event.rulebookUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-400/40 px-4 py-3 text-sm font-semibold text-blue-200 hover:bg-blue-500/10"><ExternalLink className="w-4 h-4" /> Access Rulebook</a>}
-              {event.whatsappGroupUrl && <a href={event.whatsappGroupUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-400/40 px-4 py-3 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/10"><MessageCircle className="w-4 h-4" /> Join WhatsApp Group</a>}
-            </div>
+            {/* ── OFFICIAL WHATSAPP GROUP CTA (POST-REGISTRATION ONLY) ────── */}
+            {event.whatsappGroupUrl && (
+              <div
+                className="rounded-3xl border border-emerald-500/35 p-5 sm:p-6 max-w-xl mx-auto text-left shadow-2xl space-y-4"
+                style={{
+                  background: 'linear-gradient(145deg, rgba(6, 78, 59, 0.25) 0%, rgba(2, 44, 34, 0.35) 100%)',
+                  boxShadow: '0 12px 32px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(52, 211, 153, 0.15)',
+                }}
+              >
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
+                      <MessageCircle className="w-6 h-6 text-emerald-400" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-mono font-bold tracking-widest uppercase text-emerald-400 block">
+                        Official Communications
+                      </span>
+                      <h4 className="text-base sm:text-lg font-bold text-white">
+                        Join the Official WhatsApp Group
+                      </h4>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        Get live round schedules, venue announcements, and mentor updates.
+                      </p>
+                    </div>
+                  </div>
+                  <a
+                    href={event.whatsappGroupUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto px-5 py-3 rounded-xl font-bold text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    Join WhatsApp Group
+                  </a>
+                </div>
+              </div>
+            )}
 
-            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
-              Show this QR code at the event gate for instant check-in.
-            </p>
+            {/* Rulebook Download (if available) */}
+            {event.rulebookUrl && (
+              <div className="text-center pt-1">
+                <a
+                  href={event.rulebookUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 text-xs font-semibold text-blue-300 hover:text-white px-4 py-2 rounded-xl border border-blue-500/20 hover:bg-blue-500/10 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  View &amp; Download Official Event Rulebook
+                </a>
+              </div>
+            )}
           </div>
         ) : registrationClosed ? (
           <div className="rounded-2xl p-6 text-center" style={{
@@ -611,8 +930,13 @@ export default function EventRegisterPage() {
           </div>
         ) : !rulesAccepted ? (
           <div className="rounded-2xl p-6 sm:p-8 space-y-6 animate-fade-in-up" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(59,130,246,0.3)', backdropFilter: 'blur(24px)' }}>
-            <div className="text-center"><div className="w-14 h-14 rounded-2xl bg-blue-500/15 text-blue-300 grid place-items-center mx-auto mb-3"><ClipboardCheck className="w-7 h-7" /></div><h2 className="text-2xl font-bold text-white">Rules & terms</h2><p className="text-sm mt-2 text-slate-300">Review and accept every term to unlock the registration form.</p></div>
-            <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">{(event.rules?.length ? event.rules : ['Provide accurate registration details and carry your QR pass to the event.', 'Follow the event schedule, venue instructions, and organizing team directions.', 'Maintain respectful conduct throughout the event.']).map((rule, index) => <div key={index} className="flex gap-3 text-sm text-slate-200"><span className="shrink-0 text-blue-300 font-bold">{index + 1}.</span><p>{rule}</p></div>)}</div>
+            <div className="text-center"><div className="w-14 h-14 rounded-2xl bg-blue-500/15 text-blue-300 grid place-items-center mx-auto mb-3"><ClipboardCheck className="w-7 h-7" /></div><h2 className="text-2xl font-bold text-white">Rules &amp; Terms</h2><p className="text-sm mt-2 text-slate-300">Review and accept the complete terms to unlock the registration form.</p></div>
+            <div className="rounded-2xl border border-white/10 bg-slate-950/80 p-5 max-h-96 overflow-y-auto text-sm text-slate-200 whitespace-pre-wrap leading-relaxed shadow-inner">
+              {event.registrationTerms?.trim() ||
+                (event.rules?.length
+                  ? event.rules.join('\n\n')
+                  : `1. Provide accurate registration details and carry your official QR entry pass to the event venue.\n2. Follow the published event schedule, venue safety instructions, and directions from the organizing committee.\n3. Maintain respectful and professional conduct throughout all event sessions, workshops, and competitions.\n4. The organizing team reserves the right to revoke passes or disqualify participants for misconduct or rule violations.`)}
+            </div>
             {event.rulebookUrl && <a href={event.rulebookUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-blue-300 hover:text-blue-200"><ExternalLink className="w-4 h-4" /> Read the full rulebook</a>}
             {error && <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
             <div className="grid sm:grid-cols-2 gap-4"><label className="text-sm text-slate-300">Full name<input value={termsName} onChange={(item) => setTermsName(item.target.value)} className="w-full mt-1.5 px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400" placeholder="Your full name" /></label><label className="text-sm text-slate-300">Email address<input type="email" value={termsEmail} onChange={(item) => setTermsEmail(item.target.value)} className="w-full mt-1.5 px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400" placeholder="you@example.com" /></label></div>
@@ -704,72 +1028,109 @@ export default function EventRegisterPage() {
                 <p className="text-xs font-bold uppercase tracking-wider text-blue-400">
                   {selectedTier && selectedTier.teamSize > 1 ? 'Team Leader Details' : 'Attendee Information'}</p>
 
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                    Full Name *
-                  </label>
-                  <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    placeholder="Enter your full name"
-                    className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
-                  />
+                {regFieldsConfig.name.enabled && (
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                      Full Name {regFieldsConfig.name.required ? '*' : '(Optional)'}
+                    </label>
+                    <input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required={regFieldsConfig.name.required}
+                      placeholder="Enter your full name"
+                      className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
+                    />
+                  </div>
+                )}
+
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {regFieldsConfig.email.enabled && (
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                        Email Address {regFieldsConfig.email.required ? '*' : '(Optional)'}
+                      </label>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required={regFieldsConfig.email.required}
+                        placeholder="your@email.com"
+                        className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
+                      />
+                    </div>
+                  )}
+
+                  {regFieldsConfig.phone.enabled && (
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                        Phone Number {regFieldsConfig.phone.required ? '*' : '(Optional)'}
+                      </label>
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        required={regFieldsConfig.phone.required}
+                        placeholder="10-digit number"
+                        className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                      Email Address (Optional)
-                    </label>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="your@email.com"
-                      className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
-                    />
-                  </div>
+                  {regFieldsConfig.college.enabled && (
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                        College {regFieldsConfig.college.required ? '*' : '(Optional)'}
+                      </label>
+                      <input
+                        value={college}
+                        onChange={(e) => setCollege(e.target.value)}
+                        required={regFieldsConfig.college.required}
+                        placeholder="e.g. JSPM RSCOE"
+                        className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
+                      />
+                    </div>
+                  )}
 
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                      Phone Number (Optional)
-                    </label>
-                    <input
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="10-digit number"
-                      className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
-                    />
-                  </div>
+                  {regFieldsConfig.department.enabled && (
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                        Department {regFieldsConfig.department.required ? '*' : '(Optional)'}
+                      </label>
+                      <input
+                        value={department}
+                        onChange={(e) => setDepartment(e.target.value)}
+                        required={regFieldsConfig.department.required}
+                        placeholder="e.g. IT"
+                        className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
+                      />
+                    </div>
+                  )}
                 </div>
 
-                <div className="grid sm:grid-cols-2 gap-3">
+                {regFieldsConfig.year.enabled && (
                   <div>
                     <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                      College (Optional)
+                      Year of Study {regFieldsConfig.year.required ? '*' : '(Optional)'}
                     </label>
-                    <input
-                      value={college}
-                      onChange={(e) => setCollege(e.target.value)}
-                      placeholder="e.g. JSPM RSCOE"
-                      className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
-                    />
+                    <select
+                      value={year}
+                      onChange={(e) => setYear(e.target.value)}
+                      required={regFieldsConfig.year.required}
+                      className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-slate-900 border border-white/15 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 cursor-pointer"
+                      style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
+                    >
+                      <option value="" style={{ backgroundColor: '#0f172a', color: '#94a3b8' }}>Select Year of Study</option>
+                      <option value="1st Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>1st Year</option>
+                      <option value="2nd Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>2nd Year</option>
+                      <option value="3rd Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>3rd Year</option>
+                      <option value="4th Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>4th Year</option>
+                      <option value="Postgraduate" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>Postgraduate (PG)</option>
+                      <option value="Other" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>Other</option>
+                    </select>
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                      Department (Optional)
-                    </label>
-                    <input
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      placeholder="e.g. IT"
-                      className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
-                    />
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Teammates fields for Team Events */}
@@ -807,70 +1168,107 @@ export default function EventRegisterPage() {
                         )}
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-semibold mb-1 text-slate-300">
-                          Full Name *
-                        </label>
-                        <input
-                          value={member.name}
-                          onChange={(e) => handleTeamMemberChange(idx, 'name', e.target.value)}
-                          required
-                          placeholder={`Full name for teammate #${idx + 2}`}
-                          className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
-                        />
+                      {regFieldsConfig.name.enabled && (
+                        <div>
+                          <label className="block text-xs font-semibold mb-1 text-slate-300">
+                            Full Name {regFieldsConfig.name.required ? '*' : '(Optional)'}
+                          </label>
+                          <input
+                            value={member.name}
+                            onChange={(e) => handleTeamMemberChange(idx, 'name', e.target.value)}
+                            required={regFieldsConfig.name.required}
+                            placeholder={`Full name for teammate #${idx + 2}`}
+                            className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
+                          />
+                        </div>
+                      )}
+
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        {regFieldsConfig.email.enabled && (
+                          <div>
+                            <label className="block text-xs font-semibold mb-1 text-slate-300">
+                              Email Address {regFieldsConfig.email.required ? '*' : '(Optional)'}
+                            </label>
+                            <input
+                              type="email"
+                              value={member.email || ''}
+                              onChange={(e) => handleTeamMemberChange(idx, 'email', e.target.value)}
+                              required={regFieldsConfig.email.required}
+                              placeholder="teammate@email.com"
+                              className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
+                            />
+                          </div>
+                        )}
+                        {regFieldsConfig.phone.enabled && (
+                          <div>
+                            <label className="block text-xs font-semibold mb-1 text-slate-300">
+                              Phone Number {regFieldsConfig.phone.required ? '*' : '(Optional)'}
+                            </label>
+                            <input
+                              type="tel"
+                              value={member.phone || ''}
+                              onChange={(e) => handleTeamMemberChange(idx, 'phone', e.target.value)}
+                              required={regFieldsConfig.phone.required}
+                              placeholder="10-digit number"
+                              className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
+                            />
+                          </div>
+                        )}
                       </div>
 
                       <div className="grid sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-semibold mb-1 text-slate-300">
-                            Email Address (Optional)
-                          </label>
-                          <input
-                            type="email"
-                            value={member.email || ''}
-                            onChange={(e) => handleTeamMemberChange(idx, 'email', e.target.value)}
-                            placeholder="teammate@email.com"
-                            className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold mb-1 text-slate-300">
-                            Phone Number (Optional)
-                          </label>
-                          <input
-                            type="tel"
-                            value={member.phone || ''}
-                            onChange={(e) => handleTeamMemberChange(idx, 'phone', e.target.value)}
-                            placeholder="10-digit number"
-                            className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
-                          />
-                        </div>
+                        {regFieldsConfig.college.enabled && (
+                          <div>
+                            <label className="block text-xs font-semibold mb-1 text-slate-300">
+                              College {regFieldsConfig.college.required ? '*' : '(Optional)'}
+                            </label>
+                            <input
+                              value={member.college || ''}
+                              onChange={(e) => handleTeamMemberChange(idx, 'college', e.target.value)}
+                              required={regFieldsConfig.college.required}
+                              placeholder="e.g. JSPM RSCOE"
+                              className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
+                            />
+                          </div>
+                        )}
+                        {regFieldsConfig.department.enabled && (
+                          <div>
+                            <label className="block text-xs font-semibold mb-1 text-slate-300">
+                              Department {regFieldsConfig.department.required ? '*' : '(Optional)'}
+                            </label>
+                            <input
+                              value={member.department || ''}
+                              onChange={(e) => handleTeamMemberChange(idx, 'department', e.target.value)}
+                              required={regFieldsConfig.department.required}
+                              placeholder="e.g. IT"
+                              className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
+                            />
+                          </div>
+                        )}
                       </div>
 
-                      <div className="grid sm:grid-cols-2 gap-3">
+                      {regFieldsConfig.year.enabled && (
                         <div>
                           <label className="block text-xs font-semibold mb-1 text-slate-300">
-                            College (Optional)
+                            Year of Study {regFieldsConfig.year.required ? '*' : '(Optional)'}
                           </label>
-                          <input
-                            value={member.college || ''}
-                            onChange={(e) => handleTeamMemberChange(idx, 'college', e.target.value)}
-                            placeholder="e.g. JSPM RSCOE"
-                            className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
-                          />
+                          <select
+                            value={member.year || ''}
+                            onChange={(e) => handleTeamMemberChange(idx, 'year', e.target.value)}
+                            required={regFieldsConfig.year.required}
+                            className="w-full px-4 py-2 rounded-xl text-xs text-white bg-slate-900 border border-white/15 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 cursor-pointer"
+                            style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
+                          >
+                            <option value="" style={{ backgroundColor: '#0f172a', color: '#94a3b8' }}>Select Year of Study</option>
+                            <option value="1st Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>1st Year</option>
+                            <option value="2nd Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>2nd Year</option>
+                            <option value="3rd Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>3rd Year</option>
+                            <option value="4th Year" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>4th Year</option>
+                            <option value="Postgraduate" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>Postgraduate (PG)</option>
+                            <option value="Other" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>Other</option>
+                          </select>
                         </div>
-                        <div>
-                          <label className="block text-xs font-semibold mb-1 text-slate-300">
-                            Department (Optional)
-                          </label>
-                          <input
-                            value={member.department || ''}
-                            onChange={(e) => handleTeamMemberChange(idx, 'department', e.target.value)}
-                            placeholder="e.g. IT"
-                            className="w-full px-4 py-2 rounded-xl text-xs text-white bg-white/5 border border-white/10 outline-none focus:border-indigo-400"
-                          />
-                        </div>
-                      </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1049,11 +1447,12 @@ export default function EventRegisterPage() {
                   <select
                     value={selectedDomainId}
                     onChange={(e) => setSelectedDomainId(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
+                    className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-slate-900 border border-white/15 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 cursor-pointer"
+                    style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
                   >
-                    <option value="" style={{ color: '#111827' }}>Choose a domain</option>
+                    <option value="" style={{ backgroundColor: '#0f172a', color: '#94a3b8' }}>Choose a domain</option>
                     {event.participantDomains?.map((domain) => (
-                      <option key={domain.id} value={domain.id} style={{ color: '#111827' }}>{domain.name}</option>
+                      <option key={domain.id} value={domain.id} style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>{domain.name}</option>
                     ))}
                   </select>
                 </div>
@@ -1082,11 +1481,12 @@ export default function EventRegisterPage() {
                           value={customResponses[field.id] || ''}
                           onChange={(e) => setCustomResponses({ ...customResponses, [field.id]: e.target.value })}
                           required={field.required}
-                          className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 border border-white/10 outline-none focus:border-blue-400"
+                          className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-slate-900 border border-white/15 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 cursor-pointer"
+                          style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
                         >
-                          <option value="" style={{ color: '#111827' }}>Select {field.label}...</option>
+                          <option value="" style={{ backgroundColor: '#0f172a', color: '#94a3b8' }}>Select {field.label}...</option>
                           {field.options?.map((opt) => (
-                            <option key={opt} value={opt} style={{ color: '#111827' }}>{opt}</option>
+                            <option key={opt} value={opt} style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>{opt}</option>
                           ))}
                         </select>
                       ) : (
@@ -1170,19 +1570,7 @@ export default function EventRegisterPage() {
         </div>
       )}
 
-      {showParticipantPrompt && ticket && (
-        <div className="participant-modal-backdrop" role="dialog" aria-modal="true" aria-label="Create participant account">
-          <div className="participant-qr-modal text-center">
-            <button className="participant-modal-close" onClick={() => setShowParticipantPrompt(false)} aria-label="Close"><X className="w-4 h-4" /></button>
-            <Sparkles className="mx-auto text-violet-600 w-7 h-7" />
-            <p className="mt-3">YOUR PASS IS READY</p>
-            <h2>Make it yours.</h2>
-            <span className="!block !mb-6">Create a participant username and password to keep <b>{ticket.ticketNumber}</b>, its QR code, and your team details in one place.</span>
-            <button className="participant-submit" onClick={() => navigate('/participant-auth?mode=signup')}>Create participant account</button>
-            <button onClick={() => navigate('/participant-auth')} className="mt-4 text-xs font-bold text-violet-700 hover:text-violet-900">I already have an account</button>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

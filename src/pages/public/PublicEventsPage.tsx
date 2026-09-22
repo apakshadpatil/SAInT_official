@@ -5,10 +5,10 @@ import {
   LayoutGrid, List, Sparkles, Zap, Filter,
   Users, ExternalLink
 } from 'lucide-react';
-import { subscribePublishedUpcomingEvents } from '../../services/eventService';
-import { subscribeSiteSettings } from '../../services/applicationService';
+import { getPublishedUpcomingEvents } from '../../services/eventService';
 import type { EventRecord } from '../../types';
 import { EventCardSkeleton } from '../../components/ui/skeleton';
+import EventBanner from '../../components/ui/EventBanner';
 
 export default function PublicEventsPage() {
   const [events, setEvents] = useState<EventRecord[]>([]);
@@ -17,29 +17,43 @@ export default function PublicEventsPage() {
   const [viewMode, setViewMode] = useState<'tile' | 'detailed'>('tile');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
+  // Synchronous read from DOM / localStorage synced by PublicLayout
   const [doomsdayMode, setDoomsdayMode] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('saint_doomsday_mode') === 'true';
+      if (typeof document !== 'undefined') {
+        return document.documentElement.getAttribute('data-doomsday') === 'true' || localStorage.getItem('saint_doomsday_mode') === 'true';
+      }
+      return false;
     } catch {
       return false;
     }
   });
 
   useEffect(() => {
-    const unsub = subscribeSiteSettings((settings) => {
-      const active = Boolean(settings?.doomsdayMode);
-      setDoomsdayMode(active);
+    const observer = new MutationObserver(() => {
+      setDoomsdayMode(document.documentElement.getAttribute('data-doomsday') === 'true');
     });
-    return () => unsub();
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-doomsday'] });
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
     setLoading(true);
-    const unsub = subscribePublishedUpcomingEvents((list) => {
-      setEvents(list);
-      setLoading(false);
-    });
-    return () => unsub();
+    getPublishedUpcomingEvents()
+      .then((list) => {
+        if (isMounted) {
+          setEvents(list);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load published upcoming events', err);
+        if (isMounted) setLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const categories = useMemo(() => {
@@ -200,20 +214,18 @@ export default function PublicEventsPage() {
                 style={doomsdayMode ? { background: '#0a0d0a', borderColor: 'rgba(16,185,129,0.25)' } : { background: '#ffffff', borderColor: '#e2e8f0' }}
               >
                 {/* Image Banner */}
-                <Link to={`/events/${event.id}`} className="block">
-                  {event.imageURL ? (
-                    <div className="h-44 overflow-hidden relative shrink-0">
-                      <img src={event.imageURL} alt={event.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                      {event.category && (
-                        <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md" style={doomsdayMode ? { background: 'rgba(0,0,0,0.8)', color: '#34d399', border: '1px solid rgba(16,185,129,0.4)' } : { background: 'rgba(255,255,255,0.9)', color: '#2563eb' }}>
-                          {event.category}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="h-44 flex items-center justify-center shrink-0" style={doomsdayMode ? { background: 'linear-gradient(135deg, #064e3b, #022c22)' } : { background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}>
-                      <Calendar className="w-12 h-12 text-white/30" />
-                    </div>
+                <Link to={`/events/${event.id}`} className="block relative overflow-hidden">
+                  <EventBanner
+                    src={event.imageURL || event.registrationBannerUrl}
+                    alt={event.title}
+                    aspectRatioClass="aspect-video"
+                    imgClassName="group-hover:scale-105 transition-transform duration-500"
+                    doomsdayMode={doomsdayMode}
+                  />
+                  {event.category && (
+                    <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md z-10" style={doomsdayMode ? { background: 'rgba(0,0,0,0.8)', color: '#34d399', border: '1px solid rgba(16,185,129,0.4)' } : { background: 'rgba(255,255,255,0.9)', color: '#2563eb' }}>
+                      {event.category}
+                    </span>
                   )}
                 </Link>
 
@@ -298,8 +310,15 @@ export default function PublicEventsPage() {
                 {/* Left Side: Thumbnail & Meta */}
                 <div className="flex items-start gap-4 flex-1">
                   <Link to={`/events/${event.id}`} className="w-24 h-24 sm:w-28 sm:h-28 rounded-lg overflow-hidden shrink-0 border block group" style={{ borderColor: doomsdayMode ? 'rgba(16,185,129,0.3)' : '#e2e8f0' }}>
-                    {event.imageURL ? (
-                      <img src={event.imageURL} alt={event.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                    {(event.imageURL || event.registrationBannerUrl) ? (
+                      <img
+                        src={(event.imageURL || event.registrationBannerUrl)!}
+                        alt={event.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center" style={doomsdayMode ? { background: '#064e3b' } : { background: '#2563eb' }}>
                         <Calendar className="w-8 h-8 text-white/40" />
