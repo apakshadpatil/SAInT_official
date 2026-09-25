@@ -272,9 +272,9 @@ export default function EventRegisterPage() {
       return;
     }
 
-    const maxSizeBytes = 5 * 1024 * 1024;
+    const maxSizeBytes = 15 * 1024 * 1024;
     if (file.size > maxSizeBytes) {
-      setPaymentScreenshotError('Screenshot file size must be less than 5MB.');
+      setPaymentScreenshotError('Screenshot file size must be less than 15 MB.');
       return;
     }
 
@@ -1343,7 +1343,7 @@ export default function EventRegisterPage() {
                       <label className="block text-xs font-bold uppercase tracking-wider text-blue-300">
                         Upload Payment Screenshot *
                       </label>
-                      <span className="text-[11px] text-slate-400">JPG, PNG, WebP (Max 5MB)</span>
+                      <span className="text-[11px] text-slate-400">JPG, PNG, WebP (15 MB maximum)</span>
                     </div>
 
                     {!paymentScreenshotPreview ? (

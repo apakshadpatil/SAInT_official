@@ -242,8 +242,8 @@ export default function TeamRegistrationTab({
       setPaymentScreenshotError('Please upload a valid image (JPG, PNG, or WebP).');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      setPaymentScreenshotError('Image size must be less than 5 MB.');
+    if (file.size > 15 * 1024 * 1024) {
+      setPaymentScreenshotError('Image size must be less than 15 MB.');
       return;
     }
     setPaymentScreenshotFile(file);
@@ -1879,7 +1879,7 @@ export default function TeamRegistrationTab({
                       <label className="flex flex-col items-center justify-center p-4 border border-dashed border-slate-700 hover:border-blue-500/50 rounded-2xl cursor-pointer bg-slate-950/40 hover:bg-slate-900/50 transition-colors">
                         <UploadCloud className="w-6 h-6 text-slate-400 mb-1" />
                         <span className="text-xs font-semibold text-slate-300">Click to upload payment screenshot</span>
-                        <span className="text-[10px] text-slate-500">JPG, PNG, or WebP up to 5 MB</span>
+                        <span className="text-[10px] text-slate-500">JPG, PNG, or WebP up to 15 MB</span>
                         <input
                           type="file"
                           accept="image/jpeg,image/png,image/webp"
