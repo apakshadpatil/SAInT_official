@@ -121,7 +121,7 @@ export default function AboutPage() {
               {committeeMembers.map(({ position, user }) => (
                 <article key={`${position.id}-${user.uid}`} className="text-center">
                   {user.photoURL ? (
-                    <img src={user.photoURL} alt={user.displayName} className="w-24 h-24 rounded-full mx-auto mb-4 object-cover ring-4 ring-blue-100 transition-transform duration-300 hover:scale-105" />
+                    <img src={user.photoURL} alt={user.displayName} loading="lazy" decoding="async" className="w-24 h-24 rounded-full mx-auto mb-4 object-cover ring-4 ring-blue-100 transition-transform duration-300 hover:scale-105" />
                   ) : (
                     <div className="w-24 h-24 rounded-full mx-auto mb-4 bg-gradient-to-br from-blue-500 to-indigo-700 text-white flex items-center justify-center text-3xl font-bold ring-4 ring-blue-100 transition-transform duration-300 hover:scale-105">
                       {user.displayName?.[0]?.toUpperCase() || 'S'}
@@ -154,7 +154,7 @@ export default function AboutPage() {
             <div className="rounded-3xl p-8 text-white bg-gradient-to-br from-blue-600 to-indigo-900 shadow-xl">
               <div className="flex items-center gap-6">
                 <div className="w-32 h-32 shrink-0 rounded-full overflow-hidden ring-4 ring-white/20">
-                  <img src="/images/faculty-coordinator.jpg" alt="Faculty Coordinator" className="w-full h-full object-cover" />
+                  <img src="/images/faculty-coordinator.jpg" alt="Faculty Coordinator" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 </div>
                 <div>
                   <p className="text-blue-200 text-sm font-semibold uppercase tracking-wider mb-2">Faculty Coordinator</p>

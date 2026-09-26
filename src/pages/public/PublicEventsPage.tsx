@@ -314,6 +314,8 @@ export default function PublicEventsPage() {
                       <img
                         src={(event.imageURL || event.registrationBannerUrl)!}
                         alt={event.title}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                         onError={(e) => {
                           e.currentTarget.style.display = 'none';
