@@ -578,6 +578,11 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
       teamMembers: ticket.teamMembers,
       teamName: ticket.teamName || ticket.customResponses?.teamName || ticket.customResponses?.['Team Name'],
       transactionId: ticket.transactionId,
+      paymentStatus: ticket.paymentStatus,
+      paymentScreenshotUrl: ticket.paymentScreenshotUrl,
+      paymentScreenshotPath: ticket.paymentScreenshotPath,
+      paymentVerifiedAt: ticket.paymentVerifiedAt,
+      paymentVerifiedBy: ticket.paymentVerifiedBy,
       customResponses: ticket.customResponses,
       arrived: Boolean(ticket.checkedIn),
       arrivedAt: ticket.checkedInAt,
@@ -596,6 +601,11 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
         batchName: existing.batchName,
         certificateUrl: existing.certificateUrl,
         certificateSent: existing.certificateSent,
+        paymentStatus: ticket.paymentStatus ?? existing.paymentStatus,
+        paymentScreenshotUrl: ticket.paymentScreenshotUrl || existing.paymentScreenshotUrl,
+        paymentScreenshotPath: ticket.paymentScreenshotPath || existing.paymentScreenshotPath,
+        paymentVerifiedAt: ticket.paymentVerifiedAt || existing.paymentVerifiedAt,
+        paymentVerifiedBy: ticket.paymentVerifiedBy || existing.paymentVerifiedBy,
       });
     } else if (participantMap.has(key)) {
       const existing = participantMap.get(key)!;
@@ -607,6 +617,11 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
         batchName: existing.batchName,
         certificateUrl: existing.certificateUrl,
         certificateSent: existing.certificateSent,
+        paymentStatus: ticket.paymentStatus ?? existing.paymentStatus,
+        paymentScreenshotUrl: ticket.paymentScreenshotUrl || existing.paymentScreenshotUrl,
+        paymentScreenshotPath: ticket.paymentScreenshotPath || existing.paymentScreenshotPath,
+        paymentVerifiedAt: ticket.paymentVerifiedAt || existing.paymentVerifiedAt,
+        paymentVerifiedBy: ticket.paymentVerifiedBy || existing.paymentVerifiedBy,
       });
     } else {
       participantMap.set(key, participant);
@@ -689,6 +704,11 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
         tierId: existing?.tierId || ticket.tierId,
         tierName: existing?.tierName || ticket.tierName,
         transactionId: existing?.transactionId || ticket.transactionId,
+        paymentStatus: ticket.paymentStatus ?? existing?.paymentStatus,
+        paymentScreenshotUrl: ticket.paymentScreenshotUrl || existing?.paymentScreenshotUrl,
+        paymentScreenshotPath: ticket.paymentScreenshotPath || existing?.paymentScreenshotPath,
+        paymentVerifiedAt: ticket.paymentVerifiedAt || existing?.paymentVerifiedAt,
+        paymentVerifiedBy: ticket.paymentVerifiedBy || existing?.paymentVerifiedBy,
         customResponses: existing?.customResponses || ticket.customResponses,
         registeredAt: existing?.registeredAt || ticket.createdAt,
         arrived: existing?.arrived ?? Boolean(ticket.checkedIn),
@@ -779,6 +799,22 @@ export async function updateParticipantTicketTeam(
     })),
   }));
   invalidateCache(`tickets:${eventId}`);
+}
+
+export async function updateTicketPaymentProof(
+  eventId: string,
+  ticketId: string,
+  paymentScreenshotUrl: string,
+  paymentScreenshotPath?: string
+) {
+  const ref = doc(db, 'events', eventId, 'tickets', ticketId);
+  await updateDoc(ref, removeUndefinedFields({
+    paymentScreenshotUrl,
+    paymentScreenshotPath: paymentScreenshotPath || null,
+  }));
+
+  invalidateCache(`tickets:${eventId}`);
+  invalidateCache(`event:${eventId}`);
 }
 
 export async function getPublishedUpcomingEvents(forceRefresh = false): Promise<EventRecord[]> {

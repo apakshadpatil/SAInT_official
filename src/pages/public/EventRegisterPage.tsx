@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Calendar,
@@ -24,6 +24,7 @@ import {
   Maximize2,
   Phone,
   User,
+  RefreshCw,
 } from 'lucide-react';
 import { createRuleAgreement, getEvent, subscribeEventById, registerParticipantForEvent } from '../../services/eventService';
 import type { EventRecord, EventTicket, TicketTier, TeamMemberDetail } from '../../types';
@@ -94,7 +95,10 @@ export default function EventRegisterPage() {
   const [paymentScreenshotFile, setPaymentScreenshotFile] = useState<File | null>(null);
   const [paymentScreenshotPreview, setPaymentScreenshotPreview] = useState<string | null>(null);
   const [paymentScreenshotError, setPaymentScreenshotError] = useState<string>('');
+  const [paymentProofWarning, setPaymentProofWarning] = useState<string | null>(null);
   const [showFullQRModal, setShowFullQRModal] = useState(false);
+  const [qrImageStatus, setQrImageStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [qrRetryCount, setQrRetryCount] = useState(0);
 
   // Tier selection & Team members
   const [selectedTierId, setSelectedTierId] = useState<string>('');
@@ -245,6 +249,34 @@ export default function EventRegisterPage() {
   const isTeam = Boolean(event?.teamsEnabled) || Boolean(selectedTier && selectedTier.teamSize > 1);
   const activePaymentQR = selectedTier?.paymentQRUrl || event?.paymentQRUrl;
   const showPaymentQR = Boolean(event?.ticketingEnabled && activePaymentQR);
+
+  useEffect(() => {
+    setQrImageStatus('loading');
+    setQrRetryCount(0);
+  }, [activePaymentQR]);
+
+  const handleQrError = () => {
+    if (qrRetryCount < 2) {
+      setTimeout(() => {
+        setQrRetryCount((prev) => prev + 1);
+        setQrImageStatus('loading');
+      }, 800);
+    } else {
+      setQrImageStatus('error');
+    }
+  };
+
+  const handleManualQrRetry = () => {
+    setQrRetryCount((c) => c + 1);
+    setQrImageStatus('loading');
+  };
+
+  const currentQrSrc = useMemo(() => {
+    if (!activePaymentQR) return '';
+    if (qrRetryCount === 0) return activePaymentQR;
+    const sep = activePaymentQR.includes('?') ? '&' : '?';
+    return `${activePaymentQR}${sep}retry=${qrRetryCount}`;
+  }, [activePaymentQR, qrRetryCount]);
 
   // Clean up screenshot object URL on unmount or change
   useEffect(() => {
@@ -430,6 +462,7 @@ export default function EventRegisterPage() {
     try {
       let uploadedScreenshotUrl: string | undefined = undefined;
       let uploadedScreenshotPath: string | undefined = undefined;
+      let uploadFailedNotice: string | null = null;
 
       if (showPaymentQR && paymentScreenshotFile) {
         try {
@@ -438,10 +471,8 @@ export default function EventRegisterPage() {
           uploadedScreenshotPath = `payment_proofs/${eventId}/${Date.now()}_${cleanFileName}`;
           uploadedScreenshotUrl = await uploadFileToSupabase(fileToUpload, uploadedScreenshotPath);
         } catch (uploadErr: any) {
-          console.error('[Payment] Screenshot upload failed:', uploadErr);
-          setError(uploadErr.message || 'Failed to upload payment screenshot. Please check your connection and try again.');
-          setSubmitting(false);
-          return;
+          console.warn('[Payment] Screenshot upload failed, continuing registration with UTR:', uploadErr);
+          uploadFailedNotice = "Payment proof couldn't be uploaded right now. You can continue registration, but you'll need to upload the payment proof later.";
         }
       }
 
@@ -482,7 +513,9 @@ export default function EventRegisterPage() {
 
       console.log('[Ticket] Generating QR...');
       const qr = await QRCode.toDataURL(newTicket.qrPayload, { width: 300, margin: 2 });
-      console.log('[Ticket] QR generated');
+      if (uploadFailedNotice) {
+        setPaymentProofWarning(uploadFailedNotice);
+      }
 
       setTicket(newTicket);
       setQrDataUrl(qr);
@@ -738,6 +771,30 @@ export default function EventRegisterPage() {
                 </p>
               </div>
             </div>
+
+            {/* Payment Proof Upload Notice (if upload failed during registration) */}
+            {paymentProofWarning && (
+              <div
+                className="max-w-md mx-auto p-4 rounded-2xl text-left flex items-start gap-3 animate-fade-in"
+                style={{
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                }}
+              >
+                <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-xs font-bold text-amber-300 uppercase tracking-wide">
+                    Payment Proof Notice
+                  </p>
+                  <p className="text-xs text-amber-200/90 leading-relaxed">
+                    {paymentProofWarning}
+                  </p>
+                  <p className="text-[11px] text-amber-300/70 pt-1">
+                    You can upload the screenshot anytime from your Participant Dashboard under Registered Passes.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* QR Code Presentation Box */}
             <div className="inline-block p-4 sm:p-5 bg-white rounded-3xl shadow-2xl transition-transform hover:scale-[1.02] duration-300">
@@ -1315,21 +1372,83 @@ export default function EventRegisterPage() {
                   {/* High-Resolution Noticeably Larger QR Display */}
                   <div className="flex flex-col items-center justify-center">
                     <div className="relative group p-3.5 sm:p-4 bg-white rounded-2xl shadow-2xl border border-blue-200/50 flex flex-col items-center max-w-full">
+                      {/* Loading State Skeleton */}
+                      {qrImageStatus === 'loading' && (
+                        <div className="w-64 h-64 sm:w-72 sm:h-72 md:w-80 md:h-80 max-w-full aspect-square rounded-xl bg-slate-50 flex flex-col items-center justify-center p-6 text-center animate-pulse">
+                          <Loader2 className="w-9 h-9 text-blue-600 animate-spin mb-3" />
+                          <p className="text-xs font-bold text-slate-800 tracking-wide uppercase">Loading Payment QR</p>
+                          <p className="text-[11px] text-slate-500 mt-1">Fetching UPI code...</p>
+                        </div>
+                      )}
+
+                      {/* Error State */}
+                      {qrImageStatus === 'error' && (
+                        <div className="w-64 h-64 sm:w-72 sm:h-72 md:w-80 md:h-80 max-w-full aspect-square rounded-xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center p-5 text-center">
+                          <AlertCircle className="w-9 h-9 text-amber-500 mb-2" />
+                          <p className="text-xs font-bold text-slate-800">QR Code Failed to Display</p>
+                          <p className="text-[11px] text-slate-500 mt-1 mb-3.5 max-w-[210px] leading-relaxed">
+                            Ad-blocker or network restrictions might be blocking the storage image.
+                          </p>
+                          <div className="flex flex-wrap gap-2 justify-center">
+                            <button
+                              type="button"
+                              onClick={handleManualQrRetry}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" /> Retry
+                            </button>
+                            {activePaymentQR && (
+                              <a
+                                href={activePaymentQR}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold transition-colors"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" /> Open QR
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       <img
-                        src={activePaymentQR}
+                        src={currentQrSrc}
                         alt="UPI Payment QR Code"
-                        className="w-64 h-64 sm:w-72 sm:h-72 md:w-80 md:h-80 max-w-full aspect-square rounded-xl object-contain"
+                        loading="eager"
+                        decoding="async"
+                        onLoad={() => setQrImageStatus('loaded')}
+                        onError={handleQrError}
+                        className={`w-64 h-64 sm:w-72 sm:h-72 md:w-80 md:h-80 max-w-full aspect-square rounded-xl object-contain ${
+                          qrImageStatus === 'loaded' ? 'block' : 'hidden'
+                        }`}
                         style={{ imageRendering: 'crisp-edges' }}
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowFullQRModal(true)}
-                        className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
-                        title="Enlarge QR Code"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                        <span>Tap to enlarge QR</span>
-                      </button>
+
+                      {qrImageStatus === 'loaded' && (
+                        <div className="mt-2.5 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowFullQRModal(true)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+                            title="Enlarge QR Code"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5" />
+                            <span>Tap to enlarge QR</span>
+                          </button>
+                          {activePaymentQR && (
+                            <a
+                              href={activePaymentQR}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                              title="Open QR in new tab"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>Open QR</span>
+                            </a>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <span className="text-[11px] text-slate-400 mt-2 flex items-center gap-1">
                       <Check className="w-3 h-3 text-emerald-400" />
@@ -1562,13 +1681,71 @@ export default function EventRegisterPage() {
               )}
             </div>
             <div className="p-4 bg-white rounded-2xl inline-block shadow-xl mx-auto max-w-full">
+              {/* Loading State Skeleton */}
+              {qrImageStatus === 'loading' && (
+                <div className="w-72 h-72 sm:w-80 sm:h-80 max-w-full aspect-square rounded-xl bg-slate-50 flex flex-col items-center justify-center p-6 text-center animate-pulse">
+                  <Loader2 className="w-9 h-9 text-blue-600 animate-spin mb-3" />
+                  <p className="text-xs font-bold text-slate-800 tracking-wide uppercase">Loading Payment QR</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Fetching UPI code...</p>
+                </div>
+              )}
+
+              {/* Error State */}
+              {qrImageStatus === 'error' && (
+                <div className="w-72 h-72 sm:w-80 sm:h-80 max-w-full aspect-square rounded-xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center p-5 text-center">
+                  <AlertCircle className="w-9 h-9 text-amber-500 mb-2" />
+                  <p className="text-xs font-bold text-slate-800">QR Code Failed to Display</p>
+                  <p className="text-[11px] text-slate-500 mt-1 mb-3.5 max-w-[210px] leading-relaxed">
+                    Ad-blocker or network restrictions might be blocking the storage image.
+                  </p>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    <button
+                      type="button"
+                      onClick={handleManualQrRetry}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" /> Retry
+                    </button>
+                    {activePaymentQR && (
+                      <a
+                        href={activePaymentQR}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> Open QR
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <img
-                src={activePaymentQR}
+                src={currentQrSrc}
                 alt="Enlarged Payment QR"
-                className="w-72 h-72 sm:w-80 sm:h-80 max-w-full aspect-square object-contain mx-auto"
+                loading="eager"
+                decoding="async"
+                onLoad={() => setQrImageStatus('loaded')}
+                onError={handleQrError}
+                className={`w-72 h-72 sm:w-80 sm:h-80 max-w-full aspect-square object-contain mx-auto ${
+                  qrImageStatus === 'loaded' ? 'block' : 'hidden'
+                }`}
                 style={{ imageRendering: 'crisp-edges' }}
               />
             </div>
+            {activePaymentQR && (
+              <div className="flex items-center justify-center">
+                <a
+                  href={activePaymentQR}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open Direct QR Link</span>
+                </a>
+              </div>
+            )}
             <p className="text-xs text-slate-300">
               Scan with GPay, PhonePe, Paytm, BHIM, or any UPI app. Tap outside or close to return.
             </p>

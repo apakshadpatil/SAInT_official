@@ -23,15 +23,21 @@ import {
   ChevronRight,
   Lock,
   XCircle,
+  UploadCloud,
+  AlertCircle,
+  Loader2,
+  ExternalLink,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { doc, updateDoc, collectionGroup, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase/config';
-import { getEventTickets, getEvents, getEvent, updateParticipantTicketTeam } from '../../services/eventService';
+import { getEventTickets, getEvents, getEvent, updateParticipantTicketTeam, updateTicketPaymentProof } from '../../services/eventService';
 import { logoutUser } from '../../services/authService';
 import { downloadTicketImage } from '../../utils/ticketDownload';
 import { downloadCertificate } from '../../utils/certificateGenerator';
+import { uploadFileToSupabase } from '../../utils/supabase';
+import { compressPaymentProof } from '../../utils/imageOptimizer';
 import type { EventRecord, EventTicket, TeamMemberDetail } from '../../types';
 
 type Registration = { event: EventRecord; ticket: EventTicket };
@@ -77,6 +83,10 @@ export default function ParticipantDashboardPage() {
 
   // Certificate State
   const [downloadingCertId, setDownloadingCertId] = useState<string | null>(null);
+
+  // Payment Proof Upload State
+  const [uploadingProofTicketId, setUploadingProofTicketId] = useState<string | null>(null);
+  const [uploadProofError, setUploadProofError] = useState<{ [ticketId: string]: string }>({});
 
   const contactEmail = (profile?.participantEmail || profile?.email)?.toLowerCase().trim();
 
@@ -222,6 +232,83 @@ export default function ParticipantDashboardPage() {
       await downloadTicketImage(reg.event, reg.ticket, ticketQr);
     } catch (err) {
       console.error('Failed to download ticket image', err);
+    }
+  };
+
+  const handleUploadProofLater = async (reg: Registration, file: File) => {
+    const { event, ticket } = reg;
+    const ticketId = ticket.id;
+
+    setUploadProofError((prev) => ({ ...prev, [ticketId]: '' }));
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      setUploadProofError((prev) => ({
+        ...prev,
+        [ticketId]: 'Please select a valid JPG, PNG, or WebP image.',
+      }));
+      return;
+    }
+
+    const maxBytes = 15 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setUploadProofError((prev) => ({
+        ...prev,
+        [ticketId]: `File size exceeds 15 MB (${(file.size / (1024 * 1024)).toFixed(1)} MB).`,
+      }));
+      return;
+    }
+
+    try {
+      setUploadingProofTicketId(ticketId);
+
+      const compressed = await compressPaymentProof(file);
+      const fileToUpload = compressed instanceof File ? compressed : file;
+
+      const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `payment_proofs/${event.id}/${Date.now()}_${cleanFileName}`;
+      const downloadUrl = await uploadFileToSupabase(fileToUpload, storagePath);
+
+      await updateTicketPaymentProof(event.id, ticketId, downloadUrl, storagePath);
+
+      setRegistrations((prev) =>
+        prev.map((r) => {
+          if (r.ticket.id === ticketId) {
+            return {
+              ...r,
+              ticket: {
+                ...r.ticket,
+                paymentScreenshotUrl: downloadUrl,
+                paymentScreenshotPath: storagePath,
+              },
+            };
+          }
+          return r;
+        })
+      );
+
+      if (activeTicket?.ticket.id === ticketId) {
+        setActiveTicket((prev) =>
+          prev
+            ? {
+                ...prev,
+                ticket: {
+                  ...prev.ticket,
+                  paymentScreenshotUrl: downloadUrl,
+                  paymentScreenshotPath: storagePath,
+                },
+              }
+            : null
+        );
+      }
+    } catch (err: any) {
+      console.error('[ParticipantDashboard] Upload proof failed:', err);
+      setUploadProofError((prev) => ({
+        ...prev,
+        [ticketId]: err.message || 'Failed to upload payment proof. Please check your connection and try again.',
+      }));
+    } finally {
+      setUploadingProofTicketId(null);
     }
   };
 
@@ -619,6 +706,114 @@ export default function ParticipantDashboardPage() {
                           )}
                         </div>
                       </div>
+
+                      {/* Payment Proof Status / Upload Action */}
+                      {!isRevoked && ticket.paymentStatus === 'pending' && !ticket.paymentScreenshotUrl && Boolean(ticket.transactionId) && (
+                        <div
+                          style={{
+                            padding: '0.75rem',
+                            background: 'rgba(245, 158, 11, 0.08)',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.45rem',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.25rem' }}>
+                            <span style={{ color: '#fbbf24', fontSize: '0.72rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <AlertCircle size={13} /> Payment Proof Missing
+                            </span>
+                            <span style={{ color: '#94a3b8', fontSize: '0.68rem', fontFamily: 'monospace' }}>
+                              UTR: {ticket.transactionId}
+                            </span>
+                          </div>
+                          <p style={{ color: '#cbd5e1', fontSize: '0.68rem', margin: 0, lineHeight: 1.35 }}>
+                            Upload your payment screenshot to verify registration.
+                          </p>
+
+                          {uploadProofError[ticket.id] && (
+                            <div style={{ color: '#fca5a5', fontSize: '0.68rem', fontWeight: 600 }}>
+                              {uploadProofError[ticket.id]}
+                            </div>
+                          )}
+
+                          <label
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.45rem',
+                              padding: '0.5rem 0.85rem',
+                              background: uploadingProofTicketId === ticket.id ? '#334155' : 'linear-gradient(135deg, #f59e0b, #d97706)',
+                              color: '#fff',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              borderRadius: '6px',
+                              cursor: uploadingProofTicketId === ticket.id ? 'not-allowed' : 'pointer',
+                              textAlign: 'center',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                            }}
+                          >
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              style={{ display: 'none' }}
+                              disabled={uploadingProofTicketId === ticket.id}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  handleUploadProofLater(reg, file);
+                                }
+                                e.target.value = '';
+                              }}
+                            />
+                            {uploadingProofTicketId === ticket.id ? (
+                              <>
+                                <Loader2 size={13} className="animate-spin" /> Uploading Proof...
+                              </>
+                            ) : (
+                              <>
+                                <UploadCloud size={13} /> Upload Payment Proof
+                              </>
+                            )}
+                          </label>
+                        </div>
+                      )}
+
+                      {ticket.paymentScreenshotUrl && (
+                        <div
+                          style={{
+                            padding: '0.45rem 0.75rem',
+                            background: 'rgba(34, 197, 94, 0.08)',
+                            border: '1px solid rgba(34, 197, 94, 0.22)',
+                            borderRadius: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                          }}
+                        >
+                          <span style={{ color: '#4ade80', fontSize: '0.69rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <CheckCircle2 size={12} /> Payment Proof Attached
+                          </span>
+                          <a
+                            href={ticket.paymentScreenshotUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              color: '#93c5fd',
+                              fontSize: '0.68rem',
+                              fontWeight: 600,
+                              textDecoration: 'none',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                            }}
+                          >
+                            View Proof <ExternalLink size={11} />
+                          </a>
+                        </div>
+                      )}
 
                       {/* Action buttons */}
                       {isRevoked ? (
@@ -1044,6 +1239,71 @@ export default function ParticipantDashboardPage() {
             )}
             <strong>{activeTicket.ticket.ticketNumber}</strong>
             <span>Present this pass to volunteers at the entrance</span>
+
+            {/* Payment Proof Status / Upload within modal */}
+            {activeTicket.ticket.paymentScreenshotUrl ? (
+              <a
+                href={activeTicket.ticket.paymentScreenshotUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  color: '#4ade80',
+                  fontSize: '0.74rem',
+                  fontWeight: 600,
+                  textDecoration: 'underline',
+                }}
+              >
+                <CheckCircle2 size={13} /> View Attached Payment Proof
+              </a>
+            ) : activeTicket.ticket.accessStatus !== 'revoked' && activeTicket.ticket.paymentStatus === 'pending' && Boolean(activeTicket.ticket.transactionId) ? (
+              <div style={{ width: '100%', padding: '0.65rem', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <span style={{ color: '#fbbf24', fontSize: '0.72rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
+                  <AlertCircle size={13} /> Payment Proof Missing
+                </span>
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.45rem',
+                    padding: '0.45rem 0.85rem',
+                    background: uploadingProofTicketId === activeTicket.ticket.id ? '#334155' : 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    color: '#fff',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    cursor: uploadingProofTicketId === activeTicket.ticket.id ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    style={{ display: 'none' }}
+                    disabled={uploadingProofTicketId === activeTicket.ticket.id}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleUploadProofLater(activeTicket, file);
+                      }
+                      e.target.value = '';
+                    }}
+                  />
+                  {uploadingProofTicketId === activeTicket.ticket.id ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" /> Uploading Proof...
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud size={13} /> Upload Payment Proof
+                    </>
+                  )}
+                </label>
+              </div>
+            ) : null}
+
             <button
               type="button"
               className="participant-submit"
