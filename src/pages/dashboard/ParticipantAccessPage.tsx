@@ -7,6 +7,7 @@ import {
   updateParticipantAccessStatus,
   batchUpdateParticipantsAccess,
   updatePaymentVerificationStatus,
+  deleteEventRegistration,
 } from '../../services/eventService';
 import { getParticipantUsers } from '../../services/authService';
 import type { EventRecord, UserProfile, EventTicket } from '../../types';
@@ -35,6 +36,9 @@ import {
   ExternalLink,
   Clock,
   X,
+  Trash2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { TableSkeleton } from '../../components/ui/skeleton';
@@ -105,6 +109,13 @@ export default function ParticipantAccessPage() {
   const [ticketQrDataUrl, setTicketQrDataUrl] = useState<string>('');
   const [downloadingPass, setDownloadingPass] = useState(false);
 
+  // Single Delete Modal & Operations
+  const [deleteModalItem, setDeleteModalItem] = useState<ParticipantItem | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // UTR Copy Feedback
+  const [copiedUtr, setCopiedUtr] = useState<string | null>(null);
+
   // Close modals on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -112,6 +123,7 @@ export default function ParticipantAccessPage() {
         setProofModalItem(null);
         setBulkConfirmAction(null);
         setViewTicketItem(null);
+        setDeleteModalItem(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -574,6 +586,42 @@ export default function ParticipantAccessPage() {
     }
   };
 
+  // Copy UTR to clipboard
+  const handleCopyUtr = (utr: string) => {
+    navigator.clipboard.writeText(utr);
+    setCopiedUtr(utr);
+    setTimeout(() => setCopiedUtr(null), 2000);
+    showToast('Transaction ID copied to clipboard', 'info');
+  };
+
+  // Single Registration Permanent Delete
+  const handleConfirmDelete = async () => {
+    if (!profile || !deleteModalItem) return;
+    const item = deleteModalItem;
+    setDeletingId(item.id);
+
+    try {
+      await deleteEventRegistration(item.eventId, item.ticketId, profile);
+
+      // Optimistically update local participant items
+      setParticipantItems((prev) => prev.filter((i) => i.id !== item.id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+
+      showToast(`Registration for "${item.name}" has been permanently deleted.`, 'success');
+      setDeleteModalItem(null);
+    } catch (err: unknown) {
+      console.error('Failed to delete participant registration:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to delete registration';
+      showToast(msg, 'error');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   // Export CSV
   const exportCSV = () => {
     const headers = [
@@ -795,7 +843,7 @@ export default function ParticipantAccessPage() {
 
       {/* ── Participants Table ── */}
       {loading ? (
-        <TableSkeleton rows={8} cols={8} />
+        <TableSkeleton rows={8} cols={9} />
       ) : filteredItems.length === 0 ? (
         <div className="dash-card p-12 text-center border rounded-2xl space-y-3" style={{ borderColor: 'var(--dash-border)' }}>
           <div className="w-12 h-12 rounded-2xl bg-slate-800 text-slate-400 mx-auto flex items-center justify-center">
@@ -834,6 +882,7 @@ export default function ParticipantAccessPage() {
                   <th scope="col" className="py-3 px-4 font-bold">Username</th>
                   <th scope="col" className="py-3 px-4 font-bold">Email ID</th>
                   <th scope="col" className="py-3 px-4 font-bold">Tickets</th>
+                  <th scope="col" className="py-3 px-4 font-bold">Transaction ID / UTR</th>
                   <th scope="col" className="py-3 px-4 font-bold">Payment Proof</th>
                   <th scope="col" className="py-3 px-4 font-bold">Access Status</th>
                   <th scope="col" className="py-3 px-4 font-bold">Registered Date</th>
@@ -924,42 +973,63 @@ export default function ParticipantAccessPage() {
                         </div>
                       </td>
 
+                      {/* Transaction ID / UTR */}
+                      <td className="py-3 px-4">
+                        {item.transactionId ? (
+                          <div className="flex items-center gap-1.5 flex-nowrap">
+                            <span
+                              className="font-mono text-xs font-semibold text-slate-200 bg-slate-950/80 border border-slate-700/60 px-2 py-1 rounded-lg select-all tracking-wider inline-block whitespace-nowrap"
+                              title={item.transactionId}
+                            >
+                              {item.transactionId}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyUtr(item.transactionId!)}
+                              className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0 cursor-pointer"
+                              title="Copy Transaction ID / UTR"
+                            >
+                              {copiedUtr === item.transactionId ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 text-xs italic">—</span>
+                        )}
+                      </td>
+
                       {/* Payment Proof */}
                       <td className="py-3 px-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {item.paymentStatus === 'verified' ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                                <CheckCircle2 className="w-3 h-3" /> Verified
-                              </span>
-                            ) : item.paymentStatus === 'rejected' ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
-                                <XCircle className="w-3 h-3" /> Rejected
-                              </span>
-                            ) : item.paymentStatus === 'pending' ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                                <Clock className="w-3 h-3" /> Pending
-                              </span>
-                            ) : null}
-
-                            {item.paymentScreenshotUrl ? (
-                              <button
-                                type="button"
-                                onClick={() => setProofModalItem(item)}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-400/30 transition-colors cursor-pointer"
-                                title="Preview Payment Proof"
-                              >
-                                <Eye className="w-3 h-3" /> Preview
-                              </button>
-                            ) : (
-                              <span className="text-[11px] text-slate-500">Not uploaded</span>
-                            )}
-                          </div>
-                          {item.transactionId ? (
-                            <div className="text-[10px] font-mono text-slate-300 truncate max-w-[130px]" title={item.transactionId}>
-                              UTR: {item.transactionId}
-                            </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {item.paymentStatus === 'verified' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                              <CheckCircle2 className="w-3 h-3" /> Verified
+                            </span>
+                          ) : item.paymentStatus === 'rejected' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                              <XCircle className="w-3 h-3" /> Rejected
+                            </span>
+                          ) : item.paymentStatus === 'pending' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                              <Clock className="w-3 h-3" /> Pending
+                            </span>
                           ) : null}
+
+                          {item.paymentScreenshotUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => setProofModalItem(item)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-400/30 transition-colors cursor-pointer"
+                              title="Preview Payment Proof"
+                            >
+                              <Eye className="w-3 h-3" /> Preview
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-500">Not uploaded</span>
+                          )}
                         </div>
                       </td>
 
@@ -979,31 +1049,43 @@ export default function ParticipantAccessPage() {
                       </td>
 
                       {/* Registration Date */}
-                      <td className="py-3 px-4 text-[11px] text-slate-400">
+                      <td className="py-3 px-4 text-[11px] text-slate-400 whitespace-nowrap">
                         {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '—'}
                       </td>
 
-                      {/* Action Button */}
+                      {/* Action Buttons */}
                       <td className="py-3 px-4 text-right">
-                        {item.accessStatus === 'granted' ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          {item.accessStatus === 'granted' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAccess(item)}
+                              disabled={isProcessing}
+                              className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
+                            >
+                              {isProcessing ? 'Updating...' : 'Revoke Access'}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAccess(item)}
+                              disabled={isProcessing}
+                              className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
+                            >
+                              {isProcessing ? 'Updating...' : 'Grant Access'}
+                            </button>
+                          )}
+
                           <button
                             type="button"
-                            onClick={() => handleToggleAccess(item)}
+                            onClick={() => setDeleteModalItem(item)}
                             disabled={isProcessing}
-                            className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
+                            className="p-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/30 transition-all disabled:opacity-50 cursor-pointer"
+                            title="Delete Registration (Test/Fake)"
                           >
-                            {isProcessing ? 'Updating...' : 'Revoke Access'}
+                            <Trash2 className="w-4 h-4" />
                           </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleToggleAccess(item)}
-                            disabled={isProcessing}
-                            className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
-                          >
-                            {isProcessing ? 'Updating...' : 'Grant Access'}
-                          </button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1057,6 +1139,115 @@ export default function ParticipantAccessPage() {
           </div>
         </div>
       )}
+
+      {/* ── Single Delete Confirmation Dialog ── */}
+      {deleteModalItem && (() => {
+        const isTeamReg = Boolean(
+          deleteModalItem.teamName ||
+          deleteModalItem.ticketObj?.teamName ||
+          (deleteModalItem.ticketObj?.teamMembers && deleteModalItem.ticketObj.teamMembers.length > 0)
+        );
+        const teamMembersCount = deleteModalItem.ticketObj?.teamMembers?.length || 0;
+        const totalTeamMembers = 1 + teamMembersCount;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+            <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-red-500/30 p-6 shadow-2xl space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 border border-red-500/30">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Delete Registration</h3>
+                  <p className="text-xs text-red-400 mt-0.5">Permanent &amp; Irreversible Action</p>
+                </div>
+              </div>
+
+              <p className="text-sm text-slate-300">
+                Are you sure you want to permanently delete the registration for{' '}
+                <strong className="text-white font-bold">{deleteModalItem.name}</strong>?
+              </p>
+
+              {/* Registration Details Breakdown */}
+              <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Event:</span>
+                  <span className="text-white font-medium truncate max-w-[200px]" title={deleteModalItem.eventName}>
+                    {deleteModalItem.eventName}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Pass / Ticket ID:</span>
+                  <span className="font-mono text-amber-400 font-semibold">{deleteModalItem.ticketNumber}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Email:</span>
+                  <span className="font-mono text-slate-300 truncate max-w-[200px]">{deleteModalItem.email}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Registration Type:</span>
+                  <span className={`font-semibold ${isTeamReg ? 'text-purple-400' : 'text-blue-400'}`}>
+                    {isTeamReg ? 'Team Registration' : 'Individual Pass'}
+                  </span>
+                </div>
+
+                {isTeamReg && (
+                  <div className="pt-2 border-t border-slate-800 space-y-1.5">
+                    {deleteModalItem.teamName && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Team Name:</span>
+                        <span className="text-white font-semibold">{deleteModalItem.teamName}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-amber-400 font-medium">Members to be removed:</span>
+                      <span className="font-bold text-amber-300">
+                        {totalTeamMembers} member{totalTeamMembers === 1 ? '' : 's'} (Lead + {teamMembersCount} teammates)
+                      </span>
+                    </div>
+                    {deleteModalItem.ticketObj?.teamMembers && deleteModalItem.ticketObj.teamMembers.length > 0 && (
+                      <div className="text-[11px] text-slate-400 pt-1">
+                        Teammates: <span className="text-slate-300">{deleteModalItem.ticketObj.teamMembers.map((m) => m.name).join(', ')}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <p className="text-xs text-red-300/80 bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl leading-relaxed">
+                Warning: This completely deletes the ticket pass, invalidates the entry QR code, and purges event roster records. Test/fake registrations will be permanently removed.
+              </p>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalItem(null)}
+                  disabled={Boolean(deletingId)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={Boolean(deletingId)}
+                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all shadow-lg shadow-red-950/40 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  {deletingId ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" /> Permanently Delete
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Payment Proof Modal ── */}
       {proofModalItem && (

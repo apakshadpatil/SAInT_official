@@ -16,7 +16,7 @@ import {
 import { db, auth } from '../firebase/config';
 import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
 import { trackDBOperation } from './dbTrackingService';
-import type { EventRecord, EventTicket, EventParticipant, EventTeam, EventRuleAgreement, TeamMemberDetail, UserProfile } from '../types';
+import type { EventRecord, EventTicket, EventParticipant, EventTeam, EventRuleAgreement, TeamMemberDetail, UserProfile, SpaceAllocation } from '../types';
 import { buildQRPayload, parseQRPayload } from '../utils/qrScan';
 import { extractSupabasePathFromPublicUrl, removeFileFromSupabase, uploadFileToSupabase } from '../utils/supabase';
 import { uploadFileToStorage } from '../utils/fileUtils';
@@ -1559,3 +1559,120 @@ export async function updatePaymentVerificationStatus(
     ).catch(() => {});
   }
 }
+
+export async function deleteEventRegistration(
+  eventId: string,
+  ticketId: string,
+  actorProfile: UserProfile
+): Promise<void> {
+  if (!isSuperAdmin(actorProfile) && !hasTabAccess(actorProfile, 'participants')) {
+    throw new Error('Unauthorized: You do not have permission to delete event registrations.');
+  }
+
+  const ticketRef = doc(db, 'events', eventId, 'tickets', ticketId);
+  const ticketSnap = await getDoc(ticketRef);
+  const ticketData = ticketSnap.exists() ? (ticketSnap.data() as EventTicket) : null;
+  const participantName = ticketData?.guestName || 'Participant';
+  const ticketNumber = ticketData?.ticketNumber || (ticketId.length > 8 ? ticketId.slice(0, 8) : ticketId);
+  const actorName = actorProfile.displayName || actorProfile.firstName || actorProfile.email || 'Admin';
+
+  // 1. Delete ticket document from subcollection
+  if (ticketSnap.exists()) {
+    await deleteDoc(ticketRef);
+  }
+
+  // 2. Clean up parent event document
+  try {
+    const event = await getEvent(eventId);
+    if (event) {
+      let needsUpdate = false;
+      const updates: Partial<EventRecord> = {};
+
+      // A. Clean participants array
+      if (Array.isArray(event.participants)) {
+        const nextParticipants = event.participants.filter(
+          (p) => p.ticketId !== ticketId && p.id !== ticketId
+        );
+        if (nextParticipants.length !== event.participants.length) {
+          updates.participants = nextParticipants;
+          needsUpdate = true;
+        }
+      }
+
+      // B. Clean participantIds array
+      if (Array.isArray(event.participantIds)) {
+        const nextParticipantIds = event.participantIds.filter((id) => id !== ticketId);
+        if (nextParticipantIds.length !== event.participantIds.length) {
+          updates.participantIds = nextParticipantIds;
+          needsUpdate = true;
+        }
+      }
+
+      // C. Clean teams array if this was a team registration
+      if (Array.isArray(event.teams)) {
+        const nextTeams = event.teams.filter((t) => {
+          if (t.id === `team_${ticketId}` || t.id === ticketId) return false;
+          if (ticketData?.guestEmail && t.leadEmail && t.leadEmail.toLowerCase() === ticketData.guestEmail.toLowerCase()) {
+            if (t.id.includes(ticketId) || (ticketData.transactionId && t.transactionId === ticketData.transactionId)) {
+              return false;
+            }
+          }
+          return true;
+        });
+        if (nextTeams.length !== event.teams.length) {
+          updates.teams = nextTeams;
+          needsUpdate = true;
+        }
+      }
+
+      // D. Clean space allocations if allocated
+      if (event.spaceAllocations) {
+        let allocationsChanged = false;
+        const nextAllocations: Record<string, SpaceAllocation[]> = {};
+        for (const [spaceName, list] of Object.entries(event.spaceAllocations)) {
+          const filtered = list.filter((a) => a.participantId !== ticketId);
+          if (filtered.length !== list.length) {
+            allocationsChanged = true;
+          }
+          nextAllocations[spaceName] = filtered;
+        }
+        if (allocationsChanged) {
+          updates.spaceAllocations = nextAllocations;
+          needsUpdate = true;
+        }
+      }
+
+      if (needsUpdate) {
+        await updateEvent(eventId, updates);
+      }
+    }
+  } catch (err) {
+    console.warn('[DeleteRegistration] Non-fatal: could not update parent event document:', err);
+  }
+
+  // 3. Clean up Supabase payment screenshot file only if safely available
+  if (ticketData?.paymentScreenshotPath) {
+    try {
+      await removeFileFromSupabase(ticketData.paymentScreenshotPath);
+    } catch (storageErr) {
+      console.warn('[DeleteRegistration] Non-fatal: could not remove payment proof file from storage:', storageErr);
+    }
+  }
+
+  // 4. Invalidate relevant caches
+  invalidateCache(`tickets:${eventId}`);
+  invalidateCache(`event:${eventId}`);
+  invalidateCache('events:all');
+  invalidateCache('users:participants');
+
+  // 5. Global Audit Log
+  const details = `${actorName} permanently deleted registration for ${participantName} (${ticketNumber}) from event`;
+  await logActivity(
+    actorProfile.uid,
+    actorName,
+    actorProfile.email,
+    'delete_participant_registration',
+    details
+  );
+}
+

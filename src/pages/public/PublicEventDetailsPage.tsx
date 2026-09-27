@@ -27,6 +27,87 @@ import { getSectionIcon } from '../../utils/eventSectionIcons';
 import { useToast } from '../../contexts/ToastContext';
 import EventBanner from '../../components/ui/EventBanner';
 
+/**
+ * Determines clear, user-friendly participation and team-size wording.
+ * Distinguishes solo-only, fixed-size squad/team, variable team, and dual solo + squad/team configurations.
+ */
+function getParticipationDisplay(event: EventRecord): {
+  main: string;
+  badge: string;
+  isTeamSupported: boolean;
+} {
+  const tiers = event.ticketTiers || [];
+  const hasTiers = Boolean(event.enableTieredTicketing && tiers.length > 0);
+
+  // Check if solo tier exists (teamSize === 1 or not specified)
+  const hasSoloTier = hasTiers && tiers.some((t) => (t.teamSize || 1) === 1);
+  // Check if team tiers exist (teamSize > 1)
+  const teamTiers = hasTiers ? tiers.filter((t) => (t.teamSize || 1) > 1) : [];
+  const hasTeamTiers = teamTiers.length > 0;
+
+  // Case 1: Both Solo and Squad/Team are available in ticket tiers
+  if (hasSoloTier && (hasTeamTiers || event.teamsEnabled)) {
+    let teamDesc = '';
+    if (hasTeamTiers) {
+      const teamSizes = Array.from(new Set(teamTiers.map((t) => t.teamSize || 2))).sort((a, b) => a - b);
+      if (teamSizes.length === 1) {
+        const size = teamSizes[0];
+        teamDesc = size === 4 ? 'Squad (4 Members)' : `Team of ${size}`;
+      } else {
+        teamDesc = `Team (${teamSizes[0]}–${teamSizes[teamSizes.length - 1]} Members)`;
+      }
+    } else {
+      const min = event.minTeamSize || 2;
+      const max = event.maxTeamSize || 4;
+      if (min === max) {
+        teamDesc = min === 4 ? 'Squad (4 Members)' : `Team of ${min}`;
+      } else {
+        teamDesc = `Team (${min}–${max} Members)`;
+      }
+    }
+
+    return {
+      main: `Solo & ${teamDesc}`,
+      badge: `Solo & ${teamDesc}`,
+      isTeamSupported: true,
+    };
+  }
+
+  // Case 2: Team-only event (either teamsEnabled is true or ticket tiers are all team sizes > 1)
+  if (event.teamsEnabled || hasTeamTiers) {
+    let min = event.minTeamSize || 2;
+    let max = event.maxTeamSize || 4;
+
+    if (hasTeamTiers) {
+      const sizes = teamTiers.map((t) => t.teamSize || 2).sort((a, b) => a - b);
+      min = sizes[0];
+      max = sizes[sizes.length - 1];
+    }
+
+    if (min === max) {
+      const label = min === 4 ? 'Squad (4 Members)' : `Team of ${min}`;
+      return {
+        main: label,
+        badge: label,
+        isTeamSupported: true,
+      };
+    } else {
+      return {
+        main: `Team (${min}–${max} Members)`,
+        badge: `Teams of ${min}–${max}`,
+        isTeamSupported: true,
+      };
+    }
+  }
+
+  // Case 3: Solo-only event
+  return {
+    main: 'Individual Pass',
+    badge: 'Individual Entry',
+    isTeamSupported: false,
+  };
+}
+
 export default function PublicEventDetailsPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const { showToast } = useToast();
@@ -35,6 +116,11 @@ export default function PublicEventDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+
+  const participationInfo = useMemo(
+    () => (event ? getParticipationDisplay(event) : { main: 'Individual Pass', badge: 'Individual Entry', isTeamSupported: false }),
+    [event]
+  );
 
   // Synchronous read from DOM / localStorage synced by PublicLayout
   const [doomsdayMode, setDoomsdayMode] = useState<boolean>(() => {
@@ -318,10 +404,10 @@ export default function PublicEventDetailsPage() {
               )}
 
               {/* Tier/Team Mode Badge */}
-              {event.teamsEnabled && (
+              {participationInfo.isTeamSupported && (
                 <span className="px-3 py-1 rounded-full text-xs font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1">
                   <Users className="w-3 h-3" />
-                  Teams of {event.minTeamSize || 2}-{event.maxTeamSize || 4}
+                  {participationInfo.badge}
                 </span>
               )}
 
@@ -401,7 +487,7 @@ export default function PublicEventDetailsPage() {
                 <div>
                   <span className="text-[11px] font-semibold text-slate-400 block">Participation</span>
                   <span className="text-xs sm:text-sm font-bold text-white">
-                    {event.teamsEnabled ? `Team (${event.minTeamSize || 2}-${event.maxTeamSize || 4})` : 'Individual Pass'}
+                    {participationInfo.main}
                   </span>
                 </div>
               </div>
@@ -537,7 +623,7 @@ export default function PublicEventDetailsPage() {
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span>Verified digital participation certificate</span>
                 </div>
-                {event.teamsEnabled && (
+                {participationInfo.isTeamSupported && (
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />
                     <span>Team registration supported</span>
