@@ -363,6 +363,7 @@ export interface GalleryImage {
 export interface Sponsor {
   id: string;
   logoUrl: string;
+  name?: string;
   websiteUrl?: string;
   createdAt: string;
   updatedAt?: string;
