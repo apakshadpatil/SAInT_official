@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Calendar, ListTodo, TrendingUp, ArrowUpRight, ClipboardList,
-  Users, Clock, Zap, CheckCircle2, AlertCircle, CircleDot,
+  Users, Clock, Zap, CheckCircle2, AlertCircle, CircleDot, ClipboardCheck,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { subscribeEvents, getUpcomingEvents } from '../../services/eventService';
 import { subscribeUserTasks } from '../../services/taskService';
 import { subscribeMeetings, getUpcomingMeetings } from '../../services/meetingService';
+import { getUnifiedRegistrations, isDateInRange } from '../../services/registrationService';
 import type { EventRecord, TaskRecord, MeetingRecord } from '../../types';
 import { isCoreMember } from '../../utils/permissions';
 import { StatGridSkeleton, TaskItemSkeleton, DataStateWrapper } from '../../components/ui/skeleton';
@@ -25,6 +26,8 @@ export default function DashboardHome() {
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [todayRegCount, setTodayRegCount] = useState<number | null>(null);
 
   useEffect(() => {
     let loadedCount = 0;
@@ -48,6 +51,15 @@ export default function DashboardHome() {
       checkLoaded();
     });
 
+    if (isCoreMember(profile)) {
+      getUnifiedRegistrations(false)
+        .then((res) => {
+          const count = res.registrations.filter((r) => isDateInRange(r.createdAt, 'today')).length;
+          setTodayRegCount(count);
+        })
+        .catch(() => {});
+    }
+
     return () => { u1(); u2(); u3(); };
   }, [profile]);
 
@@ -60,7 +72,16 @@ export default function DashboardHome() {
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   const dateStr = now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-  const stats = [
+  interface StatItem {
+    label: string;
+    value: number;
+    icon: typeof Zap;
+    accentColor: string;
+    sub: string;
+    link?: string;
+  }
+
+  const stats: StatItem[] = [
     {
       label: 'Task Score',
       value: profile?.taskScore ?? 0,
@@ -91,6 +112,17 @@ export default function DashboardHome() {
     },
   ];
 
+  if (isCoreMember(profile) && todayRegCount !== null) {
+    stats.push({
+      label: "Today's Regs",
+      value: todayRegCount,
+      icon: ClipboardCheck,
+      accentColor: '#ec4899',
+      sub: 'Click to view',
+      link: '/dashboard/registrations?date=today',
+    });
+  }
+
   return (
     <div className="space-y-6 animate-fade-in-up">
 
@@ -113,32 +145,50 @@ export default function DashboardHome() {
       {/* ── Stats Row ── */}
       <DataStateWrapper
         loading={loading}
-        skeleton={<StatGridSkeleton count={4} columns="grid-cols-2 lg:grid-cols-4" />}
+        skeleton={<StatGridSkeleton count={stats.length} columns={stats.length >= 5 ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4'} />}
       >
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {stats.map((stat) => (
-            <div key={stat.label} className="stat-card">
-              {/* Colored top accent line */}
-              <div className="stat-card-accent-bar" style={{ background: stat.accentColor }} />
-              <div className="flex items-start justify-between mt-1">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
-                    {stat.label}
-                  </p>
-                  <p className="text-3xl font-black mt-1 tabular-nums" style={{ color: 'var(--dash-text)' }}>
-                    {stat.value}
-                  </p>
-                  <p className="text-[11px] mt-1" style={{ color: 'var(--dash-muted)' }}>{stat.sub}</p>
-                </div>
-                <div
-                  className="w-9 h-9 flex items-center justify-center shrink-0"
-                  style={{ background: stat.accentColor + '14', borderRadius: '8px' }}
-                >
-                  <stat.icon className="w-4.5 h-4.5" style={{ color: stat.accentColor, width: 18, height: 18 }} />
+        <div className={`grid grid-cols-2 ${stats.length >= 5 ? 'sm:grid-cols-3 lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3`}>
+          {stats.map((stat) => {
+            const card = (
+              <div
+                key={stat.label}
+                className={`stat-card ${stat.link ? 'hover:border-blue-500/50 cursor-pointer transition-colors group' : ''}`}
+              >
+                {/* Colored top accent line */}
+                <div className="stat-card-accent-bar" style={{ background: stat.accentColor }} />
+                <div className="flex items-start justify-between mt-1">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dash-muted)' }}>
+                      {stat.label}
+                    </p>
+                    <p
+                      className="text-3xl font-black mt-1 tabular-nums"
+                      style={{ color: stat.link ? stat.accentColor : 'var(--dash-text)' }}
+                    >
+                      {stat.value}
+                    </p>
+                    <p className="text-[11px] mt-1" style={{ color: stat.link ? '#3b82f6' : 'var(--dash-muted)' }}>
+                      {stat.sub} {stat.link && '→'}
+                    </p>
+                  </div>
+                  <div
+                    className="w-9 h-9 flex items-center justify-center shrink-0"
+                    style={{ background: stat.accentColor + '14', borderRadius: '8px' }}
+                  >
+                    <stat.icon className="w-4.5 h-4.5" style={{ color: stat.accentColor, width: 18, height: 18 }} />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+
+            return stat.link ? (
+              <Link key={stat.label} to={stat.link} style={{ textDecoration: 'none' }}>
+                {card}
+              </Link>
+            ) : (
+              card
+            );
+          })}
         </div>
       </DataStateWrapper>
 

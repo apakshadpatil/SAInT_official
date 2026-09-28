@@ -37,12 +37,12 @@ export interface SidebarPermissions {
   deploymentStats?: boolean;
   userInteractions?: boolean;
   participants: boolean;
+  registrations?: boolean;
   winners?: boolean;
   gallery?: boolean;
   support?: boolean;
   eventSettings?: boolean;
 }
-
 export interface UserProfile {
   uid: string;
   email: string;
@@ -766,6 +766,7 @@ export const DEFAULT_MEMBER_PERMISSIONS: SidebarPermissions = {
   deploymentStats: false,
   userInteractions: false,
   participants: false,
+  registrations: false,
   eventSettings: false,
 };
 
@@ -799,6 +800,7 @@ export const DEFAULT_PARTICIPANT_PERMISSIONS: SidebarPermissions = {
   deploymentStats: false,
   userInteractions: false,
   participants: false,
+  registrations: false,
   eventSettings: false,
 };
 
@@ -816,6 +818,7 @@ export const DEFAULT_CORE_PERMISSIONS: SidebarPermissions = {
   deploymentStats: false,
   userInteractions: false,
   participants: false,
+  registrations: true,
   eventSettings: true,
 };
 
@@ -849,6 +852,7 @@ export const DEFAULT_SUPERADMIN_PERMISSIONS: SidebarPermissions = {
   deploymentStats: true,
   userInteractions: true,
   participants: true,
+  registrations: true,
   eventSettings: true,
 };
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { subscribeEventById, subscribeEventTickets, mergeEventWithTickets, updateEvent, deleteEvent } from '../../services/eventService';
@@ -27,13 +27,22 @@ type TabType = 'overview' | 'content' | 'branding' | 'ticketing' | 'scan' | 'des
 export default function EventDetailsPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { profile } = useAuth();
   const { showToast } = useToast();
   
+  const initialTab = (searchParams.get('tab') as TabType) || 'overview';
   const [event, setEvent] = useState<EventRecord | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') as TabType;
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
   
   // Edit form state
   const [editTitle, setEditTitle] = useState('');
