@@ -64,6 +64,11 @@ const GalleryManagementPage = lazy(() => import('./pages/dashboard/GalleryPage')
 const SystemStatsPage = lazy(() => import('./pages/dashboard/SystemStatsPage'));
 const DeploymentStatsPage = lazy(() => import('./pages/dashboard/DeploymentStatsPage'));
 const UserInteractionsPage = lazy(() => import('./pages/dashboard/UserInteractionsPage'));
+// Participants Account Management (SuperAdmin)
+const ParticipantOverviewPage = lazy(() => import('./pages/dashboard/participant-management/ParticipantOverviewPage'));
+const ParticipantAccountsPage = lazy(() => import('./pages/dashboard/participant-management/ParticipantAccountsPage'));
+const ParticipantLoginsPage = lazy(() => import('./pages/dashboard/participant-management/ParticipantLoginsPage'));
+const ParticipantAuditPage = lazy(() => import('./pages/dashboard/participant-management/ParticipantAuditPage'));
 
 function PageFallback() {
   return (
@@ -191,6 +196,11 @@ export default function App() {
                 <Route path="system-stats" element={<SystemStatsPage />} />
                 <Route path="deployment-stats" element={<DeploymentStatsPage />} />
                 <Route path="user-interactions" element={<UserInteractionsPage />} />
+                {/* ── Participants Account Management (SuperAdmin) ── */}
+                <Route path="participant-management" element={<ParticipantOverviewPage />} />
+                <Route path="participant-accounts" element={<ParticipantAccountsPage />} />
+                <Route path="participant-logins" element={<ParticipantLoginsPage />} />
+                <Route path="participant-audit" element={<ParticipantAuditPage />} />
               </Route>
 
               {/* Catch-all Redirect */}

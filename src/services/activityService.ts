@@ -14,7 +14,14 @@ export async function logActivity(
   userName: string,
   userEmail: string,
   action: string,
-  details: string
+  details: string,
+  extras?: {
+    role?: string;
+    targetType?: string;
+    targetId?: string;
+    targetName?: string;
+    metadata?: Record<string, any>;
+  }
 ) {
   try {
     const activity: Omit<ActivityLog, 'id'> = {
@@ -24,6 +31,11 @@ export async function logActivity(
       action,
       details,
       timestamp: new Date().toISOString(),
+      ...(extras?.role ? { role: extras.role } : {}),
+      ...(extras?.targetType ? { targetType: extras.targetType } : {}),
+      ...(extras?.targetId ? { targetId: extras.targetId } : {}),
+      ...(extras?.targetName ? { targetName: extras.targetName } : {}),
+      ...(extras?.metadata ? { metadata: extras.metadata } : {}),
     };
     await addDoc(collection(db, 'activityLogs'), activity);
   } catch (error) {
@@ -31,7 +43,7 @@ export async function logActivity(
   }
 }
 
-export function subscribeActivity(callback: (logs: ActivityLog[]) => void, limitCount = 200) {
+export function subscribeActivity(callback: (logs: ActivityLog[]) => void, limitCount = 300) {
   const q = query(
     collection(db, 'activityLogs'),
     orderBy('timestamp', 'desc'),
@@ -41,3 +53,4 @@ export function subscribeActivity(callback: (logs: ActivityLog[]) => void, limit
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ActivityLog)));
   });
 }
+

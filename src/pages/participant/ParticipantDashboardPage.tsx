@@ -34,6 +34,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase/config';
 import { getEventTickets, getEvents, getEvent, updateParticipantTicketTeam, updateTicketPaymentProof } from '../../services/eventService';
 import { logoutUser } from '../../services/authService';
+import { logActivity } from '../../services/activityService';
 import { downloadTicketImage } from '../../utils/ticketDownload';
 import { downloadCertificate } from '../../utils/certificateGenerator';
 import { uploadFileToSupabase } from '../../utils/supabase';
@@ -213,9 +214,26 @@ export default function ParticipantDashboardPage() {
       margin: 2,
       color: { dark: '#11111c', light: '#ffffff' },
     })
-      .then(setQrDataUrl)
+      .then((qr) => {
+        setQrDataUrl(qr);
+        if (user) {
+          void logActivity(
+            user.uid,
+            profile?.displayName || user.email || 'Participant',
+            profile?.participantEmail || profile?.email || user.email || '',
+            'view_pass',
+            `Viewed digital pass QR for event "${activeTicket.event.title}" (Ticket: ${activeTicket.ticket.ticketNumber || activeTicket.ticket.id})`,
+            {
+              role: 'participant',
+              targetType: 'ticket',
+              targetId: activeTicket.ticket.id,
+              targetName: activeTicket.event.title,
+            }
+          );
+        }
+      })
       .catch(() => setQrDataUrl(''));
-  }, [activeTicket]);
+  }, [activeTicket, user, profile]);
 
   const handleCopyTicket = (ticketNumber: string) => {
     navigator.clipboard.writeText(ticketNumber);
@@ -230,6 +248,21 @@ export default function ParticipantDashboardPage() {
         { width: 600, margin: 2 }
       );
       await downloadTicketImage(reg.event, reg.ticket, ticketQr);
+      if (user) {
+        void logActivity(
+          user.uid,
+          profile?.displayName || user.email || 'Participant',
+          profile?.participantEmail || profile?.email || user.email || '',
+          'download_ticket',
+          `Downloaded ticket pass badge for event "${reg.event.title}" (${reg.ticket.ticketNumber})`,
+          {
+            role: 'participant',
+            targetType: 'ticket',
+            targetId: reg.ticket.id,
+            targetName: reg.event.title,
+          }
+        );
+      }
     } catch (err) {
       console.error('Failed to download ticket image', err);
     }
@@ -299,6 +332,22 @@ export default function ParticipantDashboardPage() {
                 },
               }
             : null
+        );
+      }
+
+      if (user) {
+        void logActivity(
+          user.uid,
+          profile?.displayName || user.email || 'Participant',
+          profile?.participantEmail || profile?.email || user.email || '',
+          'upload_payment_proof',
+          `Uploaded payment proof for "${event.title}" (Ticket: ${ticket.ticketNumber || ticketId})`,
+          {
+            role: 'participant',
+            targetType: 'payment',
+            targetId: ticketId,
+            targetName: event.title,
+          }
         );
       }
     } catch (err: any) {
@@ -372,6 +421,21 @@ export default function ParticipantDashboardPage() {
         members
       );
       setTeamSuccess('Team details saved successfully!');
+      if (user) {
+        void logActivity(
+          user.uid,
+          profile?.displayName || user.email || 'Participant',
+          profile?.participantEmail || profile?.email || user.email || '',
+          'update_team',
+          `Updated team "${teamName || 'Roster'}" for "${editingRegistration.event.title}" (${members.filter((m) => m.name.trim()).length} members)`,
+          {
+            role: 'participant',
+            targetType: 'team',
+            targetId: editingRegistration.ticket.id,
+            targetName: teamName || 'Team',
+          }
+        );
+      }
       setTimeout(() => {
         setEditingRegistration(null);
         loadRegistrations(true);
@@ -397,6 +461,21 @@ export default function ParticipantDashboardPage() {
         teamName: reg.ticket.teamName,
       };
       await downloadCertificate(reg.event, participantInfo);
+      if (user) {
+        void logActivity(
+          user.uid,
+          profile?.displayName || user.email || 'Participant',
+          profile?.participantEmail || profile?.email || user.email || '',
+          'download_certificate',
+          `Downloaded certificate for "${reg.event.title}" (${participantInfo.name})`,
+          {
+            role: 'participant',
+            targetType: 'certificate',
+            targetId: reg.event.id,
+            targetName: reg.event.title,
+          }
+        );
+      }
     } catch (err) {
       alert(
         err instanceof Error
@@ -714,7 +793,7 @@ export default function ParticipantDashboardPage() {
                             padding: '0.75rem',
                             background: 'rgba(245, 158, 11, 0.08)',
                             border: '1px solid rgba(245, 158, 11, 0.3)',
-                            borderRadius: '8px',
+                            borderRadius: '6px',
                             display: 'flex',
                             flexDirection: 'column',
                             gap: '0.45rem',
@@ -749,7 +828,7 @@ export default function ParticipantDashboardPage() {
                               color: '#fff',
                               fontSize: '0.72rem',
                               fontWeight: 700,
-                              borderRadius: '6px',
+                              borderRadius: '4px',
                               cursor: uploadingProofTicketId === ticket.id ? 'not-allowed' : 'pointer',
                               textAlign: 'center',
                               boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
@@ -1259,7 +1338,7 @@ export default function ParticipantDashboardPage() {
                 <CheckCircle2 size={13} /> View Attached Payment Proof
               </a>
             ) : activeTicket.ticket.accessStatus !== 'revoked' && activeTicket.ticket.paymentStatus === 'pending' && Boolean(activeTicket.ticket.transactionId) ? (
-              <div style={{ width: '100%', padding: '0.65rem', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <div style={{ width: '100%', padding: '0.65rem', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                 <span style={{ color: '#fbbf24', fontSize: '0.72rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
                   <AlertCircle size={13} /> Payment Proof Missing
                 </span>
@@ -1274,7 +1353,7 @@ export default function ParticipantDashboardPage() {
                     color: '#fff',
                     fontSize: '0.72rem',
                     fontWeight: 700,
-                    borderRadius: '6px',
+                    borderRadius: '4px',
                     cursor: uploadingProofTicketId === activeTicket.ticket.id ? 'not-allowed' : 'pointer',
                   }}
                 >

@@ -1,6 +1,18 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900&display=swap');
 @import "tailwindcss";
 
+@theme {
+  --radius: 3px;
+  --radius-xs: 2px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 5px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
+  --radius-3xl: 10px;
+  --radius-4xl: 12px;
+}
+
 /* ═══════════════════════════════════════
    SAInT Dashboard — Clean Editorial UI
    ═══════════════════════════════════════ */
@@ -37,7 +49,7 @@ img, video, canvas {
 
   .dash-card,
   [class*="rounded-3xl"] {
-    border-radius: 1rem;
+    border-radius: 0.5rem;
   }
 
   input, select, textarea, button {
@@ -521,7 +533,7 @@ textarea {
   background: var(--site-input-bg) !important;
   border: 1px solid var(--site-input-border) !important;
   color: var(--site-input-text) !important;
-  border-radius: 6px !important;
+  border-radius: 4px !important;
   padding: 0.55rem 0.875rem !important;
   font-size: 0.83rem !important;
   font-family: 'Inter', sans-serif !important;
@@ -594,7 +606,7 @@ textarea::placeholder {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2 font-semibold text-sm transition-all duration-150;
     background: #2563eb !important;
     color: #ffffff !important;
-    border-radius: 8px;
+    border-radius: 6px;
     cursor: pointer;
     border: none;
     box-shadow: 0 1px 2px rgba(0,0,0,0.1);
@@ -618,7 +630,7 @@ textarea::placeholder {
 
   .btn-outline {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2 font-semibold text-sm transition-all duration-150;
-    border-radius: 8px;
+    border-radius: 6px;
     border: 1.5px solid #2563eb;
     color: #2563eb !important;
     background: transparent;
@@ -648,7 +660,7 @@ textarea::placeholder {
 
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 px-3 py-2 font-medium text-sm transition-all duration-150;
-    border-radius: 6px;
+    border-radius: 4px;
     color: var(--dash-muted);
     cursor: pointer;
     background: transparent;
@@ -661,7 +673,7 @@ textarea::placeholder {
 
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2 font-semibold text-sm transition-all duration-150;
-    border-radius: 6px;
+    border-radius: 4px;
     background: var(--dash-hover);
     color: var(--dash-text);
     border: 1px solid var(--dash-border);
@@ -675,7 +687,7 @@ textarea::placeholder {
   /* ─── Inputs ─── */
   .input-field {
     @apply w-full px-3 py-2.5 text-sm outline-none transition-all;
-    border-radius: 6px;
+    border-radius: 4px;
     border: 1px solid var(--dash-input-border);
     background: var(--dash-input-bg);
     color: var(--dash-text);
@@ -690,7 +702,7 @@ textarea::placeholder {
 
   .dash-input {
     @apply w-full px-3 py-2.5 text-sm outline-none transition-all;
-    border-radius: 6px;
+    border-radius: 4px;
     background: var(--dash-input-bg);
     border: 1px solid var(--dash-input-border);
     color: var(--dash-text);
@@ -706,7 +718,7 @@ textarea::placeholder {
   /* ─── Cards ─── */
   .card {
     @apply border p-5;
-    border-radius: 8px;
+    border-radius: 6px;
     background: var(--dash-card);
     border-color: var(--dash-card-border);
     box-shadow: var(--dash-card-shadow);
@@ -715,7 +727,7 @@ textarea::placeholder {
   /* Public site cards — always light, no dark dashboard bleed */
   .public-card {
     @apply p-5;
-    border-radius: 12px;
+    border-radius: 8px;
     background: #ffffff;
     border: none;
     box-shadow: 0 4px 24px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
@@ -727,7 +739,7 @@ textarea::placeholder {
 
   .public-feature-card {
     @apply p-6;
-    border-radius: 16px;
+    border-radius: 10px;
     background: #ffffff;
     border: none;
     box-shadow: 0 4px 24px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
@@ -740,7 +752,7 @@ textarea::placeholder {
 
   .dash-card {
     @apply p-5;
-    border-radius: 8px;
+    border-radius: 6px;
     background: var(--dash-card);
     border: 1px solid var(--dash-card-border);
     box-shadow: var(--dash-card-shadow);
@@ -772,7 +784,7 @@ textarea::placeholder {
   /* ─── Badges ─── */
   .capsule-tag {
     @apply inline-flex items-center px-2.5 py-0.5 text-xs font-semibold;
-    border-radius: 4px;
+    border-radius: 3px;
     background: rgba(37, 99, 235, 0.08);
     color: var(--blue-600);
     border: 1px solid rgba(37, 99, 235, 0.15);
@@ -780,7 +792,7 @@ textarea::placeholder {
 
   .dash-badge {
     @apply inline-flex items-center px-2 py-0.5 text-xs font-semibold;
-    border-radius: 4px;
+    border-radius: 3px;
     background: var(--dash-accent-soft);
     color: var(--dash-accent);
     border: 1px solid var(--dash-accent-soft);
@@ -791,33 +803,33 @@ textarea::placeholder {
     color: #10b981;
     border: 1px solid rgba(16, 185, 129, 0.15);
     @apply inline-flex items-center px-2 py-0.5 text-xs font-semibold;
-    border-radius: 4px;
+    border-radius: 3px;
   }
   .badge-warning {
     background: rgba(245, 158, 11, 0.08);
     color: #f59e0b;
     border: 1px solid rgba(245, 158, 11, 0.15);
     @apply inline-flex items-center px-2 py-0.5 text-xs font-semibold;
-    border-radius: 4px;
+    border-radius: 3px;
   }
   .badge-error {
     background: rgba(239, 68, 68, 0.08);
     color: #ef4444;
     border: 1px solid rgba(239, 68, 68, 0.15);
     @apply inline-flex items-center px-2 py-0.5 text-xs font-semibold;
-    border-radius: 4px;
+    border-radius: 3px;
   }
   .badge-info {
     background: rgba(59, 130, 246, 0.08);
     color: #3b82f6;
     border: 1px solid rgba(59, 130, 246, 0.15);
     @apply inline-flex items-center px-2 py-0.5 text-xs font-semibold;
-    border-radius: 4px;
+    border-radius: 3px;
   }
 
   .superadmin-tag {
     @apply inline-flex items-center justify-center text-xs font-semibold px-2.5 py-0.5;
-    border-radius: 4px;
+    border-radius: 3px;
     background: rgba(124, 58, 237, 0.1);
     color: #7c3aed;
     border: 1px solid rgba(124, 58, 237, 0.2);
@@ -873,7 +885,7 @@ textarea::placeholder {
   }
   .modal-box {
     @apply p-6 w-full max-w-lg;
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--dash-card);
     border: 1px solid var(--dash-card-border);
     box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
@@ -965,7 +977,7 @@ textarea::placeholder {
     background: transparent;
     border: none;
     text-decoration: none;
-    border-radius: 6px;
+    border-radius: 4px;
     cursor: pointer;
     width: 100%;
   }
@@ -995,7 +1007,7 @@ textarea::placeholder {
   /* ─── Stat Cards ─── */
   .stat-card {
     @apply p-4;
-    border-radius: 8px;
+    border-radius: 6px;
     background: var(--dash-card);
     border: 1px solid var(--dash-card-border);
     box-shadow: var(--dash-card-shadow);
@@ -1062,7 +1074,7 @@ textarea::placeholder {
   isolation: isolate;
   background: #161b22;
   border: 1px solid #30363d;
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   animation: dialogReveal 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
   transition: box-shadow 0.15s ease, border-color 0.15s ease;
@@ -1253,7 +1265,7 @@ main > *,
 /* QR Scanner */
 .qr-reader video {
   width: 100% !important;
-  border-radius: 6px;
+  border-radius: 4px;
 }
 
 .qr-reader img {

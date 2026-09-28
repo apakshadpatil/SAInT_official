@@ -163,11 +163,9 @@ export default function HomePage() {
               <div className="smoke-cloud-2" />
               <div className="smoke-cloud-3" />
             </div>
-            {/* One bolt only: layered over the artwork but behind the hero content. */}
+            {/* Lightning: fills entire hero behind content */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden z-[2] opacity-90">
-              <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-[min(82vw,43rem)] h-[40rem]">
-                <Lightning hue={125} xOffset={0} speed={1.08} intensity={1.38} size={0.68} branching />
-              </div>
+              <Lightning hue={125} xOffset={0} speed={1.08} intensity={1.38} size={0.68} branching />
             </div>
           </>
         ) : (
@@ -176,7 +174,7 @@ export default function HomePage() {
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32 z-10">
           <div className={`grid ${hasImagesToDisplay ? 'lg:grid-cols-2' : 'max-w-4xl mx-auto text-center'} gap-12 items-center`}>
-            <div className="animate-fade-in-up">
+            <div className={`animate-fade-in-up ${doomsdayMode && !hasImagesToDisplay ? 'flex flex-col items-center text-center' : ''}`}>
               <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold mb-6 ${doomsdayMode
                 ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
                 : 'bg-blue-100 text-blue-700'
@@ -186,18 +184,39 @@ export default function HomePage() {
               </div>
 
               {doomsdayMode ? (
-                /* DIRECT IMPACT x DOOMSDAY TITLE */
-                <h1
-                  className="doomsday-hero-text whitespace-nowrap text-[clamp(1.3rem,7.4vw,4.5rem)] font-black uppercase leading-none py-2 text-transparent bg-clip-text mb-6"
-                  style={{
-                    fontFamily: "'Orbitron', 'Montserrat', 'Syne', sans-serif",
-                    backgroundImage: 'linear-gradient(135deg, #ffffff 0%, #a7f3d0 35%, #22c55e 75%, #15803d 100%)',
-                    textShadow: '0 0 35px rgba(34, 197, 94, 0.6), 0 0 75px rgba(34, 197, 94, 0.3)',
-                    letterSpacing: '0.055em',
-                  }}
-                >
-                  IMPACT <span className="text-emerald-400 font-light">x</span> DOOMSDAY
-                </h1>
+                /* STACKED: Elite Events Presents → IMPACT → Doomsday — centred */
+                <div className="mb-6 flex flex-col items-center text-center gap-1 w-full">
+                  {/* Presenter line */}
+                  <p
+                    className="text-[clamp(0.7rem,2.2vw,1.1rem)] font-semibold uppercase tracking-[0.22em] text-emerald-300/80"
+                    style={{ fontFamily: "'Orbitron','Montserrat','Syne',sans-serif" }}
+                  >
+                    Elite Events Presents
+                  </p>
+
+                  {/* Main event name */}
+                  <h1
+                    className="doomsday-hero-text text-[clamp(3rem,13vw,8rem)] font-black uppercase leading-none py-1 text-transparent bg-clip-text"
+                    style={{
+                      fontFamily: "'Orbitron','Montserrat','Syne',sans-serif",
+                      backgroundImage: 'linear-gradient(135deg, #ffffff 0%, #a7f3d0 35%, #22c55e 75%, #15803d 100%)',
+                      textShadow: '0 0 35px rgba(34,197,94,0.6), 0 0 75px rgba(34,197,94,0.3)',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    IMPACT
+                  </h1>
+
+                  {/* Theme sub-label */}
+                  <p
+                    className="text-[clamp(0.85rem,3.2vw,1.55rem)] font-bold uppercase tracking-[0.3em] text-emerald-400 mt-1"
+                    style={{ fontFamily: "'Orbitron','Montserrat','Syne',sans-serif" }}
+                  >
+                    Doomsday
+                    <span className="ml-2 text-emerald-300/60 font-light text-[0.8em] normal-case tracking-normal"> — theme</span>
+                  </p>
+                </div>
+
               ) : (
                 /* DEFAULT WELCOME TO SAINT TITLE */
                 <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-slate-900 leading-tight mb-6">

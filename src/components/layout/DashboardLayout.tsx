@@ -5,7 +5,7 @@ import {
   Settings, Shield, UserCheck, KeyRound, Menu, X, ClipboardList,
   Upload, Activity, FileCheck, Briefcase, Trophy, Archive, ImagePlus,
   ChevronRight, Zap, Database, Server, Globe, LifeBuoy, Handshake,
-  ClipboardCheck,
+  ClipboardCheck, Layers, Radio,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -31,7 +31,7 @@ interface NavItem {
   superOnly?: boolean;
   coreOnly?: boolean;
   settingsGroup?: boolean;
-  group?: 'main' | 'management' | 'finance' | 'support' | 'settings';
+  group?: 'main' | 'management' | 'finance' | 'support' | 'participants' | 'settings';
 }
 
 const ALL_NAV: NavItem[] = [
@@ -59,6 +59,11 @@ const ALL_NAV: NavItem[] = [
   { to: '/dashboard/gallery',               label: 'Gallery',               icon: ImagePlus,       tab: 'gallery',            group: 'management' },
   { to: '/dashboard/home-images',           label: 'Home Images',           icon: ImagePlus,       tab: 'homeImages',         group: 'management', coreOnly: true },
   { to: '/dashboard/support',               label: 'Support',               icon: LifeBuoy,        tab: 'support',            group: 'support' },
+  { to: '/dashboard/participant-management',  label: 'Account Overview',        icon: Layers,          tab: 'participantManagement', group: 'participants', superOnly: true },
+  { to: '/dashboard/participant-accounts',    label: 'Account Directory',       icon: UserCheck,       tab: 'participantManagement', group: 'participants', superOnly: true },
+  { to: '/dashboard/participant-logins',      label: 'Login & Space Status',    icon: Radio,           tab: 'participantManagement', group: 'participants', superOnly: true },
+  { to: '/dashboard/participant-audit',       label: 'Access Audit Trail',      icon: Activity,        tab: 'participantManagement', group: 'participants', superOnly: true },
+  { to: '/dashboard/participant-access',      label: 'Passes & Tickets',        icon: KeyRound,        tab: 'participants',           group: 'participants', superOnly: true },
   { to: '/dashboard/user-approvals',        label: 'User Approvals',        icon: UserCheck,       tab: 'userApprovals',      group: 'settings',   superOnly: true },
   { to: '/dashboard/access-control',        label: 'Access Control',        icon: KeyRound,        tab: 'accessControl',      group: 'settings',   superOnly: true },
   { to: '/dashboard/positions',             label: 'Positions',             icon: Shield,          tab: 'positions',          group: 'settings',   superOnly: true },
@@ -73,6 +78,7 @@ const GROUP_LABELS: Record<string, string> = {
   management: 'Management',
   finance: 'Finance',
   support: 'Support',
+  participants: 'Participants Account Management',
   settings: 'Admin',
 };
 
@@ -116,7 +122,7 @@ function SidebarNav({
 
   // Group nav items (exclude profile which has no group)
   const itemsWithGroup = navItems.filter((i) => i.group);
-  const groupOrder: Array<NavItem['group']> = ['main', 'management', 'finance', 'support', 'settings'];
+  const groupOrder: Array<NavItem['group']> = ['main', 'management', 'finance', 'support', 'participants', 'settings'];
   const grouped = groupOrder.reduce<Record<string, NavItem[]>>((acc, g) => {
     const items = itemsWithGroup.filter((i) => i.group === g);
     if (items.length) acc[g!] = items;

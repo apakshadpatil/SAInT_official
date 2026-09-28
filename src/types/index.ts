@@ -37,6 +37,7 @@ export interface SidebarPermissions {
   deploymentStats?: boolean;
   userInteractions?: boolean;
   participants: boolean;
+  participantManagement?: boolean;
   registrations?: boolean;
   winners?: boolean;
   gallery?: boolean;
@@ -656,6 +657,11 @@ export interface ActivityLog {
   action: string;
   details: string;
   timestamp: string;
+  role?: string;
+  targetType?: string;
+  targetId?: string;
+  targetName?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface InterviewSection {

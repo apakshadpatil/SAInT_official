@@ -184,7 +184,7 @@ export default function UserActivityPage() {
                   contentStyle={{
                     background: '#1e293b',
                     border: '1px solid #334155',
-                    borderRadius: '8px',
+                    borderRadius: '4px',
                     color: '#f8fafc',
                   }}
                 />
@@ -218,7 +218,7 @@ export default function UserActivityPage() {
                     contentStyle={{
                       background: '#1e293b',
                       border: '1px solid #334155',
-                      borderRadius: '8px',
+                      borderRadius: '4px',
                       color: '#f8fafc',
                     }}
                   />
