@@ -21,6 +21,7 @@ export default function RulesTab({ event, canEdit, onUpdate }: RulesTabProps) {
     return DEFAULT_TERMS;
   };
 
+  const [requireRulesAcceptance, setRequireRulesAcceptance] = useState<boolean>(Boolean(event.requireRulesAcceptance));
   const [termsText, setTermsText] = useState<string>(getInitialTerms());
   const [rulebookUrl, setRulebookUrl] = useState(event.rulebookUrl || '');
   const [whatsappGroupUrl, setWhatsappGroupUrl] = useState(event.whatsappGroupUrl || '');
@@ -28,10 +29,11 @@ export default function RulesTab({ event, canEdit, onUpdate }: RulesTabProps) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    setRequireRulesAcceptance(Boolean(event.requireRulesAcceptance));
     setTermsText(getInitialTerms());
     setRulebookUrl(event.rulebookUrl || '');
     setWhatsappGroupUrl(event.whatsappGroupUrl || '');
-  }, [event.id, event.registrationTerms, event.rules, event.rulebookUrl, event.whatsappGroupUrl]);
+  }, [event.id, event.requireRulesAcceptance, event.registrationTerms, event.rules, event.rulebookUrl, event.whatsappGroupUrl]);
 
   useEffect(() => subscribeRuleAgreements(event.id, setAgreements), [event.id]);
 
@@ -40,6 +42,7 @@ export default function RulesTab({ event, canEdit, onUpdate }: RulesTabProps) {
     try {
       const cleanTerms = termsText.trim();
       await onUpdate({
+        requireRulesAcceptance,
         registrationTerms: cleanTerms,
         rules: cleanTerms ? cleanTerms.split('\n').map((rule) => rule.trim()).filter(Boolean) : [],
         rulebookUrl: rulebookUrl.trim() || undefined,
@@ -56,15 +59,72 @@ export default function RulesTab({ event, canEdit, onUpdate }: RulesTabProps) {
         <div>
           <h3 className="font-bold text-lg" style={{ color: 'var(--dash-text)' }}>Rules &amp; Terms</h3>
           <p className="text-sm mt-1" style={{ color: 'var(--dash-muted)' }}>
-            Every participant reviews and accepts these terms before the registration form opens.
+            Configure event rules, guidelines, and whether participants must accept them before registering.
           </p>
         </div>
         {canEdit && (
-          <button onClick={save} disabled={saving} className="btn-primary inline-flex items-center justify-center gap-2">
+          <button onClick={save} disabled={saving} className="btn-primary inline-flex items-center justify-center gap-2 cursor-pointer">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Save terms
           </button>
         )}
+      </div>
+
+      {/* Event Coordinator Setting: Require Rules Acceptance */}
+      <div
+        className="rounded-2xl border p-5 sm:p-6 transition-all"
+        style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2.5">
+              <h4 className="font-bold text-base" style={{ color: 'var(--dash-text)' }}>
+                Require Rules Acceptance
+              </h4>
+              <span
+                className={`text-[11px] px-2.5 py-0.5 rounded-full font-extrabold uppercase tracking-wide border ${
+                  requireRulesAcceptance
+                    ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+                    : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                }`}
+              >
+                {requireRulesAcceptance ? 'ON (Mandatory Screen)' : 'OFF (Direct Registration)'}
+              </span>
+            </div>
+            <p className="text-xs max-w-xl" style={{ color: 'var(--dash-muted)' }}>
+              {requireRulesAcceptance
+                ? 'ON: Participants must review and accept the rules on a separate screen before accessing the registration form.'
+                : 'OFF (Recommended): Direct registration. Participants go straight to the form and can view rules anytime via a non-disruptive drawer/modal.'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={!canEdit}
+              onClick={() => setRequireRulesAcceptance(false)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                !requireRulesAcceptance
+                  ? 'bg-emerald-600 text-white border-emerald-500 shadow-md ring-2 ring-emerald-400/40'
+                  : 'bg-white/5 text-slate-400 hover:text-white border-white/10 hover:bg-white/10'
+              }`}
+            >
+              OFF (Direct)
+            </button>
+            <button
+              type="button"
+              disabled={!canEdit}
+              onClick={() => setRequireRulesAcceptance(true)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                requireRulesAcceptance
+                  ? 'bg-blue-600 text-white border-blue-500 shadow-md ring-2 ring-blue-400/40'
+                  : 'bg-white/5 text-slate-400 hover:text-white border-white/10 hover:bg-white/10'
+              }`}
+            >
+              ON (Mandatory)
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_.8fr]">

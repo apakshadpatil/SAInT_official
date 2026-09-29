@@ -190,7 +190,7 @@ export default function TeamRegistrationTab({
     setFormError('');
     setSuccessTicket(null);
     setSuccessQrUrl('');
-    setMembers([{ name: '', email: '', phone: '', college: '', department: '' }]);
+    setMembers([{ name: '', email: '', phone: '', college: '', department: '', year: '' }]);
     setShowTeamModal(true);
 
     setTimeout(() => {
@@ -221,7 +221,7 @@ export default function TeamRegistrationTab({
     setFormError('');
     setSuccessTicket(null);
     setSuccessQrUrl('');
-    setMembers(t.members && t.members.length > 0 ? [...t.members] : [{ name: '', email: '', phone: '', college: '', department: '' }]);
+    setMembers(t.members && t.members.length > 0 ? [...t.members] : [{ name: '', email: '', phone: '', college: '', department: '', year: '' }]);
     setShowTeamModal(true);
 
     setTimeout(() => {
@@ -256,7 +256,7 @@ export default function TeamRegistrationTab({
 
   // Add / Remove dynamic member rows
   const handleAddMemberRow = () => {
-    setMembers([...members, { name: '', email: '', phone: '', college: '', department: '' }]);
+    setMembers([...members, { name: '', email: '', phone: '', college: '', department: '', year: '' }]);
   };
 
   const handleRemoveMemberRow = (idx: number) => {
@@ -1546,7 +1546,7 @@ export default function TeamRegistrationTab({
                               if (members.length < extraNeeded) {
                                 const added: TeamMemberDetail[] = Array.from(
                                   { length: extraNeeded - members.length },
-                                  () => ({ name: '', email: '', phone: '', college: '', department: '' })
+                                  () => ({ name: '', email: '', phone: '', college: '', department: '', year: '' })
                                 );
                                 setMembers([...members, ...added]);
                               }
@@ -1728,7 +1728,7 @@ export default function TeamRegistrationTab({
                             />
                           </div>
 
-                          <div className="grid sm:grid-cols-3 gap-2">
+                          <div className="grid sm:grid-cols-2 gap-2">
                             <input
                               type="tel"
                               value={mem.phone || ''}
@@ -1736,6 +1736,22 @@ export default function TeamRegistrationTab({
                               placeholder="Phone Number"
                               className="input-field text-xs !py-1.5"
                             />
+                            <select
+                              value={mem.year || ''}
+                              onChange={(e) => handleMemberChange(idx, 'year', e.target.value)}
+                              className="input-field text-xs !py-1.5"
+                            >
+                              <option value="">Select Year of Study</option>
+                              <option value="1st Year">1st Year</option>
+                              <option value="2nd Year">2nd Year</option>
+                              <option value="3rd Year">3rd Year</option>
+                              <option value="4th Year">4th Year</option>
+                              <option value="Postgraduate">Postgraduate (PG)</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+
+                          <div className="grid sm:grid-cols-2 gap-2">
                             <input
                               type="text"
                               value={mem.college || ''}

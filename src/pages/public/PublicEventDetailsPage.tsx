@@ -250,6 +250,92 @@ export default function PublicEventDetailsPage() {
   // Check if standard rules exist
   const hasStandardRules = Boolean(event?.rules && event.rules.length > 0);
 
+  // Requirements checklist dynamically computed for the event (Requirement #5)
+  const requirementsList = useMemo(() => {
+    if (!event) return [];
+    const items: { label: string; value: string }[] = [];
+
+    // 1. Registration type
+    items.push({
+      label: 'Registration Type',
+      value: participationInfo.main,
+    });
+
+    // 2. Team size if applicable
+    if (participationInfo.isTeamSupported) {
+      if (event.enableTieredTicketing && event.ticketTiers?.length) {
+        const teamTiers = event.ticketTiers.filter((t) => (t.teamSize || 1) > 1);
+        if (teamTiers.length > 0) {
+          const sizes = Array.from(new Set(teamTiers.map((t) => t.teamSize || 2))).sort((a, b) => a - b);
+          items.push({
+            label: 'Team Size',
+            value: sizes.length === 1 ? `${sizes[0]} Members` : `${sizes[0]}–${sizes[sizes.length - 1]} Members`,
+          });
+        }
+      } else if (event.teamsEnabled) {
+        const min = event.minTeamSize || 2;
+        const max = event.maxTeamSize || 4;
+        items.push({
+          label: 'Team Size',
+          value: min === max ? `${min} Members` : `${min}–${max} Members`,
+        });
+      }
+    }
+
+    // 3. Approximate time / timing
+    if (event.startTime) {
+      items.push({
+        label: 'Timing',
+        value: `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ''}`,
+      });
+    }
+
+    // 4. Required information/documents
+    const requiredDocs: string[] = ['Full Name'];
+    const rf = event.registrationFields;
+    if (rf?.email?.enabled && rf.email.required) requiredDocs.push(rf.email.label || 'Email');
+    if (rf?.phone?.enabled && rf.phone.required) requiredDocs.push(rf.phone.label || 'Phone');
+    if (rf?.college?.enabled && rf.college.required) requiredDocs.push(rf.college.label || 'College');
+    if (rf?.department?.enabled && rf.department.required) requiredDocs.push(rf.department.label || 'Department');
+    if (rf?.year?.enabled && rf.year.required) requiredDocs.push(rf.year.label || 'Year of Study');
+    if (event.ticketingEnabled && (event.paymentQRUrl || event.ticketTiers?.some((t) => t.paymentQRUrl))) {
+      requiredDocs.push('UPI Payment Proof');
+    }
+    items.push({
+      label: 'Required Details',
+      value: requiredDocs.join(', '),
+    });
+
+    // 5. Payment requirement
+    const hasPaidTiers = event.enableTieredTicketing && event.ticketTiers?.some((t) => (t.price || 0) > 0);
+    if (hasPaidTiers || (event.ticketingEnabled && event.paymentQRUrl)) {
+      const prices = event.ticketTiers?.map((t) => t.price || 0).filter((p) => p > 0) || [];
+      const minPrice = prices.length ? Math.min(...prices) : undefined;
+      items.push({
+        label: 'Payment Requirement',
+        value: minPrice !== undefined ? `Paid Entry (Starting ₹${minPrice})` : 'Paid Entry via UPI QR',
+      });
+    } else {
+      items.push({
+        label: 'Payment Requirement',
+        value: 'Free Entry (No fee required)',
+      });
+    }
+
+    // 6. Registration deadline / Event Date
+    items.push({
+      label: 'Event Date',
+      value: new Date(event.date).toLocaleDateString('en-IN', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      }),
+    });
+
+    return items;
+  }, [event, participationInfo]);
+
   // Status checks
   const isCancelled = event?.status === 'cancelled';
   const isCompleted = event?.status === 'completed';
@@ -613,31 +699,38 @@ export default function PublicEventDetailsPage() {
                 </p>
               </div>
 
-              {/* Quick Checklist */}
-              <div className="space-y-2.5 py-3 border-y border-white/10 text-xs text-slate-300">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Instant digital QR entry pass generation</span>
+              {/* Before You Register Requirements (Requirement #5) */}
+              <div className="space-y-3 py-3.5 border-y border-white/10 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                    Before You Register
+                  </span>
+                  <span className="text-[10px] text-slate-400">Quick Checklist</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Verified digital participation certificate</span>
+
+                <div className="space-y-2 text-slate-300">
+                  {requirementsList.map((req, idx) => (
+                    <div key={idx} className="flex items-start justify-between gap-3 text-xs">
+                      <span className="text-slate-400 font-medium shrink-0">{req.label}:</span>
+                      <span className="text-right font-semibold text-slate-100">{req.value}</span>
+                    </div>
+                  ))}
                 </div>
-                {participationInfo.isTeamSupported && (
+
+                <div className="space-y-2 pt-2 border-t border-white/5 text-[11px] text-slate-400">
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />
-                    <span>Team registration supported</span>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Instant digital QR entry pass upon completion</span>
                   </div>
-                )}
-                {event.maxAttendees && (
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
-                    <span>Limited capacity ({event.maxAttendees} seats)</span>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Verified digital participation certificate</span>
                   </div>
-                )}
+                </div>
               </div>
 
-              {/* Primary Register CTA Button */}
+              {/* Primary Register CTA Button (Requirement #4) */}
               {isRegistrationOpen ? (
                 event.registrationUrl ? (
                   <a
@@ -660,7 +753,7 @@ export default function PublicEventDetailsPage() {
                     }
                   >
                     <ExternalLink className="w-5 h-5" />
-                    <span>Register</span>
+                    <span>Register Now</span>
                   </a>
                 ) : (
                   <Link
@@ -681,7 +774,7 @@ export default function PublicEventDetailsPage() {
                     }
                   >
                     <Ticket className="w-5 h-5" />
-                    <span>Register &amp; Get Ticket</span>
+                    <span>Register Now</span>
                   </Link>
                 )
               ) : (

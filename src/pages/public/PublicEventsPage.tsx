@@ -278,7 +278,7 @@ export default function PublicEventsPage() {
                         }
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Register</span>
+                        <span>Register Now</span>
                       </a>
                     ) : (
                       <Link
@@ -290,7 +290,7 @@ export default function PublicEventsPage() {
                         }
                       >
                         <Ticket className="w-3.5 h-3.5" />
-                        <span>Register</span>
+                        <span>Register Now</span>
                       </Link>
                     )}
                   </div>

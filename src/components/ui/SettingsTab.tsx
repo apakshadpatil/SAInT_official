@@ -136,7 +136,7 @@ export default function SettingsTab({
       label: evt.registrationFields?.department?.label ?? '',
     },
     year: {
-      enabled: evt.registrationFields?.year?.enabled ?? false,
+      enabled: evt.registrationFields?.year?.enabled ?? true,
       required: evt.registrationFields?.year?.required ?? false,
       label: evt.registrationFields?.year?.label ?? '',
     },
@@ -150,6 +150,7 @@ export default function SettingsTab({
 
   const [regFields, setRegFields] = useState<RegistrationFieldsConfig>(getInitialRegFields(event));
   const [registrationTerms, setRegistrationTerms] = useState<string>(getInitialTerms(event));
+  const [requireRulesAcceptance, setRequireRulesAcceptance] = useState<boolean>(Boolean(event.requireRulesAcceptance));
   const [savingRegSettings, setSavingRegSettings] = useState(false);
 
   // Team Event Orchestration State
@@ -187,6 +188,7 @@ export default function SettingsTab({
     setRequireTeamName(event.requireTeamName !== false);
     setRegFields(getInitialRegFields(event));
     setRegistrationTerms(getInitialTerms(event));
+    setRequireRulesAcceptance(Boolean(event.requireRulesAcceptance));
     setCoordinators(getEventCoordinators(event));
   }, [event]);
 
@@ -485,6 +487,7 @@ export default function SettingsTab({
     try {
       const cleanTerms = registrationTerms.trim();
       await onUpdate({
+        requireRulesAcceptance,
         registrationFields: regFields,
         registrationUrl: registrationUrl.trim() || '',
         registrationTerms: cleanTerms,
@@ -1111,6 +1114,57 @@ export default function SettingsTab({
               </>
             )}
           </button>
+        </div>
+
+        {/* Require Rules Acceptance Setting */}
+        <div className="p-4 sm:p-5 rounded-xl border transition-all bg-slate-900/30" style={{ borderColor: 'var(--dash-border)' }}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold" style={{ color: 'var(--dash-text)' }}>
+                  Require Rules Acceptance
+                </span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase border ${
+                    requireRulesAcceptance
+                      ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+                      : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                  }`}
+                >
+                  {requireRulesAcceptance ? 'ON' : 'OFF'}
+                </span>
+              </div>
+              <p className="text-[11px]" style={{ color: 'var(--dash-muted)' }}>
+                {requireRulesAcceptance
+                  ? 'Participants must accept rules on a separate screen before continuing (Register → Rules → Form).'
+                  : 'Direct registration (Register → Form). Participants can access rules anytime via modal/drawer without losing entered data.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setRequireRulesAcceptance(false)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                  !requireRulesAcceptance
+                    ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
+                    : 'bg-white/5 text-slate-400 hover:text-white border-white/10'
+                }`}
+              >
+                OFF (Direct)
+              </button>
+              <button
+                type="button"
+                onClick={() => setRequireRulesAcceptance(true)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                  requireRulesAcceptance
+                    ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
+                    : 'bg-white/5 text-slate-400 hover:text-white border-white/10'
+                }`}
+              >
+                ON (Mandatory)
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* External Registration Link Setting */}

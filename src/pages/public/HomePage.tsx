@@ -398,7 +398,7 @@ export default function HomePage() {
                           style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
-                          Register
+                          Register Now
                         </a>
                       ) : (
                         <Link
@@ -407,7 +407,7 @@ export default function HomePage() {
                           style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}
                         >
                           <Ticket className="w-3.5 h-3.5" />
-                          Register
+                          Register Now
                         </Link>
                       )}
                     </div>

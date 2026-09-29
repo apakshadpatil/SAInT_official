@@ -303,6 +303,7 @@ export interface EventRecord {
   // Rules & post-registration actions
   rules?: string[];
   registrationTerms?: string;
+  requireRulesAcceptance?: boolean;
   rulebookUrl?: string;
   whatsappGroupUrl?: string;
   // Registration Portal Banner & Background Customization

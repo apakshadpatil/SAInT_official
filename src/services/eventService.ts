@@ -256,6 +256,12 @@ export function subscribeEventById(eventId: string, callback: (event: EventRecor
         eventCoordinatorContacts: (window as any).__MOCK_EVENT_COORDINATORS__,
       };
     }
+    if (item && typeof window !== 'undefined' && (window as any).__MOCK_EVENT_OVERRIDE__) {
+      item = {
+        ...item,
+        ...(window as any).__MOCK_EVENT_OVERRIDE__,
+      };
+    }
     if (item) setCachedData(`event:${eventId}`, item);
     callback(item);
   });
