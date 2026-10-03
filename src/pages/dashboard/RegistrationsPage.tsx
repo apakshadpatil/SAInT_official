@@ -22,6 +22,7 @@ import {
 import { useToast } from '../../contexts/ToastContext';
 import {
   getUnifiedRegistrations,
+  subscribeUnifiedRegistrations,
   computeEventSummaries,
   computeOverviewStats,
   exportRegistrationsToCSV,
@@ -67,7 +68,7 @@ export default function RegistrationsPage() {
   // Search & Filter state for "All Registrations"
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEventId, setSelectedEventId] = useState<string>(initialEventParam);
-  const [registrationTypeFilter, setRegistrationTypeFilter] = useState<'all' | 'solo' | 'team'>('all');
+  const [registrationTypeFilter, setRegistrationTypeFilter] = useState<'all' | 'solo' | 'team' | 'squad'>('all');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<'all' | 'verified' | 'pending' | 'rejected'>('all');
   const [checkInFilter, setCheckInFilter] = useState<'all' | 'arrived' | 'pending'>('all');
 
@@ -81,28 +82,45 @@ export default function RegistrationsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  // Load Data
-  const loadData = useCallback(async (force = false) => {
-    try {
-      if (force) setRefreshing(true);
-      else setLoading(true);
+  // Real-time synchronization with Firestore
+  useEffect(() => {
+    setLoading(true);
 
-      const result = await getUnifiedRegistrations(force);
+    const unsubscribe = subscribeUnifiedRegistrations(
+      (data) => {
+        setEvents(data.events);
+        setRegistrations(data.registrations);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('Failed to sync registrations in real time:', err);
+        const msg = err instanceof Error ? err.message : 'Real-time synchronization failed';
+        showToast(msg, 'error');
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [showToast]);
+
+  // Manual Refresh Handler
+  const handleManualRefresh = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      const result = await getUnifiedRegistrations(true);
       setEvents(result.events);
       setRegistrations(result.registrations);
+      showToast('Registration data refreshed', 'success');
     } catch (err: unknown) {
       console.error('Failed to load registrations data:', err);
       const msg = err instanceof Error ? err.message : 'Failed to load registration records';
       showToast(msg, 'error');
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   }, [showToast]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
 
   // Sync date param if present in URL
   useEffect(() => {
@@ -168,9 +186,17 @@ export default function RegistrationsPage() {
         return false;
       }
 
-      // 3. Type Filter
-      if (registrationTypeFilter !== 'all' && item.type !== registrationTypeFilter) {
-        return false;
+      // 3. Type / Participation Format Filter
+      if (registrationTypeFilter === 'solo') {
+        if (item.type !== 'solo' && item.memberCount !== 1) return false;
+      } else if (registrationTypeFilter === 'squad') {
+        const isSquad =
+          item.memberCount === 4 ||
+          item.formatLabel?.toLowerCase().includes('squad') ||
+          item.tierName?.toLowerCase().includes('squad');
+        if (!isSquad) return false;
+      } else if (registrationTypeFilter === 'team') {
+        if (item.type !== 'team' && item.memberCount <= 1) return false;
       }
 
       // 4. Payment Status Filter
@@ -315,6 +341,18 @@ export default function RegistrationsPage() {
             >
               Centralized Administration
             </span>
+            <span
+              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-0.5 rounded-md"
+              style={{
+                background: 'rgba(16, 185, 129, 0.12)',
+                color: '#10b981',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+              }}
+              title="Real-time live sync connected to Firestore"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Live Real-Time Sync</span>
+            </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight mt-1" style={{ color: 'var(--dash-text)' }}>
             Registration Overview
@@ -327,7 +365,7 @@ export default function RegistrationsPage() {
         {/* Action Controls */}
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
-            onClick={() => loadData(true)}
+            onClick={handleManualRefresh}
             disabled={refreshing || loading}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all border cursor-pointer hover:opacity-90"
             style={{
@@ -988,24 +1026,25 @@ export default function RegistrationsPage() {
                 </select>
               </div>
 
-              {/* Type Filter */}
-              <div className="w-full md:w-36 shrink-0">
+              {/* Type / Participation Format Filter */}
+              <div className="w-full md:w-44 shrink-0">
                 <select
                   value={registrationTypeFilter}
                   onChange={(e) => {
                     setRegistrationTypeFilter(e.target.value as any);
                     setCurrentPage(1);
                   }}
-                  className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border transition-all cursor-pointer"
+                  className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border transition-all cursor-pointer font-medium"
                   style={{
                     background: 'var(--dash-hover)',
                     borderColor: 'var(--dash-border)',
                     color: 'var(--dash-text)',
                   }}
                 >
-                  <option value="all">Type: All</option>
-                  <option value="solo">Solo Only</option>
-                  <option value="team">Teams Only</option>
+                  <option value="all">Format: All Formats</option>
+                  <option value="solo">Solo (Team of 1)</option>
+                  <option value="squad">Squad (Team of 4)</option>
+                  <option value="team">All Teams / Groups</option>
                 </select>
               </div>
 
@@ -1077,8 +1116,8 @@ export default function RegistrationsPage() {
                     </span>
                   )}
                   {registrationTypeFilter !== 'all' && (
-                    <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-500 font-semibold">
-                      Type: {registrationTypeFilter}
+                    <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-500 font-semibold capitalize">
+                      Format: {registrationTypeFilter === 'solo' ? 'Solo (1)' : registrationTypeFilter === 'squad' ? 'Squad (4)' : 'Teams'}
                     </span>
                   )}
                   {paymentStatusFilter !== 'all' && (
@@ -1237,10 +1276,10 @@ export default function RegistrationsPage() {
                               {isTeam ? (
                                 <button
                                   onClick={() => toggleTeamExpand(item.id)}
-                                  className="flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-xs bg-amber-500/10 text-amber-500 border border-amber-500/30 cursor-pointer hover:bg-amber-500/20 transition-all"
+                                  className="flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold text-xs bg-amber-500/10 text-amber-500 border border-amber-500/30 cursor-pointer hover:bg-amber-500/20 transition-all"
                                 >
                                   <Users className="w-3 h-3" />
-                                  <span>Team ({item.memberCount})</span>
+                                  <span>{item.formatLabel || `Team (${item.memberCount})`}</span>
                                   {isExpanded ? (
                                     <ChevronDown className="w-3 h-3 ml-0.5" />
                                   ) : (
@@ -1248,8 +1287,8 @@ export default function RegistrationsPage() {
                                   )}
                                 </button>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-xs bg-blue-500/10 text-blue-500 border border-blue-500/20">
-                                  <span>Solo</span>
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold text-xs bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                                  <span>{item.formatLabel || 'Solo'}</span>
                                 </span>
                               )}
                             </td>
@@ -1532,11 +1571,13 @@ export default function RegistrationsPage() {
                       : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'
                   }`}
                 >
-                  {detailModalItem.type === 'team' ? 'Team Registration' : 'Solo Registration'}
+                  {detailModalItem.formatLabel || (detailModalItem.type === 'team' ? 'Team Registration' : 'Solo Registration')}
                 </span>
                 <h3 className="text-xl font-black mt-1" style={{ color: 'var(--dash-text)' }}>
                   {detailModalItem.type === 'team'
                     ? detailModalItem.teamName
+                    : detailModalItem.teamName
+                    ? `${detailModalItem.name} (${detailModalItem.teamName})`
                     : detailModalItem.name}
                 </h3>
                 <p className="text-xs" style={{ color: 'var(--dash-muted)' }}>
@@ -1571,9 +1612,9 @@ export default function RegistrationsPage() {
                 </span>
               </div>
               <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-hover)' }}>
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Participants Count</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Format / Members</span>
                 <span className="font-bold text-sm mt-0.5 block" style={{ color: 'var(--dash-text)' }}>
-                  {detailModalItem.memberCount} {detailModalItem.memberCount === 1 ? 'Person' : 'People'}
+                  {detailModalItem.formatLabel || `${detailModalItem.memberCount} ${detailModalItem.memberCount === 1 ? 'Person' : 'People'}`}
                 </span>
               </div>
               <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-hover)' }}>
@@ -1617,6 +1658,14 @@ export default function RegistrationsPage() {
                     <span className="text-slate-400 block text-[11px]">Tier / Category:</span>
                     <span className="font-semibold" style={{ color: 'var(--dash-text)' }}>{detailModalItem.tierName || 'Standard'}</span>
                   </div>
+                  {detailModalItem.type === 'solo' && detailModalItem.teamName && (
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">In-Game Name / Handle:</span>
+                      <span className="font-semibold text-blue-400 font-mono" style={{ color: 'var(--dash-text)' }}>
+                        {detailModalItem.teamName}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

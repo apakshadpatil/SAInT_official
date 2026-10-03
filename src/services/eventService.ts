@@ -476,11 +476,8 @@ export async function registerParticipantForEvent(
   if (auth.currentUser) {
     try {
       const existingParticipants = event.participants || [];
-      const normalizedEmail = participantData.email?.trim().toLowerCase();
       const existingIndex = existingParticipants.findIndex((participant) => {
-        if (participant.ticketId === ticket.id) return true;
-        if (!normalizedEmail) return false;
-        return participant.email?.trim().toLowerCase() === normalizedEmail;
+        return (participant.ticketId && participant.ticketId === ticket.id) || participant.id === ticket.id;
       });
 
       const nextParticipants = [...existingParticipants];
@@ -558,14 +555,13 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
 
   // First populate with existing participants from event doc
   existingParticipants.forEach((p) => {
-    const key = p.ticketId || (p.email ? p.email.toLowerCase() : p.id);
-    participantMap.set(key, p);
+    const key = p.ticketId || p.id || (p.email ? p.email.toLowerCase() : undefined);
+    if (key) participantMap.set(key, p);
   });
 
   // Then merge tickets from subcollection
   tickets.forEach((ticket) => {
     const key = ticket.id;
-    const emailKey = ticket.guestEmail ? ticket.guestEmail.toLowerCase() : null;
 
     const participant: EventParticipant = {
       id: ticket.id,
@@ -596,25 +592,9 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
       createdAt: ticket.createdAt,
     };
 
-    // If an existing entry exists by email or ticketId, merge while preserving admin allocations
-    if (emailKey && participantMap.has(emailKey)) {
-      const existing = participantMap.get(emailKey)!;
-      participantMap.set(emailKey, {
-        ...participant,
-        allocatedLab: existing.allocatedLab,
-        allocatedClassroom: existing.allocatedClassroom,
-        batchId: existing.batchId,
-        batchName: existing.batchName,
-        certificateUrl: existing.certificateUrl,
-        certificateSent: existing.certificateSent,
-        paymentStatus: ticket.paymentStatus ?? existing.paymentStatus,
-        paymentScreenshotUrl: ticket.paymentScreenshotUrl || existing.paymentScreenshotUrl,
-        paymentScreenshotPath: ticket.paymentScreenshotPath || existing.paymentScreenshotPath,
-        paymentVerifiedAt: ticket.paymentVerifiedAt || existing.paymentVerifiedAt,
-        paymentVerifiedBy: ticket.paymentVerifiedBy || existing.paymentVerifiedBy,
-      });
-    } else if (participantMap.has(key)) {
-      const existing = participantMap.get(key)!;
+    // If an existing entry exists for this specific ticketId or ID, merge while preserving admin allocations
+    const existing = participantMap.get(key) || (ticket.id ? participantMap.get(ticket.id) : undefined);
+    if (existing) {
       participantMap.set(key, {
         ...participant,
         allocatedLab: existing.allocatedLab,
@@ -641,14 +621,14 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
   const existingTeams = [...(event.teams || [])];
   const teamMap = new Map<string, EventTeam>();
 
-  // Index existing teams by both their ID and lead email
+  // Index existing teams by their unique ID
   existingTeams.forEach((t) => {
     if (t.id) teamMap.set(t.id, t);
-    if (t.leadEmail) teamMap.set(t.leadEmail.trim().toLowerCase(), t);
   });
 
+  // Only multi-member tickets or teamSize > 1 are treated as teams (Solo IGN handle does not make a ticket a team)
   tickets
-    .filter((t) => (t.teamMembers && t.teamMembers.length > 0) || (t.teamSize && t.teamSize > 1) || t.teamName)
+    .filter((t) => (t.teamMembers && t.teamMembers.length > 0) || (t.teamSize && t.teamSize > 1))
     .forEach((ticket) => {
       const teamId = `team_${ticket.id}`;
       const leadEmail = (ticket.guestEmail || '').trim().toLowerCase();
@@ -658,16 +638,15 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
         ticket.customResponses?.['Team Name'] ||
         `Team ${ticket.guestName}`;
 
-      // Find existing team by teamId, ticketId, transactionId, or leadEmail
+      // Find existing team strictly by teamId, ticketId, or matching ticket reference (NOT merely by lead email)
       const existing =
         teamMap.get(teamId) ||
-        (leadEmail ? teamMap.get(leadEmail) : undefined) ||
+        teamMap.get(ticket.id) ||
         existingTeams.find(
           (t) =>
             t.id === teamId ||
             t.id === ticket.id ||
-            t.transactionId === ticket.transactionId ||
-            (leadEmail && t.leadEmail?.trim().toLowerCase() === leadEmail)
+            ((t as any).ticketId && (t as any).ticketId === ticket.id)
         );
 
       const memberCertificateUrls = {
@@ -727,9 +706,6 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
       };
 
       teamMap.set(newTeam.id, newTeam);
-      if (newTeam.leadEmail) {
-        teamMap.set(newTeam.leadEmail.toLowerCase(), newTeam);
-      }
     });
 
   // Deduplicate by team.id

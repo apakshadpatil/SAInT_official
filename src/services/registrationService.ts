@@ -1,10 +1,20 @@
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+} from 'firebase/firestore';
+import { db } from '../firebase/config';
 import { getEvents, getEventTickets, mergeEventWithTickets } from './eventService';
-import { cachedFetch, invalidateCache } from './dbCache';
+import { cachedFetch, invalidateCache, setCachedData } from './dbCache';
+import { trackDBOperation } from './dbTrackingService';
 import type { EventRecord, EventTeam, EventTicket, TeamMemberDetail } from '../types';
 
 export interface UnifiedRegistrationItem {
   id: string; // unique ID
   type: 'solo' | 'team';
+  formatLabel?: string; // Display label e.g. 'Solo', 'Squad (4)', 'Duo (2)', 'Team (3)'
+  teamSize?: number;
   eventId: string;
   eventName: string;
   eventDate: string;
@@ -157,6 +167,284 @@ function normalizePaymentStatus(status?: string | null): 'verified' | 'pending' 
 }
 
 /**
+ * Helper to determine participation format (Solo vs Squad vs Duo vs Team),
+ * display label, and member count from registration attributes.
+ *
+ * Concepts:
+ * - Team of 1 -> Solo
+ * - Team of 4 -> Squad (4)
+ * - Team of 2 -> Duo (2)
+ * - Team of 3 -> Trio (3)
+ * - Multi-member team -> Team (N)
+ *
+ * NOTE: Participant In-Game Names (IGNs) stored in teamName for solo tickets
+ * do NOT make a 1-person registration a team.
+ */
+export interface RegistrationFormatInfo {
+  type: 'solo' | 'team';
+  label: string; // e.g. 'Solo', 'Squad (4)', 'Duo (2)', 'Team (3)'
+  memberCount: number;
+}
+
+export function getRegistrationFormatInfo(input: {
+  teamSize?: number;
+  teamMembers?: Array<any>;
+  tierName?: string;
+  memberCount?: number;
+}): RegistrationFormatInfo {
+  const explicitMembers = Array.isArray(input.teamMembers) ? input.teamMembers.length : 0;
+  const specifiedSize = typeof input.teamSize === 'number' && input.teamSize > 0 ? input.teamSize : undefined;
+  const tier = (input.tierName || '').trim();
+  const tierLower = tier.toLowerCase();
+
+  // If explicit additional members are attached, it is definitely a team/group
+  if (explicitMembers > 0) {
+    const totalCount = Math.max(explicitMembers + 1, specifiedSize || 1);
+    let label = tier || `Team (${totalCount})`;
+    if (totalCount === 4 || /squad/i.test(tierLower)) {
+      label = 'Squad (4)';
+    } else if (totalCount === 2 || /duo/i.test(tierLower)) {
+      label = 'Duo (2)';
+    } else if (totalCount === 3 || /trio/i.test(tierLower)) {
+      label = 'Trio (3)';
+    }
+    return {
+      type: 'team',
+      label,
+      memberCount: totalCount,
+    };
+  }
+
+  // Check if explicitly configured as Team of 1 or Solo tier
+  const isSoloTier = tierLower.includes('solo') || tierLower === 'individual';
+  const isTeamTier = tierLower.includes('squad') || tierLower.includes('duo') || tierLower.includes('trio') || tierLower.includes('team');
+
+  if (specifiedSize === 1 || isSoloTier) {
+    return {
+      type: 'solo',
+      label: 'Solo',
+      memberCount: 1,
+    };
+  }
+
+  // If teamSize > 1 was specified (e.g. Squad / Team of 4) even if members array hasn't been filled
+  if (specifiedSize && specifiedSize > 1) {
+    let label = tier || (specifiedSize === 4 ? 'Squad (4)' : `Team (${specifiedSize})`);
+    if (specifiedSize === 4 || /squad/i.test(tierLower)) {
+      label = 'Squad (4)';
+    } else if (specifiedSize === 2 || /duo/i.test(tierLower)) {
+      label = 'Duo (2)';
+    } else if (specifiedSize === 3 || /trio/i.test(tierLower)) {
+      label = 'Trio (3)';
+    }
+    return {
+      type: 'team',
+      label,
+      memberCount: specifiedSize,
+    };
+  }
+
+  // If tier name indicates a team/squad format
+  if (isTeamTier) {
+    const count = specifiedSize || 4;
+    return {
+      type: 'team',
+      label: tier || (count === 4 ? 'Squad (4)' : `Team (${count})`),
+      memberCount: count,
+    };
+  }
+
+  // Default: individual / solo registration
+  return {
+    type: 'solo',
+    label: 'Solo',
+    memberCount: 1,
+  };
+}
+
+/**
+ * Pure builder function: transforms events and tickets into unified registration items.
+ * Preserves team hierarchy, member counts, individual tickets, and direct event participants.
+ *
+ * CRITICAL: A participant can legitimately register in multiple formats (e.g. Solo and Squad).
+ * Deduplication is strictly by unique ticket/team record ID, NEVER by participant email alone.
+ */
+export function buildUnifiedRegistrations(
+  validEvents: EventRecord[],
+  ticketsByEvent: Map<string, EventTicket[]>
+): UnifiedRegistrationItem[] {
+  const registrations: UnifiedRegistrationItem[] = [];
+
+  // Process each event
+  validEvents.forEach((ev) => {
+    const rawTickets = ticketsByEvent.get(ev.id) || [];
+    const mergedEvent = mergeEventWithTickets(ev, rawTickets);
+
+    const seenTicketIds = new Set<string>();
+    const seenTeamIds = new Set<string>();
+
+    // 1. Process all raw tickets for this event (subcollection tickets)
+    rawTickets.forEach((ticket) => {
+      if (!ticket || !ticket.id) return;
+      if (seenTicketIds.has(ticket.id)) return;
+      seenTicketIds.add(ticket.id);
+
+      const formatInfo = getRegistrationFormatInfo({
+        teamSize: ticket.teamSize,
+        teamMembers: ticket.teamMembers,
+        tierName: ticket.tierName,
+      });
+
+      const isTeam = formatInfo.type === 'team';
+      const membersList = Array.isArray(ticket.teamMembers) ? ticket.teamMembers : [];
+      const teamId = isTeam ? `team_${ticket.id}` : undefined;
+      if (teamId) seenTeamIds.add(teamId);
+
+      // Determine display team name / in-game handle
+      const rawTeamName =
+        ticket.teamName ||
+        ticket.customResponses?.teamName ||
+        ticket.customResponses?.['Team Name'] ||
+        ticket.customResponses?.['team_name'] ||
+        (isTeam ? `Team ${ticket.guestName}` : undefined);
+
+      registrations.push({
+        id: ticket.id,
+        type: formatInfo.type,
+        formatLabel: formatInfo.label,
+        teamSize: ticket.teamSize,
+        eventId: ev.id,
+        eventName: ev.title || 'Untitled Event',
+        eventDate: ev.date || '',
+        ticketId: ticket.id,
+        ticketNumber: ticket.ticketNumber,
+        name: ticket.guestName || (isTeam ? 'Unnamed Leader' : 'Unnamed Participant'),
+        email: ticket.guestEmail || '',
+        phone: ticket.guestPhone,
+        college: ticket.college,
+        department: ticket.department,
+        year: ticket.year,
+        teamId,
+        teamName: rawTeamName,
+        tierName: ticket.tierName,
+        memberCount: formatInfo.memberCount,
+        members: membersList,
+        paymentStatus: normalizePaymentStatus(ticket.paymentStatus),
+        transactionId: ticket.transactionId,
+        paymentScreenshotUrl: ticket.paymentScreenshotUrl,
+        paymentScreenshotPath: ticket.paymentScreenshotPath,
+        paymentVerifiedAt: ticket.paymentVerifiedAt,
+        paymentVerifiedBy: ticket.paymentVerifiedBy,
+        arrived: Boolean(ticket.checkedIn),
+        arrivedAt: ticket.checkedInAt,
+        createdAt: ticket.createdAt || ev.createdAt || '',
+        customResponses: ticket.customResponses,
+      });
+    });
+
+    // 2. Process any legacy/doc-only Teams not present in raw tickets
+    const docTeams: EventTeam[] = mergedEvent.teams || [];
+    docTeams.forEach((t) => {
+      if (!t || !t.id) return;
+      const teamTicketId = (t as any).ticketId || (t.id.startsWith('team_') ? t.id.slice(5) : undefined);
+      if (seenTeamIds.has(t.id) || (teamTicketId && seenTicketIds.has(teamTicketId))) return;
+      seenTeamIds.add(t.id);
+      if (teamTicketId) seenTicketIds.add(teamTicketId);
+
+      const membersList = Array.isArray(t.members) ? t.members : [];
+      const formatInfo = getRegistrationFormatInfo({
+        teamSize: t.memberCount || membersList.length + 1,
+        teamMembers: membersList,
+        tierName: t.tierName,
+      });
+
+      registrations.push({
+        id: t.id,
+        type: 'team',
+        formatLabel: formatInfo.label,
+        teamSize: t.memberCount,
+        eventId: ev.id,
+        eventName: ev.title || 'Untitled Event',
+        eventDate: ev.date || '',
+        name: t.leadName || 'Unnamed Leader',
+        email: t.leadEmail || '',
+        phone: t.leadPhone,
+        college: t.college,
+        department: t.department,
+        year: t.year,
+        teamId: t.id,
+        teamName: t.teamName || `Team ${t.leadName}`,
+        tierName: t.tierName,
+        memberCount: formatInfo.memberCount,
+        members: membersList,
+        paymentStatus: normalizePaymentStatus(t.paymentStatus),
+        transactionId: t.transactionId,
+        paymentScreenshotUrl: t.paymentScreenshotUrl,
+        paymentScreenshotPath: t.paymentScreenshotPath,
+        paymentVerifiedAt: t.paymentVerifiedAt,
+        paymentVerifiedBy: t.paymentVerifiedBy,
+        arrived: Boolean(t.arrived),
+        arrivedAt: t.arrivedAt,
+        createdAt: t.registeredAt || (t as any).createdAt || ev.createdAt || '',
+        customResponses: t.customResponses,
+      });
+    });
+
+    // 3. Process any legacy/doc-only Participants not present in raw tickets or teams
+    if (Array.isArray(mergedEvent.participants)) {
+      mergedEvent.participants.forEach((p) => {
+        if (!p || !p.id) return;
+        const pId = p.ticketId || p.id;
+        if (seenTicketIds.has(pId) || seenTeamIds.has(pId) || seenTeamIds.has(`team_${pId}`)) return;
+        seenTicketIds.add(pId);
+
+        const formatInfo = getRegistrationFormatInfo({
+          teamSize: p.teamSize,
+          teamMembers: p.teamMembers,
+          tierName: p.tierName,
+        });
+
+        registrations.push({
+          id: pId,
+          type: formatInfo.type,
+          formatLabel: formatInfo.label,
+          teamSize: p.teamSize,
+          eventId: ev.id,
+          eventName: ev.title || 'Untitled Event',
+          eventDate: ev.date || '',
+          ticketId: p.ticketId || p.id,
+          name: p.name || 'Unnamed Participant',
+          email: p.email || '',
+          phone: p.phone,
+          college: p.college,
+          department: p.department,
+          year: p.year,
+          teamName: p.teamName,
+          tierName: p.tierName,
+          memberCount: formatInfo.memberCount,
+          members: p.teamMembers || [],
+          paymentStatus: normalizePaymentStatus(p.paymentStatus),
+          transactionId: p.transactionId,
+          paymentScreenshotUrl: p.paymentScreenshotUrl,
+          paymentScreenshotPath: p.paymentScreenshotPath,
+          paymentVerifiedAt: p.paymentVerifiedAt,
+          paymentVerifiedBy: p.paymentVerifiedBy,
+          arrived: Boolean(p.arrived),
+          arrivedAt: p.arrivedAt,
+          createdAt: p.createdAt || ev.createdAt || '',
+          customResponses: p.customResponses,
+        });
+      });
+    }
+  });
+
+  // Sort registrations descending by createdAt
+  registrations.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  return registrations;
+}
+
+/**
  * Fetches all events and tickets across all events, and merges them into unified registration records.
  */
 export async function getUnifiedRegistrations(forceRefresh = false): Promise<{
@@ -188,210 +476,7 @@ export async function getUnifiedRegistrations(forceRefresh = false): Promise<{
         }
       });
 
-      const registrations: UnifiedRegistrationItem[] = [];
-
-      // 3. Process each event
-      validEvents.forEach((ev) => {
-        const rawTickets = ticketsByEvent.get(ev.id) || [];
-        const mergedEvent = mergeEventWithTickets(ev, rawTickets);
-
-        const seenEmails = new Set<string>();
-        const seenTicketIds = new Set<string>();
-        const seenTeamIds = new Set<string>();
-
-        // Process Teams
-        const teams: EventTeam[] = mergedEvent.teams || [];
-        teams.forEach((t) => {
-          if (!t) return;
-          const leadEmail = (t.leadEmail || '').trim().toLowerCase();
-          const teamId = t.id || `team_${t.leadEmail}`;
-          if (seenTeamIds.has(teamId)) return;
-          seenTeamIds.add(teamId);
-
-          if (leadEmail) seenEmails.add(leadEmail);
-
-          // Calculate team members
-          const membersList = Array.isArray(t.members) ? t.members : [];
-          const totalMembers = Math.max(membersList.length + 1, t.memberCount || 1);
-
-          registrations.push({
-            id: teamId,
-            type: 'team',
-            eventId: ev.id,
-            eventName: ev.title || 'Untitled Event',
-            eventDate: ev.date || '',
-            name: t.leadName || 'Unnamed Leader',
-            email: t.leadEmail || '',
-            phone: t.leadPhone,
-            college: t.college,
-            department: t.department,
-            year: t.year,
-            teamId: t.id,
-            teamName: t.teamName || `Team ${t.leadName}`,
-            tierName: t.tierName,
-            memberCount: totalMembers,
-            members: membersList,
-            paymentStatus: normalizePaymentStatus(t.paymentStatus),
-            transactionId: t.transactionId,
-            paymentScreenshotUrl: t.paymentScreenshotUrl,
-            paymentScreenshotPath: t.paymentScreenshotPath,
-            paymentVerifiedAt: t.paymentVerifiedAt,
-            paymentVerifiedBy: t.paymentVerifiedBy,
-            arrived: Boolean(t.arrived),
-            arrivedAt: t.arrivedAt,
-            createdAt: t.registeredAt || (t as any).createdAt || ev.createdAt || '',
-            customResponses: t.customResponses,
-          });
-        });
-
-        // Also check raw tickets for any team tickets not yet captured
-        rawTickets.forEach((ticket) => {
-          if (!ticket) return;
-          const hasMembers = (ticket.teamMembers && ticket.teamMembers.length > 0);
-          const hasTeamSize = (ticket.teamSize && ticket.teamSize > 1);
-          const hasTeamName = Boolean(ticket.teamName);
-
-          if (hasMembers || hasTeamSize || hasTeamName) {
-            const teamId = `team_${ticket.id}`;
-            const leadEmail = (ticket.guestEmail || '').trim().toLowerCase();
-            if (seenTeamIds.has(teamId) || (leadEmail && seenEmails.has(leadEmail))) {
-              seenTicketIds.add(ticket.id);
-              return;
-            }
-
-            seenTeamIds.add(teamId);
-            if (leadEmail) seenEmails.add(leadEmail);
-            seenTicketIds.add(ticket.id);
-
-            const membersList = ticket.teamMembers || [];
-            const totalMembers = Math.max(membersList.length + 1, ticket.teamSize || 1);
-
-            registrations.push({
-              id: teamId,
-              type: 'team',
-              eventId: ev.id,
-              eventName: ev.title || 'Untitled Event',
-              eventDate: ev.date || '',
-              ticketId: ticket.id,
-              ticketNumber: ticket.ticketNumber,
-              name: ticket.guestName || 'Unnamed Leader',
-              email: ticket.guestEmail || '',
-              phone: ticket.guestPhone,
-              college: ticket.college,
-              department: ticket.department,
-              year: ticket.year,
-              teamId,
-              teamName: ticket.teamName || ticket.customResponses?.teamName || `Team ${ticket.guestName}`,
-              tierName: ticket.tierName,
-              memberCount: totalMembers,
-              members: membersList,
-              paymentStatus: normalizePaymentStatus(ticket.paymentStatus),
-              transactionId: ticket.transactionId,
-              paymentScreenshotUrl: ticket.paymentScreenshotUrl,
-              paymentScreenshotPath: ticket.paymentScreenshotPath,
-              paymentVerifiedAt: ticket.paymentVerifiedAt,
-              paymentVerifiedBy: ticket.paymentVerifiedBy,
-              arrived: Boolean(ticket.checkedIn),
-              arrivedAt: ticket.checkedInAt,
-              createdAt: ticket.createdAt || ev.createdAt || '',
-              customResponses: ticket.customResponses,
-            });
-          }
-        });
-
-        // Process Solo Registrations from raw tickets
-        rawTickets.forEach((ticket) => {
-          if (!ticket) return;
-          if (seenTicketIds.has(ticket.id)) return;
-
-          const email = (ticket.guestEmail || '').trim().toLowerCase();
-          const hasMembers = (ticket.teamMembers && ticket.teamMembers.length > 0);
-          const hasTeamSize = (ticket.teamSize && ticket.teamSize > 1);
-          const hasTeamName = Boolean(ticket.teamName);
-
-          if (hasMembers || hasTeamSize || hasTeamName) return;
-          if (email && seenEmails.has(email)) return;
-
-          seenTicketIds.add(ticket.id);
-          if (email) seenEmails.add(email);
-
-          registrations.push({
-            id: ticket.id,
-            type: 'solo',
-            eventId: ev.id,
-            eventName: ev.title || 'Untitled Event',
-            eventDate: ev.date || '',
-            ticketId: ticket.id,
-            ticketNumber: ticket.ticketNumber,
-            name: ticket.guestName || 'Unnamed Participant',
-            email: ticket.guestEmail || '',
-            phone: ticket.guestPhone,
-            college: ticket.college,
-            department: ticket.department,
-            year: ticket.year,
-            memberCount: 1,
-            paymentStatus: normalizePaymentStatus(ticket.paymentStatus),
-            transactionId: ticket.transactionId,
-            paymentScreenshotUrl: ticket.paymentScreenshotUrl,
-            paymentScreenshotPath: ticket.paymentScreenshotPath,
-            paymentVerifiedAt: ticket.paymentVerifiedAt,
-            paymentVerifiedBy: ticket.paymentVerifiedBy,
-            arrived: Boolean(ticket.checkedIn),
-            arrivedAt: ticket.checkedInAt,
-            createdAt: ticket.createdAt || ev.createdAt || '',
-            customResponses: ticket.customResponses,
-          });
-        });
-
-        // Also check mergedEvent.participants for any records created directly on event doc
-        if (Array.isArray(mergedEvent.participants)) {
-          mergedEvent.participants.forEach((p) => {
-            if (!p) return;
-            const pId = p.ticketId || p.id;
-            const email = (p.email || '').trim().toLowerCase();
-            if (pId && seenTicketIds.has(pId)) return;
-            if (email && seenEmails.has(email)) return;
-
-            const hasMembers = (p.teamMembers && p.teamMembers.length > 0);
-            const hasTeamSize = (p.teamSize && p.teamSize > 1);
-            const hasTeamName = Boolean(p.teamName);
-
-            if (hasMembers || hasTeamSize || hasTeamName) return;
-
-            if (pId) seenTicketIds.add(pId);
-            if (email) seenEmails.add(email);
-
-            registrations.push({
-              id: pId || `part_${p.name}_${Math.random()}`,
-              type: 'solo',
-              eventId: ev.id,
-              eventName: ev.title || 'Untitled Event',
-              eventDate: ev.date || '',
-              ticketId: p.ticketId || p.id,
-              name: p.name || 'Unnamed Participant',
-              email: p.email || '',
-              phone: p.phone,
-              college: p.college,
-              department: p.department,
-              year: p.year,
-              memberCount: 1,
-              paymentStatus: normalizePaymentStatus(p.paymentStatus),
-              transactionId: p.transactionId,
-              paymentScreenshotUrl: p.paymentScreenshotUrl,
-              paymentScreenshotPath: p.paymentScreenshotPath,
-              paymentVerifiedAt: p.paymentVerifiedAt,
-              paymentVerifiedBy: p.paymentVerifiedBy,
-              arrived: Boolean(p.arrived),
-              arrivedAt: p.arrivedAt,
-              createdAt: p.createdAt || ev.createdAt || '',
-              customResponses: p.customResponses,
-            });
-          });
-        }
-      });
-
-      // Sort registrations descending by createdAt
-      registrations.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      const registrations = buildUnifiedRegistrations(validEvents, ticketsByEvent);
 
       return {
         events: validEvents,
@@ -405,6 +490,164 @@ export async function getUnifiedRegistrations(forceRefresh = false): Promise<{
       forceRefresh,
     }
   );
+}
+
+/**
+ * Real-time subscription to all registrations and events across SAInT.
+ * Sets up Firestore real-time onSnapshot listeners on:
+ * 1. The events collection (for events, dates, statuses, and embedded participants/teams)
+ * 2. Each event's tickets subcollection (for newly registered participants and teams)
+ *
+ * Automatically detects:
+ * - New participant registrations (solo & team)
+ * - Updated registrations (payment status, arrival/check-in, team member changes)
+ * - Deleted or cancelled registrations
+ * - Added, updated, or removed events
+ *
+ * Returns an unsubscribe cleanup function.
+ */
+export function subscribeUnifiedRegistrations(
+  onData: (data: { events: EventRecord[]; registrations: UnifiedRegistrationItem[] }) => void,
+  onError?: (err: Error) => void
+): () => void {
+  trackDBOperation({ operation: 'listener', action: 'subscribe_unified_registrations', resource: 'registrations' });
+
+  let isUnsubscribed = false;
+  let currentEvents: EventRecord[] = [];
+  const ticketsByEvent = new Map<string, EventTicket[]>();
+  const ticketListeners = new Map<string, () => void>();
+  const initialEventsPending = new Set<string>();
+  let hasInitialNotified = false;
+
+  const recomputeAndNotify = () => {
+    if (isUnsubscribed) return;
+    const registrations = buildUnifiedRegistrations(currentEvents, ticketsByEvent);
+
+    // Keep cache fresh so any concurrent reads get instantaneous data
+    setCachedData('registrations:unified_all', {
+      events: currentEvents,
+      registrations,
+    });
+
+    onData({
+      events: currentEvents,
+      registrations,
+    });
+  };
+
+  const checkInitialAndNotify = () => {
+    if (!hasInitialNotified) {
+      if (initialEventsPending.size === 0) {
+        hasInitialNotified = true;
+        recomputeAndNotify();
+      }
+    } else {
+      recomputeAndNotify();
+    }
+  };
+
+  // Safety timer for initial load: ensures initial view renders within 1200ms
+  // even if an event ticket listener takes slightly longer to emit
+  const safetyTimer = setTimeout(() => {
+    if (!hasInitialNotified && !isUnsubscribed) {
+      hasInitialNotified = true;
+      recomputeAndNotify();
+    }
+  }, 1200);
+
+  // Subscribe to all events
+  const unsubEvents = onSnapshot(
+    query(collection(db, 'events'), orderBy('date', 'desc')),
+    (eventsSnap) => {
+      if (isUnsubscribed) return;
+
+      currentEvents = eventsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as EventRecord));
+      const activeEventIds = new Set(currentEvents.map((e) => e.id));
+
+      // Clean up ticket listeners for deleted events
+      for (const [eventId, unsub] of ticketListeners.entries()) {
+        if (!activeEventIds.has(eventId)) {
+          try {
+            unsub();
+          } catch {}
+          ticketListeners.delete(eventId);
+          ticketsByEvent.delete(eventId);
+        }
+      }
+
+      // Track pending initial ticket loads if initial notification hasn't fired yet
+      if (!hasInitialNotified) {
+        currentEvents.forEach((ev) => {
+          if (!ticketsByEvent.has(ev.id)) {
+            initialEventsPending.add(ev.id);
+          }
+        });
+      }
+
+      // If database has 0 events, finish initial load immediately
+      if (currentEvents.length === 0) {
+        hasInitialNotified = true;
+        recomputeAndNotify();
+        return;
+      }
+
+      // Attach or reconcile real-time listeners for each event's tickets subcollection
+      currentEvents.forEach((ev) => {
+        if (ticketListeners.has(ev.id)) return;
+
+        const unsubTickets = onSnapshot(
+          collection(db, 'events', ev.id, 'tickets'),
+          (ticketSnap) => {
+            if (isUnsubscribed) return;
+            const tickets = ticketSnap.docs.map((d) => ({ id: d.id, ...d.data() } as EventTicket));
+            ticketsByEvent.set(ev.id, tickets);
+
+            if (!hasInitialNotified) {
+              initialEventsPending.delete(ev.id);
+              checkInitialAndNotify();
+            } else {
+              recomputeAndNotify();
+            }
+          },
+          (ticketErr) => {
+            console.warn(`[subscribeUnifiedRegistrations] Error listening to tickets for event ${ev.id}:`, ticketErr);
+            if (!hasInitialNotified) {
+              initialEventsPending.delete(ev.id);
+              checkInitialAndNotify();
+            }
+          }
+        );
+
+        ticketListeners.set(ev.id, unsubTickets);
+      });
+
+      if (!hasInitialNotified) {
+        checkInitialAndNotify();
+      } else {
+        recomputeAndNotify();
+      }
+    },
+    (eventsErr) => {
+      console.error('[subscribeUnifiedRegistrations] Error listening to events:', eventsErr);
+      if (onError && !isUnsubscribed) {
+        onError(eventsErr instanceof Error ? eventsErr : new Error(String(eventsErr)));
+      }
+    }
+  );
+
+  return () => {
+    isUnsubscribed = true;
+    clearTimeout(safetyTimer);
+    try {
+      unsubEvents();
+    } catch {}
+    for (const unsub of ticketListeners.values()) {
+      try {
+        unsub();
+      } catch {}
+    }
+    ticketListeners.clear();
+  };
 }
 
 /**
@@ -662,7 +905,7 @@ export function exportRegistrationsToCSV(
 
     rows.push([
       r.ticketNumber || r.id,
-      r.type === 'team' ? 'Team' : 'Solo',
+      r.formatLabel || (r.type === 'team' ? 'Team' : 'Solo'),
       r.eventName,
       r.eventDate,
       r.name,

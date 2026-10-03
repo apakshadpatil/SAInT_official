@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import type { EventRecord, EventParticipant, EventTicket } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -23,6 +23,8 @@ import {
   Check,
   AlertCircle,
   Maximize2,
+  Layers,
+  ChevronDown,
 } from 'lucide-react';
 import {
   updateParticipantArrivalStatus,
@@ -33,6 +35,123 @@ import {
 import { downloadTicketImage } from '../../utils/ticketDownload';
 import { uploadFileToSupabase } from '../../utils/supabase';
 import { logActivity } from '../../services/activityService';
+
+/**
+ * Derives the actual registration/team size for a participant record.
+ * Handles teamMembers array (leader + teammates), explicit teamSize, matching ticket tier, and heuristics.
+ */
+function getParticipantTeamSize(
+  participant: EventParticipant,
+  event?: EventRecord
+): number {
+  // 1. Explicit team members list (leader + teammates)
+  if (Array.isArray(participant.teamMembers) && participant.teamMembers.length > 0) {
+    return participant.teamMembers.length + 1;
+  }
+
+  // 2. Explicit participant teamSize property
+  if (typeof participant.teamSize === 'number' && participant.teamSize > 0) {
+    return participant.teamSize;
+  }
+
+  // 3. Matched tier in event
+  if (event?.ticketTiers && event.ticketTiers.length > 0) {
+    const tier = event.ticketTiers.find(
+      (t) =>
+        t.id === participant.tierId ||
+        (participant.tierName && t.name?.toLowerCase() === participant.tierName.toLowerCase())
+    );
+    if (tier?.teamSize && tier.teamSize > 0) {
+      return tier.teamSize;
+    }
+  }
+
+  // 4. String heuristics on tierName / teamName
+  const str = `${participant.tierName || ''} ${participant.teamName || ''}`.toLowerCase();
+  if (/\bsquad\b/.test(str)) return 4;
+  if (/\btrio\b/.test(str)) return 3;
+  if (/\bduo\b/.test(str)) return 2;
+  const matchTeamOf = str.match(/team\s*of\s*(\d+)/);
+  if (matchTeamOf) {
+    const parsed = parseInt(matchTeamOf[1], 10);
+    if (parsed > 0) return parsed;
+  }
+  const matchMembers = str.match(/(\d+)\s*(?:member|player|person)s?/);
+  if (matchMembers) {
+    const parsed = parseInt(matchMembers[1], 10);
+    if (parsed > 0) return parsed;
+  }
+
+  // 5. Default to Solo (1)
+  return 1;
+}
+
+/**
+ * Returns user-facing label for each team size filter option.
+ */
+function getTeamSizeFilterLabel(size: number): string {
+  if (size === 1) {
+    return 'Solo / Team of 1';
+  }
+  return `Team of ${size}`;
+}
+
+/**
+ * Derives all dynamically supported team sizes for the event
+ * based on event config (allowedTeamSizes, ticketTiers, min/maxTeamSize)
+ * and actual registration records.
+ */
+function getAvailableTeamSizes(
+  event: EventRecord,
+  participants: EventParticipant[]
+): number[] {
+  const sizeSet = new Set<number>();
+
+  // 1. From event.allowedTeamSizes if specified
+  if (Array.isArray(event.allowedTeamSizes)) {
+    event.allowedTeamSizes.forEach((s: number) => {
+      if (typeof s === 'number' && s > 0) sizeSet.add(s);
+    });
+  }
+
+  // 2. From event.ticketTiers
+  if (Array.isArray(event.ticketTiers)) {
+    event.ticketTiers.forEach((tier) => {
+      if (typeof tier.teamSize === 'number' && tier.teamSize > 0) {
+        sizeSet.add(tier.teamSize);
+      }
+    });
+  }
+
+  // 3. From minTeamSize / maxTeamSize range
+  if (
+    typeof event.minTeamSize === 'number' &&
+    typeof event.maxTeamSize === 'number' &&
+    event.minTeamSize > 0 &&
+    event.maxTeamSize >= event.minTeamSize
+  ) {
+    for (let s = event.minTeamSize; s <= event.maxTeamSize; s++) {
+      sizeSet.add(s);
+    }
+  } else if (typeof event.minTeamSize === 'number' && event.minTeamSize > 0) {
+    sizeSet.add(event.minTeamSize);
+  } else if (typeof event.maxTeamSize === 'number' && event.maxTeamSize > 0) {
+    sizeSet.add(event.maxTeamSize);
+  }
+
+  // 4. From actual registered participants
+  participants.forEach((p) => {
+    const s = getParticipantTeamSize(p, event);
+    if (s > 0) sizeSet.add(s);
+  });
+
+  // 5. Fallback default
+  if (sizeSet.size === 0) {
+    sizeSet.add(1);
+  }
+
+  return Array.from(sizeSet).sort((a, b) => a - b);
+}
 
 interface ParticipantsTabProps {
   event: EventRecord;
@@ -49,6 +168,7 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'arrived' | 'pending'>('all');
+  const [teamSizeFilter, setTeamSizeFilter] = useState<'all' | number>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [proofModalParticipant, setProofModalParticipant] = useState<EventParticipant | null>(null);
   const [updatingPaymentId, setUpdatingPaymentId] = useState<string | null>(null);
@@ -204,6 +324,7 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
         domainId: selectedDomainId || undefined,
         tierId: selectedTier?.id,
         tierName: selectedTier?.name,
+        teamSize: selectedTier?.teamSize || 1,
         transactionId: transactionId.trim() || undefined,
         paymentScreenshotUrl: uploadedProofUrl || undefined,
         paymentScreenshotPath: uploadedProofPath || undefined,
@@ -276,16 +397,67 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
     }
   };
 
-  const filteredParticipants = participants.filter((p) => {
-    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         p.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (p.ticketId && p.ticketId.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                         (p.college && p.college.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesStatus = filterStatus === 'all' ? true :
-                          filterStatus === 'arrived' ? p.arrived :
-                          !p.arrived;
-    return matchesSearch && matchesStatus;
-  });
+  const availableTeamSizes = useMemo(() => {
+    return getAvailableTeamSizes(event, participants);
+  }, [event, participants]);
+
+  useEffect(() => {
+    if (teamSizeFilter !== 'all' && !availableTeamSizes.includes(teamSizeFilter)) {
+      setTeamSizeFilter('all');
+    }
+  }, [availableTeamSizes, teamSizeFilter]);
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [teamSizeFilter, filterStatus]);
+
+  const teamSizeCounts = useMemo(() => {
+    const counts: Record<number, number> = {};
+    participants.forEach((p) => {
+      const size = getParticipantTeamSize(p, event);
+      counts[size] = (counts[size] || 0) + 1;
+    });
+    return counts;
+  }, [participants, event]);
+
+  const participantsInSelectedSize = useMemo(() => {
+    if (teamSizeFilter === 'all') return participants;
+    return participants.filter((p) => getParticipantTeamSize(p, event) === teamSizeFilter);
+  }, [participants, teamSizeFilter, event]);
+
+  const stats = useMemo(() => {
+    return {
+      total: participantsInSelectedSize.length,
+      arrived: participantsInSelectedSize.filter((p) => p.arrived).length,
+      pending: participantsInSelectedSize.filter((p) => !p.arrived).length,
+    };
+  }, [participantsInSelectedSize]);
+
+  const filteredParticipants = useMemo(() => {
+    const q = searchTerm.toLowerCase().trim();
+
+    return participantsInSelectedSize.filter((p) => {
+      const matchesSearch =
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        p.email.toLowerCase().includes(q) ||
+        (p.ticketId && p.ticketId.toLowerCase().includes(q)) ||
+        (p.college && p.college.toLowerCase().includes(q)) ||
+        (p.teamName && p.teamName.toLowerCase().includes(q)) ||
+        (p.department && p.department.toLowerCase().includes(q)) ||
+        (p.tierName && p.tierName.toLowerCase().includes(q)) ||
+        (p.teamMembers && p.teamMembers.some((m) => m.name.toLowerCase().includes(q) || (m.email && m.email.toLowerCase().includes(q))));
+
+      const matchesStatus =
+        filterStatus === 'all'
+          ? true
+          : filterStatus === 'arrived'
+          ? p.arrived
+          : !p.arrived;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [participantsInSelectedSize, searchTerm, filterStatus]);
 
   const toggleArrival = async (participant: EventParticipant) => {
     const targetArrived = !participant.arrived;
@@ -484,12 +656,6 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
     showToast('Participants exported', 'success');
   };
 
-  const stats = {
-    total: participants.length,
-    arrived: participants.filter(p => p.arrived).length,
-    pending: participants.filter(p => !p.arrived).length,
-  };
-
   return (
     <div className="space-y-6">
       {/* Top Banner & Action Header */}
@@ -548,10 +714,19 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border p-4 transition-all" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }}>
-          <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--dash-muted)' }}>Total Participants</p>
-          <p className="text-3xl font-extrabold mt-1" style={{ color: 'var(--dash-text)' }}>
-            {stats.total}
+          <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--dash-muted)' }}>
+            {teamSizeFilter === 'all' ? 'Total Participants' : `${getTeamSizeFilterLabel(teamSizeFilter)}`}
           </p>
+          <div className="flex items-baseline gap-2 mt-1">
+            <p className="text-3xl font-extrabold" style={{ color: 'var(--dash-text)' }}>
+              {stats.total}
+            </p>
+            {teamSizeFilter !== 'all' && (
+              <span className="text-xs font-semibold text-blue-400">
+                of {participants.length} total
+              </span>
+            )}
+          </div>
         </div>
         <div className="rounded-2xl border p-4 transition-all" style={{ borderColor: 'rgba(16, 185, 129, 0.3)', background: 'rgba(16, 185, 129, 0.04)' }}>
           <p className="text-xs uppercase tracking-wider font-semibold text-emerald-500">Arrived</p>
@@ -569,6 +744,65 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
           <p className="text-3xl font-extrabold mt-1 text-amber-600 dark:text-amber-400">{stats.pending}</p>
         </div>
       </div>
+
+      {/* Registration Type / Team Size Filter Toolbar */}
+      {availableTeamSizes.length > 0 && (
+        <div
+          className="rounded-2xl border p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xs"
+          style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }}
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
+              <Layers className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--dash-text)' }}>
+                  Registration Type
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  {availableTeamSizes.length} format{availableTeamSizes.length > 1 ? 's' : ''}
+                </span>
+              </div>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--dash-muted)' }}>
+                Filter participants by team size configuration
+              </p>
+            </div>
+          </div>
+
+          <div className="relative min-w-[220px] sm:w-64 shrink-0">
+            <select
+              id="registration-type-select"
+              aria-label="Registration Type"
+              value={teamSizeFilter}
+              onChange={(e) => {
+                const val = e.target.value;
+                setTeamSizeFilter(val === 'all' ? 'all' : Number(val));
+              }}
+              className="w-full pl-3.5 pr-9 py-2 rounded-xl text-xs sm:text-sm font-semibold border transition-all cursor-pointer appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 shadow-sm"
+              style={{
+                background: 'var(--dash-hover)',
+                borderColor: 'var(--dash-border)',
+                color: 'var(--dash-text)',
+              }}
+            >
+              <option value="all" className="bg-slate-900 text-slate-100">
+                All ({participants.length})
+              </option>
+              {availableTeamSizes.map((size) => {
+                const count = teamSizeCounts[size] || 0;
+                const label = getTeamSizeFilterLabel(size);
+                return (
+                  <option key={size} value={size} className="bg-slate-900 text-slate-100">
+                    {label} ({count})
+                  </option>
+                );
+              })}
+            </select>
+            <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
+          </div>
+        </div>
+      )}
 
       {/* Search, Filter, and Bulk Actions Toolbar */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -725,10 +959,26 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
                         <div className="font-semibold text-sm" style={{ color: 'var(--dash-text)' }}>
                           {participant.name}
                         </div>
-                        {participant.tierName && (
-                          <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                            {participant.tierName}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          <span
+                            className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                              getParticipantTeamSize(participant, event) === 1
+                                ? 'bg-slate-500/10 text-slate-300 border-slate-500/20'
+                                : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                            }`}
+                          >
+                            {getTeamSizeFilterLabel(getParticipantTeamSize(participant, event))}
                           </span>
+                          {participant.tierName && (
+                            <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                              {participant.tierName}
+                            </span>
+                          )}
+                        </div>
+                        {participant.teamName && (
+                          <p className="text-xs mt-1 text-slate-300 font-medium">
+                            Team: {participant.teamName}
+                          </p>
                         )}
                         {participant.teamMembers && participant.teamMembers.length > 0 && (
                           <p className="text-xs mt-1 text-slate-400">

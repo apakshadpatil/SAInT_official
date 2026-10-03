@@ -299,6 +299,7 @@ export interface EventRecord {
   teamsEnabled?: boolean;
   minTeamSize?: number;
   maxTeamSize?: number;
+  allowedTeamSizes?: number[];
   requireTeamName?: boolean;
   // Rules & post-registration actions
   rules?: string[];
