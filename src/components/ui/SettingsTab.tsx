@@ -37,12 +37,15 @@ import {
   User,
   Phone,
   Plus,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { uploadDataUrlToSupabase, uploadFileToSupabase, SUPABASE_BUCKET } from '../../utils/supabase';
 import { uploadFileToStorage, formatFileSize } from '../../utils/fileUtils';
 import { compressEventBanner } from '../../utils/imageOptimizer';
 import { sendDirectEmail, openWebMailClient, validateEmail } from '../../services/emailService';
 import { isValidRegistrationUrl } from '../../utils/urlValidation';
+import RegistrationConfirmModal from './RegistrationConfirmModal';
 
 interface SettingsTabProps {
   event: EventRecord;
@@ -68,6 +71,8 @@ export default function SettingsTab({
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [sendingBulkEmail, setSendingBulkEmail] = useState(false);
+  const [showRegConfirmModal, setShowRegConfirmModal] = useState<'close' | 'open' | null>(null);
+  const [updatingRegStatus, setUpdatingRegStatus] = useState(false);
 
   // Event Details State
   const [title, setTitle] = useState(event.title || '');
@@ -639,6 +644,26 @@ export default function SettingsTab({
 
   const checkedIn = participants.filter((p) => p.arrived).length;
 
+  const isRegOpen = event.registrationOpen !== false;
+
+  const handleToggleRegistration = async (open: boolean) => {
+    setUpdatingRegStatus(true);
+    try {
+      await onUpdate({ registrationOpen: open });
+      showToast(
+        open
+          ? 'Registrations reopened successfully. Students can now register.'
+          : 'Registrations closed successfully. New student registrations are blocked.',
+        'success'
+      );
+      setShowRegConfirmModal(null);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to update registration status.', 'error');
+    } finally {
+      setUpdatingRegStatus(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Access Permission Status Banner */}
@@ -668,6 +693,90 @@ export default function SettingsTab({
           </div>
         </div>
       </div>
+
+      {/* Registration Status & Access Control */}
+      <div
+        className="rounded-2xl border p-5 sm:p-6 transition-all"
+        style={{
+          borderColor: isRegOpen ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.35)',
+          background: isRegOpen
+            ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.06), var(--dash-card))'
+            : 'linear-gradient(135deg, rgba(239, 68, 68, 0.08), var(--dash-card))',
+        }}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
+                isRegOpen
+                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                  : 'bg-red-500/15 text-red-400 border-red-500/30'
+              }`}
+            >
+              {isRegOpen ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider border ${
+                    isRegOpen
+                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                      : 'bg-red-500/15 text-red-400 border-red-500/30'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${isRegOpen ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+                  Registration Status: {isRegOpen ? 'Open' : 'Closed'}
+                </span>
+                <span className="text-xs font-semibold" style={{ color: 'var(--dash-muted)' }}>
+                  ({participants.length} registered participant{participants.length === 1 ? '' : 's'})
+                </span>
+              </div>
+              <p className="text-xs leading-relaxed mt-1" style={{ color: 'var(--dash-text)' }}>
+                {isRegOpen
+                  ? 'Registrations are currently open. Students can visit the public registration portal and submit entries.'
+                  : 'Registrations are currently closed. Students see "Registration Closed" and cannot submit new entries. Existing participants remain safe and accessible.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 sm:self-center">
+            {isRegOpen ? (
+              <button
+                type="button"
+                onClick={() => setShowRegConfirmModal('close')}
+                disabled={updatingRegStatus}
+                className="btn-secondary !text-xs !py-2.5 !px-4 text-red-400 border-red-500/30 hover:bg-red-500/10 flex items-center gap-2 cursor-pointer font-bold transition-all shadow-sm"
+                title="Manually close registrations for this event"
+              >
+                <Lock className="w-4 h-4 text-red-400" />
+                <span>Close Registrations</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowRegConfirmModal('open')}
+                disabled={updatingRegStatus}
+                className="btn-primary !text-xs !py-2.5 !px-4 bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-2 cursor-pointer font-bold transition-all shadow-md shadow-emerald-600/20"
+                title="Reopen registrations for this event"
+              >
+                <Unlock className="w-4 h-4" />
+                <span>Open Registrations</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Registration Status Change Confirmation Modal */}
+      <RegistrationConfirmModal
+        isOpen={Boolean(showRegConfirmModal)}
+        type={showRegConfirmModal || 'close'}
+        participantCount={participants.length}
+        loading={updatingRegStatus}
+        onConfirm={() => handleToggleRegistration(showRegConfirmModal === 'open')}
+        onClose={() => setShowRegConfirmModal(null)}
+      />
+
 
       {/* 1. Event Information & Schedule Editor */}
       <form onSubmit={handleSaveEventDetails} className="rounded-2xl border p-6 space-y-4" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }}>

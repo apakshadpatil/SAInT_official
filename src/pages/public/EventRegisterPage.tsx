@@ -28,6 +28,7 @@ import {
   ArrowRight,
   ShieldCheck,
   QrCode,
+  Lock,
 } from 'lucide-react';
 import {
   createRuleAgreement,
@@ -36,7 +37,7 @@ import {
   registerParticipantForEvent,
 } from '../../services/eventService';
 import type { EventRecord, EventTicket, TicketTier, TeamMemberDetail } from '../../types';
-import { getEventCoordinators } from '../../types';
+import { getEventCoordinators, isEventRegistrationOpen } from '../../types';
 import { downloadTicketImage } from '../../utils/ticketDownload';
 import { uploadFileToSupabase } from '../../utils/supabase';
 import { compressPaymentProof } from '../../utils/imageOptimizer';
@@ -723,7 +724,7 @@ export default function EventRegisterPage() {
     e.preventDefault();
     if (!event || !eventId) return;
 
-    if (event.status === 'cancelled' || event.status === 'completed') {
+    if (!isEventRegistrationOpen(event)) {
       setError('Registration is currently closed for this event.');
       return;
     }
@@ -840,7 +841,12 @@ export default function EventRegisterPage() {
 
   // Handle accepting rules when requireRulesAcceptance is ON (Requirement #1 & #3)
   const handleAcceptRules = async () => {
-    if (!eventId) return;
+    if (!eventId || !event) return;
+
+    if (!isEventRegistrationOpen(event)) {
+      setError('Registration is currently closed for this event.');
+      return;
+    }
 
     if (!termsChecked) {
       setError('Please review and check the agreement checkbox to continue.');
@@ -925,7 +931,7 @@ export default function EventRegisterPage() {
     );
   }
 
-  const registrationClosed = event.status === 'cancelled' || event.status === 'completed';
+  const registrationClosed = !isEventRegistrationOpen(event);
   const showDomainSelection = Boolean(event.enableDomainSelection && event.participantDomains?.length);
   const applicableCustomFields = (event.customFields || []).filter(
     (f) => !f.tierId || f.tierId === selectedTierId
@@ -1318,12 +1324,33 @@ export default function EventRegisterPage() {
         ) : registrationClosed ? (
           /* ── STATE 2: REGISTRATION CLOSED ────────────────────────────────── */
           <div
-            className="rounded-2xl p-6 text-center bg-white/[0.04] border border-red-500/25 backdrop-blur-xl"
+            className="rounded-3xl p-8 sm:p-12 text-center bg-white/[0.04] border border-red-500/30 backdrop-blur-xl shadow-2xl max-w-xl mx-auto space-y-5 animate-fade-in"
           >
-            <p className="text-white font-bold text-lg mb-2">Registration Closed</p>
-            <p className="text-sm text-slate-400">
-              This event is no longer accepting online registrations.
+            <div className="w-16 h-16 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-400 grid place-items-center mx-auto">
+              <Lock className="w-8 h-8" />
+            </div>
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider bg-red-500/15 text-red-400 border border-red-500/30">
+              <span className="w-2 h-2 rounded-full bg-red-400" />
+              Registration Closed
+            </div>
+            <h2 className="text-2xl font-bold text-white">Registrations for this event are currently closed.</h2>
+            <p className="text-sm text-slate-300 leading-relaxed max-w-md mx-auto">
+              Online registrations are not currently being accepted. If you have already registered, your existing entry remains safe and you can access your pass from the participant portal.
             </p>
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link
+                to={`/events/${eventId}`}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/15 text-white border border-white/10 transition-all text-center"
+              >
+                View Event Details
+              </Link>
+              <Link
+                to="/events"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-all text-center shadow-md"
+              >
+                Browse All Events
+              </Link>
+            </div>
           </div>
         ) : isRulesPending ? (
           /* ── STATE 3: RULES ACCEPTANCE (ONLY WHEN REQUIRE RULES ACCEPTANCE = ON) ── */

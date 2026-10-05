@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Users, Sparkles, ArrowRight, ChevronRight, MapPin, Ticket, Zap, AlertCircle, Eye, History, ExternalLink } from 'lucide-react';
+import { Calendar, Users, Sparkles, ArrowRight, ChevronRight, MapPin, Ticket, Zap, AlertCircle, Eye, History, ExternalLink, Lock } from 'lucide-react';
 import { getSiteMembers, getFacultyCoordinator, getHomeImagesConfig } from '../../services/applicationService';
 import { getPositionHolders } from '../../services/positionService';
 import { getEvents, getPastEvents, getPublishedUpcomingEvents } from '../../services/eventService';
 import { getStoredTotalVisitCount, subscribeTotalVisitCount } from '../../services/visitorTrackingService';
 import type { EventRecord } from '../../types';
+import { isEventRegistrationOpen } from '../../types';
 import Lightning from '../../components/animation/Lightning';
 import { EventCardSkeleton } from '../../components/ui/skeleton';
 import SponsorsSection from '../../components/ui/SponsorsSection';
@@ -389,26 +390,36 @@ export default function HomePage() {
                       >
                         Details
                       </Link>
-                      {event.registrationUrl ? (
-                        <a
-                          href={event.registrationUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-semibold text-xs text-white transition-all hover:opacity-90 shadow-sm"
-                          style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          Register Now
-                        </a>
+                      {isEventRegistrationOpen(event) ? (
+                        event.registrationUrl ? (
+                          <a
+                            href={event.registrationUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-semibold text-xs text-white transition-all hover:opacity-90 shadow-sm"
+                            style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            Register Now
+                          </a>
+                        ) : (
+                          <Link
+                            to={`/events/${event.id}/register`}
+                            className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-semibold text-xs text-white transition-all hover:opacity-90 shadow-sm"
+                            style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}
+                          >
+                            <Ticket className="w-3.5 h-3.5" />
+                            Register Now
+                          </Link>
+                        )
                       ) : (
-                        <Link
-                          to={`/events/${event.id}/register`}
-                          className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-semibold text-xs text-white transition-all hover:opacity-90 shadow-sm"
-                          style={{ background: 'linear-gradient(135deg, #2563eb, #1e40af)' }}
+                        <span
+                          className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-semibold text-xs text-red-500 bg-red-50 border border-red-200 cursor-not-allowed select-none"
+                          title="Registrations are closed"
                         >
-                          <Ticket className="w-3.5 h-3.5" />
-                          Register Now
-                        </Link>
+                          <Lock className="w-3.5 h-3.5" />
+                          Closed
+                        </span>
                       )}
                     </div>
                   </div>

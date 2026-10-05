@@ -5,7 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { subscribeEventById, subscribeEventTickets, mergeEventWithTickets, updateEvent, deleteEvent } from '../../services/eventService';
 import type { EventRecord, EventTicket } from '../../types';
 import { isSuperAdmin, isCoreMember, canAccessEventSettings, canDeleteEvent } from '../../utils/permissions';
-import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award, Users2, ClipboardCheck, ExternalLink, Palette, LayoutList } from 'lucide-react';
+import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award, Users2, ClipboardCheck, ExternalLink, Palette, LayoutList, Lock, Unlock } from 'lucide-react';
 import { isValidRegistrationUrl } from '../../utils/urlValidation';
 import TicketingTab from '../../components/ui/TicketingTab';
 import ScanTicketTab from '../../components/ui/ScanTicketTab';
@@ -21,6 +21,7 @@ import TeamRegistrationTab from '../../components/ui/TeamRegistrationTab';
 import RulesTab from '../../components/ui/RulesTab';
 import EventSectionsTab from '../../components/ui/EventSectionsTab';
 import EventBrandingTab from '../../components/ui/EventBrandingTab';
+import RegistrationConfirmModal from '../../components/ui/RegistrationConfirmModal';
 
 type TabType = 'overview' | 'content' | 'branding' | 'ticketing' | 'scan' | 'design' | 'form' | 'rules' | 'certificates' | 'participants' | 'teams' | 'allocation' | 'domains' | 'analytics' | 'settings';
 
@@ -36,6 +37,8 @@ export default function EventDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [isEditing, setIsEditing] = useState(false);
+  const [showRegModal, setShowRegModal] = useState<'close' | 'open' | null>(null);
+  const [updatingRegStatus, setUpdatingRegStatus] = useState(false);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab') as TabType;
@@ -136,6 +139,26 @@ export default function EventDetailsPage() {
     setEvent({ ...event, ...updates });
   };
 
+  const handleToggleRegistration = async (open: boolean) => {
+    if (!event) return;
+    setUpdatingRegStatus(true);
+    try {
+      await updateEvent(event.id, { registrationOpen: open });
+      setEvent({ ...event, registrationOpen: open });
+      showToast(
+        open
+          ? 'Registrations reopened successfully. Students can now register.'
+          : 'Registrations closed successfully. New student registrations are blocked.',
+        'success'
+      );
+      setShowRegModal(null);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to update registration status.', 'error');
+    } finally {
+      setUpdatingRegStatus(false);
+    }
+  };
+
   const handleParticipantsChange = async (participants: EventRecord['participants']) => {
     if (!event) return;
     await updateEvent(event.id, { participants });
@@ -196,6 +219,16 @@ export default function EventDetailsPage() {
                     <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}>
                       <BadgeCheck className="w-3.5 h-3.5" />
                       {event.status}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold border ${
+                        event.registrationOpen !== false
+                          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                          : 'bg-red-500/15 text-red-400 border-red-500/30'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${event.registrationOpen !== false ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+                      {event.registrationOpen !== false ? 'Registration Open' : 'Registration Closed'}
                     </span>
                     <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: 'rgba(59,130,246,0.12)', color: '#2563eb' }}>
                       <Sparkles className="w-3.5 h-3.5" />
@@ -267,6 +300,27 @@ export default function EventDetailsPage() {
                 {event.registrationUrl ? <ExternalLink className="w-3.5 h-3.5 text-blue-400" /> : <Ticket className="w-3.5 h-3.5 text-blue-400" />}
                 <span>{event.registrationUrl ? 'External Registration' : 'Registration'}</span>
               </a>
+              {(canManageSettings || canEdit) && (
+                event.registrationOpen !== false ? (
+                  <button
+                    onClick={() => setShowRegModal('close')}
+                    className="rounded-2xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 cursor-pointer"
+                    title="Close registrations for this event"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-red-400" />
+                    <span>Close Registrations</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowRegModal('open')}
+                    className="rounded-2xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 cursor-pointer"
+                    title="Reopen registrations for this event"
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>Open Registrations</span>
+                  </button>
+                )
+              )}
               {canEdit && (
                 <button onClick={() => setIsEditing(true)} className="rounded-2xl border p-2.5 cursor-pointer" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-card)' }} title="Edit event">
                   <Edit2 className="w-4 h-4" style={{ color: 'var(--dash-text)' }} />
@@ -476,6 +530,17 @@ export default function EventDetailsPage() {
           />
         )}
       </div>
+
+      {/* Confirmation Modal for Header Registration Toggle */}
+      <RegistrationConfirmModal
+        isOpen={Boolean(showRegModal)}
+        type={showRegModal || 'close'}
+        participantCount={event.participants?.length || event.participantIds?.length || 0}
+        loading={updatingRegStatus}
+        onConfirm={() => handleToggleRegistration(showRegModal === 'open')}
+        onClose={() => setShowRegModal(null)}
+      />
+
     </div>
   );
 }

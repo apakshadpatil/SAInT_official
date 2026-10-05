@@ -319,12 +319,27 @@ export interface EventRecord {
   // Event Coordinators / Contact Persons
   coordinators?: EventCoordinatorContact[];
   eventCoordinatorContacts?: EventCoordinatorContact[];
+  // Registration Status Control
+  registrationOpen?: boolean;
 }
 
 export interface EventCoordinatorContact {
   id?: string;
   name: string;
   phone: string;
+}
+
+/**
+ * Checks whether an event is currently accepting new registrations.
+ * Defaults to true (open) if registrationOpen is undefined/missing on existing events,
+ * provided the event is not cancelled, completed, or draft.
+ */
+export function isEventRegistrationOpen(event: Partial<EventRecord> | null | undefined): boolean {
+  if (!event) return false;
+  if (event.status === 'cancelled' || event.status === 'completed' || event.status === 'draft') {
+    return false;
+  }
+  return event.registrationOpen !== false;
 }
 
 /**

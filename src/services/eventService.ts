@@ -144,6 +144,21 @@ export async function updateEvent(id: string, data: Partial<EventRecord>) {
   trackDBOperation({ operation: 'update', action: 'update_event', resource: 'events', documentCount: 1 });
 }
 
+export async function setEventRegistrationStatus(id: string, open: boolean): Promise<void> {
+  const cleanData = removeUndefinedFields({
+    registrationOpen: open,
+    updatedAt: now(),
+  });
+  await updateDoc(doc(db, 'events', id), cleanData);
+  invalidateEventCaches(id);
+  trackDBOperation({
+    operation: 'update',
+    action: open ? 'open_event_registration' : 'close_event_registration',
+    resource: 'events',
+    documentCount: 1,
+  });
+}
+
 export async function deleteEvent(id: string) {
   try {
     const snap = await getDoc(doc(db, 'events', id));
@@ -330,6 +345,9 @@ export async function createTicket(
   const event = await getEvent(eventId);
   if (!event) throw new Error('Event not found');
   if (event.status !== 'published') throw new Error('Registration is not open for this event');
+  if (event.registrationOpen === false && options.registrationSource !== 'manual') {
+    throw new Error('Registration is currently closed for this event.');
+  }
 
   const ticketRef = doc(collection(db, 'events', eventId, 'tickets'));
   const ticketNumber = `ST-${ticketRef.id.slice(0, 8).toUpperCase()}`;
@@ -425,6 +443,9 @@ export async function registerParticipantForEvent(
 ) {
   const event = await getEvent(eventId);
   if (!event) throw new Error('Event not found');
+  if (event.registrationOpen === false && participantData.registrationSource !== 'manual') {
+    throw new Error('Registration is currently closed for this event.');
+  }
 
   const ticket = await createTicket(eventId, participantData.name, participantData.email, {
     guestPhone: participantData.phone,

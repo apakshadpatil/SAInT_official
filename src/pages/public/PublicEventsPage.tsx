@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import {
   Calendar, MapPin, Clock, Ticket, Search, X,
   LayoutGrid, List, Sparkles, Zap, Filter,
-  Users, ExternalLink
+  Users, ExternalLink, Lock
 } from 'lucide-react';
 import { getPublishedUpcomingEvents } from '../../services/eventService';
 import type { EventRecord } from '../../types';
+import { isEventRegistrationOpen } from '../../types';
 import { EventCardSkeleton } from '../../components/ui/skeleton';
 import EventBanner from '../../components/ui/EventBanner';
 
@@ -222,6 +223,11 @@ export default function PublicEventsPage() {
                     imgClassName="group-hover:scale-105 transition-transform duration-500"
                     doomsdayMode={doomsdayMode}
                   />
+                  {!isEventRegistrationOpen(event) && (
+                    <span className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md z-10 flex items-center gap-1 shadow-md bg-red-600/90 text-white border border-red-400/40">
+                      <Lock className="w-3 h-3" /> Closed
+                    </span>
+                  )}
                   {event.category && (
                     <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md z-10" style={doomsdayMode ? { background: 'rgba(0,0,0,0.8)', color: '#34d399', border: '1px solid rgba(16,185,129,0.4)' } : { background: 'rgba(255,255,255,0.9)', color: '#2563eb' }}>
                       {event.category}
@@ -266,32 +272,42 @@ export default function PublicEventsPage() {
                     >
                       <span>Details</span>
                     </Link>
-                    {event.registrationUrl ? (
-                      <a
-                        href={event.registrationUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="py-2.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md hover:scale-[1.02]"
-                        style={doomsdayMode
-                          ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: '#000000', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }
-                          : { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#ffffff' }
-                        }
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Register Now</span>
-                      </a>
+                    {isEventRegistrationOpen(event) ? (
+                      event.registrationUrl ? (
+                        <a
+                          href={event.registrationUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="py-2.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md hover:scale-[1.02]"
+                          style={doomsdayMode
+                            ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: '#000000', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }
+                            : { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#ffffff' }
+                          }
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Register Now</span>
+                        </a>
+                      ) : (
+                        <Link
+                          to={`/events/${event.id}/register`}
+                          className="py-2.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md hover:scale-[1.02]"
+                          style={doomsdayMode
+                            ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: '#000000', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }
+                            : { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#ffffff' }
+                          }
+                        >
+                          <Ticket className="w-3.5 h-3.5" />
+                          <span>Register Now</span>
+                        </Link>
+                      )
                     ) : (
-                      <Link
-                        to={`/events/${event.id}/register`}
-                        className="py-2.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md hover:scale-[1.02]"
-                        style={doomsdayMode
-                          ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: '#000000', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }
-                          : { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#ffffff' }
-                        }
+                      <span
+                        className="py-2.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 border border-red-500/30 bg-red-500/10 text-red-400 cursor-not-allowed select-none"
+                        title="Registrations are currently closed for this event"
                       >
-                        <Ticket className="w-3.5 h-3.5" />
-                        <span>Register Now</span>
-                      </Link>
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>Closed</span>
+                      </span>
                     )}
                   </div>
                 </div>
@@ -358,32 +374,41 @@ export default function PublicEventsPage() {
 
                 {/* Right Side: Details & Register Actions */}
                 <div className="w-full lg:w-56 shrink-0 pt-3 lg:pt-0 border-t lg:border-t-0 flex flex-col gap-2" style={{ borderColor: doomsdayMode ? 'rgba(16,185,129,0.2)' : '#f1f5f9' }}>
-                  {event.registrationUrl ? (
-                    <a
-                      href={event.registrationUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full py-2.5 px-4 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:scale-[1.02]"
-                      style={doomsdayMode
-                        ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: '#000000', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }
-                        : { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#ffffff' }
-                      }
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      <span>Register Now</span>
-                    </a>
+                  {isEventRegistrationOpen(event) ? (
+                    event.registrationUrl ? (
+                      <a
+                        href={event.registrationUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 px-4 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:scale-[1.02]"
+                        style={doomsdayMode
+                          ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: '#000000', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }
+                          : { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#ffffff' }
+                        }
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Register Now</span>
+                      </a>
+                    ) : (
+                      <Link
+                        to={`/events/${event.id}/register`}
+                        className="w-full py-2.5 px-4 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:scale-[1.02]"
+                        style={doomsdayMode
+                          ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: '#000000', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }
+                          : { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#ffffff' }
+                        }
+                      >
+                        <Ticket className="w-4 h-4" />
+                        <span>Register Now</span>
+                      </Link>
+                    )
                   ) : (
-                    <Link
-                      to={`/events/${event.id}/register`}
-                      className="w-full py-2.5 px-4 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:scale-[1.02]"
-                      style={doomsdayMode
-                        ? { background: 'linear-gradient(135deg, #10b981, #059669)', color: '#000000', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }
-                        : { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#ffffff' }
-                      }
+                    <div
+                      className="w-full py-2.5 px-4 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-red-500/30 bg-red-500/10 text-red-400 cursor-not-allowed select-none"
                     >
-                      <Ticket className="w-4 h-4" />
-                      <span>Register Now</span>
-                    </Link>
+                      <Lock className="w-4 h-4" />
+                      <span>Registration Closed</span>
+                    </div>
                   )}
 
                   <Link

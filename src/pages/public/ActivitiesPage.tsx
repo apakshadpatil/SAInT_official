@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, MapPin, Users, Award, Ticket, ArrowRight, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, MapPin, Users, Award, Ticket, ArrowRight, ExternalLink, Lock } from 'lucide-react';
 import { getPublishedActivities } from '../../services/eventService';
 import type { EventRecord } from '../../types';
+import { isEventRegistrationOpen } from '../../types';
 import { EventCardSkeleton } from '../../components/ui/skeleton';
 
 export default function ActivitiesPage() {
@@ -194,22 +195,32 @@ export default function ActivitiesPage() {
 
                       {/* Register Link / Action */}
                       <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end">
-                        {activity.registrationUrl ? (
-                          <a
-                            href={activity.registrationUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" /> Event Portal
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </a>
+                        {isEventRegistrationOpen(activity) ? (
+                          activity.registrationUrl ? (
+                            <a
+                              href={activity.registrationUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" /> Event Portal
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </a>
+                          ) : (
+                            <Link
+                              to={`/events/${activity.id}/register`}
+                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
+                            >
+                              <Ticket className="w-3.5 h-3.5" /> Event Portal
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </Link>
+                          )
                         ) : (
                           <Link
-                            to={`/events/${activity.id}/register`}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
+                            to={`/events/${activity.id}`}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
                           >
-                            <Ticket className="w-3.5 h-3.5" /> Event Portal
+                            <Lock className="w-3.5 h-3.5 text-red-500" /> Details
                             <ArrowRight className="w-3.5 h-3.5" />
                           </Link>
                         )}

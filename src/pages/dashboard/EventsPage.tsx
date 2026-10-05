@@ -296,6 +296,11 @@ export default function EventsPage() {
                     >
                       {event.status}
                     </span>
+                    {event.registrationOpen === false && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                        Reg. Closed
+                      </span>
+                    )}
                     <span className="text-[10px] ml-auto" style={{ color: 'var(--dash-muted)' }}>
                       {new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </span>
@@ -347,17 +352,24 @@ export default function EventsPage() {
                     </span>
                   </div>
                 </div>
-                <span
-                  className="text-[10px] font-semibold px-2 py-0.5 shrink-0"
-                  style={{
-                    background: event.status === 'published' ? 'rgba(16,185,129,0.08)' : 'var(--dash-hover)',
-                    color: event.status === 'published' ? '#10b981' : 'var(--dash-muted)',
-                    border: `1px solid ${event.status === 'published' ? 'rgba(16,185,129,0.2)' : 'var(--dash-border)'}`,
-                    borderRadius: '4px',
-                  }}
-                >
-                  {event.status}
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span
+                    className="text-[10px] font-semibold px-2 py-0.5 shrink-0"
+                    style={{
+                      background: event.status === 'published' ? 'rgba(16,185,129,0.08)' : 'var(--dash-hover)',
+                      color: event.status === 'published' ? '#10b981' : 'var(--dash-muted)',
+                      border: `1px solid ${event.status === 'published' ? 'rgba(16,185,129,0.2)' : 'var(--dash-border)'}`,
+                      borderRadius: '4px',
+                    }}
+                  >
+                    {event.status}
+                  </span>
+                  {event.registrationOpen === false && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                      Reg. Closed
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>

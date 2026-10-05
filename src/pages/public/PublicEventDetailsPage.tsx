@@ -18,11 +18,12 @@ import {
   CalendarPlus,
   Compass,
   Phone,
-  User
+  User,
+  Lock,
 } from 'lucide-react';
 import { getEvent, subscribeEventById } from '../../services/eventService';
 import type { EventRecord } from '../../types';
-import { getEventCoordinators } from '../../types';
+import { getEventCoordinators, isEventRegistrationOpen } from '../../types';
 import { getSectionIcon } from '../../utils/eventSectionIcons';
 import { useToast } from '../../contexts/ToastContext';
 import EventBanner from '../../components/ui/EventBanner';
@@ -337,10 +338,9 @@ export default function PublicEventDetailsPage() {
   }, [event, participationInfo]);
 
   // Status checks
-  const isCancelled = event?.status === 'cancelled';
   const isCompleted = event?.status === 'completed';
   const isDraft = event?.status === 'draft';
-  const isRegistrationOpen = !isCancelled && !isCompleted;
+  const isRegistrationOpen = isEventRegistrationOpen(event);
 
   // Banner image priority: imageURL -> registrationBannerUrl -> bannerUrl -> imageUrl
   const displayBannerUrl =
@@ -478,7 +478,10 @@ export default function PublicEventDetailsPage() {
                 ) : isCompleted ? (
                   'Event Completed'
                 ) : (
-                  'Registration Closed'
+                  <>
+                    <Lock className="w-3.5 h-3.5" />
+                    Registration Closed
+                  </>
                 )}
               </span>
 
@@ -778,8 +781,32 @@ export default function PublicEventDetailsPage() {
                   </Link>
                 )
               ) : (
-                <div className="w-full py-3.5 px-6 rounded-2xl font-bold text-xs text-center bg-slate-800/80 text-slate-400 border border-slate-700">
-                  {isCompleted ? 'This event has concluded' : 'Registration is currently closed'}
+                <div className="space-y-3">
+                  <div
+                    className="w-full py-4 px-5 rounded-2xl border text-center space-y-1.5 shadow-lg"
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.08)',
+                      borderColor: 'rgba(239, 68, 68, 0.3)',
+                    }}
+                  >
+                    <div className="flex items-center justify-center gap-2 text-red-400 font-black text-sm uppercase tracking-wider">
+                      <Lock className="w-4 h-4" />
+                      <span>Registration Closed</span>
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      {isCompleted
+                        ? 'This event has concluded.'
+                        : 'Registrations for this event are currently closed.'}
+                    </p>
+                  </div>
+                  <button
+                    disabled
+                    aria-disabled="true"
+                    className="w-full py-3.5 px-6 rounded-2xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-not-allowed bg-slate-800/80 text-slate-500 border border-slate-700/80 select-none opacity-80"
+                  >
+                    <Lock className="w-4 h-4" />
+                    <span>Registration Closed</span>
+                  </button>
                 </div>
               )}
 
