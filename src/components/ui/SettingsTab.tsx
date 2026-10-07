@@ -39,6 +39,7 @@ import {
   Plus,
   Lock,
   Unlock,
+  QrCode,
 } from 'lucide-react';
 import { uploadDataUrlToSupabase, uploadFileToSupabase, SUPABASE_BUCKET } from '../../utils/supabase';
 import { uploadFileToStorage, formatFileSize } from '../../utils/fileUtils';
@@ -46,6 +47,7 @@ import { compressEventBanner } from '../../utils/imageOptimizer';
 import { sendDirectEmail, openWebMailClient, validateEmail } from '../../services/emailService';
 import { isValidRegistrationUrl } from '../../utils/urlValidation';
 import RegistrationConfirmModal from './RegistrationConfirmModal';
+import OnSpotConfirmModal from './OnSpotConfirmModal';
 
 interface SettingsTabProps {
   event: EventRecord;
@@ -73,6 +75,8 @@ export default function SettingsTab({
   const [sendingBulkEmail, setSendingBulkEmail] = useState(false);
   const [showRegConfirmModal, setShowRegConfirmModal] = useState<'close' | 'open' | null>(null);
   const [updatingRegStatus, setUpdatingRegStatus] = useState(false);
+  const [showOnSpotConfirmModal, setShowOnSpotConfirmModal] = useState<'enable' | 'disable' | null>(null);
+  const [updatingOnSpotStatus, setUpdatingOnSpotStatus] = useState(false);
 
   // Event Details State
   const [title, setTitle] = useState(event.title || '');
@@ -664,6 +668,26 @@ export default function SettingsTab({
     }
   };
 
+  const isOnSpotOpen = event.onSpotRegistrationOpen === true;
+
+  const handleToggleOnSpot = async (enable: boolean) => {
+    setUpdatingOnSpotStatus(true);
+    try {
+      await onUpdate({ onSpotRegistrationOpen: enable });
+      showToast(
+        enable
+          ? 'On-Spot Registration enabled for this event. Public page now directs to fast on-spot registration.'
+          : 'On-Spot Registration disabled. Standard registration restored.',
+        'success'
+      );
+      setShowOnSpotConfirmModal(null);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to update on-spot registration status.', 'error');
+    } finally {
+      setUpdatingOnSpotStatus(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Access Permission Status Banner */}
@@ -775,6 +799,112 @@ export default function SettingsTab({
         loading={updatingRegStatus}
         onConfirm={() => handleToggleRegistration(showRegConfirmModal === 'open')}
         onClose={() => setShowRegConfirmModal(null)}
+      />
+
+      {/* On-Spot Registration (Venue Mode) Control */}
+      <div
+        className="rounded-2xl border p-5 sm:p-6 transition-all"
+        style={{
+          borderColor: isOnSpotOpen ? 'rgba(245, 158, 11, 0.4)' : 'var(--dash-border)',
+          background: isOnSpotOpen
+            ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.08), var(--dash-card))'
+            : 'var(--dash-card)',
+        }}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
+                isOnSpotOpen
+                  ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                  : 'bg-slate-800 text-slate-400 border-slate-700'
+              }`}
+            >
+              <QrCode className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider border ${
+                    isOnSpotOpen
+                      ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${isOnSpotOpen ? 'bg-amber-400 animate-pulse' : 'bg-slate-500'}`} />
+                  On-Spot Mode: {isOnSpotOpen ? 'Active (ON)' : 'Inactive (OFF)'}
+                </span>
+                <span className="text-xs font-semibold" style={{ color: 'var(--dash-muted)' }}>
+                  Per-Event Venue Control
+                </span>
+              </div>
+              <p className="text-xs leading-relaxed mt-1" style={{ color: 'var(--dash-text)' }}>
+                {isOnSpotOpen
+                  ? 'On-Spot Registration is ON for this event. On the public event page, participants see "On-Spot Registration" and directly enter the simplified venue flow. The admin on-spot desk is also active.'
+                  : 'On-Spot Registration is OFF for this event. Public page uses standard registration. Admin on-spot desk is locked for this event.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0 sm:self-center">
+            {isOnSpotOpen && (
+              <>
+                <a
+                  href={`/dashboard/on-spot-registration?eventId=${event.id}`}
+                  className="rounded-xl border px-3 py-2 text-xs font-bold flex items-center gap-1.5 border-amber-500/40 bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-all cursor-pointer"
+                  title="Open Admin On-Spot Desk for this event"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>On-Spot Desk</span>
+                </a>
+                <a
+                  href={`/events/${event.id}/on-spot`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 border-slate-700 bg-slate-800 text-slate-300 hover:text-white transition-all"
+                  title="Open public on-spot registration link"
+                >
+                  <LinkIcon className="w-3.5 h-3.5" />
+                  <span>Public QR Link</span>
+                </a>
+              </>
+            )}
+
+            {isOnSpotOpen ? (
+              <button
+                type="button"
+                onClick={() => setShowOnSpotConfirmModal('disable')}
+                disabled={updatingOnSpotStatus}
+                className="btn-secondary !text-xs !py-2.5 !px-4 text-amber-400 border-amber-500/40 hover:bg-amber-500/15 flex items-center gap-2 cursor-pointer font-bold transition-all shadow-sm"
+                title="Turn Off On-Spot registration for this event"
+              >
+                <QrCode className="w-4 h-4 text-amber-400" />
+                <span>Turn On-Spot OFF</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowOnSpotConfirmModal('enable')}
+                disabled={updatingOnSpotStatus}
+                className="btn-primary !text-xs !py-2.5 !px-4 bg-amber-600 hover:bg-amber-500 text-white flex items-center gap-2 cursor-pointer font-bold transition-all shadow-md shadow-amber-600/20"
+                title="Turn On On-Spot registration for this event"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Turn On-Spot ON</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* On-Spot Registration Change Confirmation Modal */}
+      <OnSpotConfirmModal
+        isOpen={Boolean(showOnSpotConfirmModal)}
+        type={showOnSpotConfirmModal || 'enable'}
+        eventTitle={event.title}
+        loading={updatingOnSpotStatus}
+        onConfirm={() => handleToggleOnSpot(showOnSpotConfirmModal === 'enable')}
+        onClose={() => setShowOnSpotConfirmModal(null)}
       />
 
 

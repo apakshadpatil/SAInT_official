@@ -158,6 +158,12 @@ export default function EventRegisterPage() {
           return;
         }
 
+        // When On-Spot Registration is enabled for this event, route directly to on-spot flow
+        if (e.onSpotRegistrationOpen === true) {
+          navigate(`/events/${e.id}/on-spot`, { replace: true });
+          return;
+        }
+
         // Initialize tiers if available
         if (e.enableTieredTicketing && e.ticketTiers && e.ticketTiers.length > 0) {
           setSelectedTierId((prev) => prev || e.ticketTiers![0].id);
@@ -1755,7 +1761,7 @@ export default function EventRegisterPage() {
                             setCollege(e.target.value);
                             if (fieldErrors.college) setFieldErrors((prev) => ({ ...prev, college: '' }));
                           }}
-                          placeholder="e.g. JSPM RSCOE"
+                          placeholder="JSPM RSCOE"
                           className={`w-full px-4 py-2.5 rounded-xl text-base sm:text-sm text-white bg-white/5 border outline-none transition-colors ${
                             fieldErrors.college
                               ? 'border-red-400 focus:border-red-500'
@@ -2141,7 +2147,7 @@ export default function EventRegisterPage() {
                                   onChange={(e) =>
                                     handleTeamMemberChange(idx, 'college', e.target.value)
                                   }
-                                  placeholder="e.g. JSPM RSCOE"
+                                  placeholder="JSPM RSCOE"
                                   className={`w-full px-4 py-2 rounded-xl text-base sm:text-xs text-white bg-white/5 border outline-none transition-colors ${
                                     fieldErrors[`member_${idx}_college`]
                                       ? 'border-red-400 focus:border-red-500'

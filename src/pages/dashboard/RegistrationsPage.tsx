@@ -18,6 +18,7 @@ import {
   XCircle,
   ShieldCheck,
   FileSpreadsheet,
+  QrCode,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import {
@@ -69,6 +70,7 @@ export default function RegistrationsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEventId, setSelectedEventId] = useState<string>(initialEventParam);
   const [registrationTypeFilter, setRegistrationTypeFilter] = useState<'all' | 'solo' | 'team' | 'squad'>('all');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'online' | 'onspot' | 'onspot-admin' | 'onspot-participant'>('all');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<'all' | 'verified' | 'pending' | 'rejected'>('all');
   const [checkInFilter, setCheckInFilter] = useState<'all' | 'arrived' | 'pending'>('all');
 
@@ -204,6 +206,17 @@ export default function RegistrationsPage() {
         return false;
       }
 
+      // 4.5 Registration Channel / Source Filter (Online vs On-Spot / Admin / Self)
+      if (sourceFilter === 'online') {
+        if (item.registrationType === 'onspot') return false;
+      } else if (sourceFilter === 'onspot') {
+        if (item.registrationType !== 'onspot') return false;
+      } else if (sourceFilter === 'onspot-admin') {
+        if (item.registrationType !== 'onspot' || item.registrationMode !== 'admin') return false;
+      } else if (sourceFilter === 'onspot-participant') {
+        if (item.registrationType !== 'onspot' || item.registrationMode !== 'participant') return false;
+      }
+
       // 5. Check-in Filter
       if (checkInFilter === 'arrived' && !item.arrived) return false;
       if (checkInFilter === 'pending' && item.arrived) return false;
@@ -247,6 +260,7 @@ export default function RegistrationsPage() {
     customRange,
     selectedEventId,
     registrationTypeFilter,
+    sourceFilter,
     paymentStatusFilter,
     checkInFilter,
     searchQuery,
@@ -378,6 +392,21 @@ export default function RegistrationsPage() {
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-blue-500' : ''}`} />
             <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
           </button>
+
+          {/* On-Spot Registration Quick Action */}
+          <Link
+            to="/dashboard/on-spot-registration"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer shadow-xs hover:opacity-95"
+            style={{
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.2))',
+              borderColor: 'rgba(245, 158, 11, 0.4)',
+              color: '#fbbf24',
+            }}
+            title="Open On-Spot Event Registration Desk"
+          >
+            <QrCode className="w-3.5 h-3.5 text-amber-400" />
+            <span>On-Spot Desk</span>
+          </Link>
 
           {/* Export Dropdown / Buttons */}
           <div className="flex items-center gap-1.5">
@@ -1090,11 +1119,35 @@ export default function RegistrationsPage() {
                   <option value="pending">Pending Arrival</option>
                 </select>
               </div>
+
+              {/* Channel / Source Filter (Online vs On-Spot) */}
+              <div className="w-full md:w-44 shrink-0">
+                <select
+                  value={sourceFilter}
+                  onChange={(e) => {
+                    setSourceFilter(e.target.value as any);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border transition-all cursor-pointer font-medium"
+                  style={{
+                    background: 'var(--dash-hover)',
+                    borderColor: 'var(--dash-border)',
+                    color: 'var(--dash-text)',
+                  }}
+                >
+                  <option value="all">Channel: All</option>
+                  <option value="online">Online Registration</option>
+                  <option value="onspot">All On-Spot</option>
+                  <option value="onspot-admin">On-Spot (Admin Desk)</option>
+                  <option value="onspot-participant">On-Spot (Participant Self)</option>
+                </select>
+              </div>
             </div>
 
             {/* Active Filters readout & Reset */}
             {(selectedEventId !== 'all' ||
               registrationTypeFilter !== 'all' ||
+              sourceFilter !== 'all' ||
               paymentStatusFilter !== 'all' ||
               checkInFilter !== 'all' ||
               searchQuery ||
@@ -1120,6 +1173,11 @@ export default function RegistrationsPage() {
                       Format: {registrationTypeFilter === 'solo' ? 'Solo (1)' : registrationTypeFilter === 'squad' ? 'Squad (4)' : 'Teams'}
                     </span>
                   )}
+                  {sourceFilter !== 'all' && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 font-semibold capitalize">
+                      Channel: {sourceFilter === 'online' ? 'Online' : sourceFilter === 'onspot' ? 'On-Spot (All)' : sourceFilter === 'onspot-admin' ? 'On-Spot (Admin)' : 'On-Spot (Self)'}
+                    </span>
+                  )}
                   {paymentStatusFilter !== 'all' && (
                     <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 font-semibold">
                       Payment: {paymentStatusFilter}
@@ -1141,6 +1199,7 @@ export default function RegistrationsPage() {
                   onClick={() => {
                     setSelectedEventId('all');
                     setRegistrationTypeFilter('all');
+                    setSourceFilter('all');
                     setPaymentStatusFilter('all');
                     setCheckInFilter('all');
                     setSearchQuery('');
@@ -1226,13 +1285,29 @@ export default function RegistrationsPage() {
                                   {item.name.charAt(0).toUpperCase()}
                                 </div>
                                 <div>
-                                  <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-bold text-sm" style={{ color: 'var(--dash-text)' }}>
                                       {item.name}
                                     </span>
                                     {isTeam && (
                                       <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
                                         Leader
+                                      </span>
+                                    )}
+                                    {item.registrationType === 'onspot' ? (
+                                      <span
+                                        className={`text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border ${
+                                          item.registrationMode === 'admin'
+                                            ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                                            : 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+                                        }`}
+                                        title={`On-Spot Registration (${item.registrationMode === 'admin' ? 'Registered by Admin' : 'Registered by Participant'})`}
+                                      >
+                                        On-Spot{item.registrationMode ? ` · ${item.registrationMode === 'admin' ? 'Admin' : 'Self'}` : ''}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                                        Online
                                       </span>
                                     )}
                                   </div>
@@ -1598,7 +1673,7 @@ export default function RegistrationsPage() {
             </div>
 
             {/* Quick Badges Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
               <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-hover)' }}>
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Payment Status</span>
                 <span className="font-bold text-sm mt-0.5 block capitalize" style={{ color: detailModalItem.paymentStatus === 'verified' ? '#10b981' : detailModalItem.paymentStatus === 'rejected' ? '#ef4444' : '#f59e0b' }}>
@@ -1609,6 +1684,21 @@ export default function RegistrationsPage() {
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Arrival / Check-in</span>
                 <span className="font-bold text-sm mt-0.5 block" style={{ color: detailModalItem.arrived ? '#10b981' : 'var(--dash-muted)' }}>
                   {detailModalItem.arrived ? 'Checked In' : 'Pending Arrival'}
+                </span>
+              </div>
+              <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-hover)' }}>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Registration Channel</span>
+                <span
+                  className="font-bold text-xs mt-0.5 block"
+                  style={{
+                    color: detailModalItem.registrationType === 'onspot'
+                      ? (detailModalItem.registrationMode === 'admin' ? '#f59e0b' : '#c084fc')
+                      : '#38bdf8',
+                  }}
+                >
+                  {detailModalItem.registrationType === 'onspot'
+                    ? `On-Spot (${detailModalItem.registrationMode === 'admin' ? 'Admin' : 'Self'})`
+                    : 'Online'}
                 </span>
               </div>
               <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--dash-border)', background: 'var(--dash-hover)' }}>

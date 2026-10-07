@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { subscribeEventById, subscribeEventTickets, mergeEventWithTickets, updateEvent, deleteEvent } from '../../services/eventService';
+import { subscribeEventById, subscribeEventTickets, mergeEventWithTickets, updateEvent, deleteEvent, setEventOnSpotStatus } from '../../services/eventService';
 import type { EventRecord, EventTicket } from '../../types';
 import { isSuperAdmin, isCoreMember, canAccessEventSettings, canDeleteEvent } from '../../utils/permissions';
 import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award, Users2, ClipboardCheck, ExternalLink, Palette, LayoutList, Lock, Unlock } from 'lucide-react';
@@ -22,6 +22,7 @@ import RulesTab from '../../components/ui/RulesTab';
 import EventSectionsTab from '../../components/ui/EventSectionsTab';
 import EventBrandingTab from '../../components/ui/EventBrandingTab';
 import RegistrationConfirmModal from '../../components/ui/RegistrationConfirmModal';
+import OnSpotConfirmModal from '../../components/ui/OnSpotConfirmModal';
 
 type TabType = 'overview' | 'content' | 'branding' | 'ticketing' | 'scan' | 'design' | 'form' | 'rules' | 'certificates' | 'participants' | 'teams' | 'allocation' | 'domains' | 'analytics' | 'settings';
 
@@ -39,6 +40,8 @@ export default function EventDetailsPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [showRegModal, setShowRegModal] = useState<'close' | 'open' | null>(null);
   const [updatingRegStatus, setUpdatingRegStatus] = useState(false);
+  const [showOnSpotModal, setShowOnSpotModal] = useState<'enable' | 'disable' | null>(null);
+  const [updatingOnSpotStatus, setUpdatingOnSpotStatus] = useState(false);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab') as TabType;
@@ -159,6 +162,26 @@ export default function EventDetailsPage() {
     }
   };
 
+  const handleToggleOnSpot = async (enable: boolean) => {
+    if (!event) return;
+    setUpdatingOnSpotStatus(true);
+    try {
+      await setEventOnSpotStatus(event.id, enable);
+      setEvent({ ...event, onSpotRegistrationOpen: enable });
+      showToast(
+        enable
+          ? 'On-Spot Registration enabled for this event. Venue desk and public on-spot link are now live.'
+          : 'On-Spot Registration disabled. Standard registration restored.',
+        'success'
+      );
+      setShowOnSpotModal(null);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to update On-Spot registration status.', 'error');
+    } finally {
+      setUpdatingOnSpotStatus(false);
+    }
+  };
+
   const handleParticipantsChange = async (participants: EventRecord['participants']) => {
     if (!event) return;
     await updateEvent(event.id, { participants });
@@ -230,6 +253,12 @@ export default function EventDetailsPage() {
                       <span className={`w-2 h-2 rounded-full ${event.registrationOpen !== false ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
                       {event.registrationOpen !== false ? 'Registration Open' : 'Registration Closed'}
                     </span>
+                    {event.onSpotRegistrationOpen && (
+                      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold border border-amber-500/30 bg-amber-500/15 text-amber-400">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                        On-Spot Active
+                      </span>
+                    )}
                     <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: 'rgba(59,130,246,0.12)', color: '#2563eb' }}>
                       <Sparkles className="w-3.5 h-3.5" />
                       Event Studio
@@ -300,6 +329,41 @@ export default function EventDetailsPage() {
                 {event.registrationUrl ? <ExternalLink className="w-3.5 h-3.5 text-blue-400" /> : <Ticket className="w-3.5 h-3.5 text-blue-400" />}
                 <span>{event.registrationUrl ? 'External Registration' : 'Registration'}</span>
               </a>
+
+              {/* On-Spot Desk Button - ONLY visible when On-Spot Registration is ON */}
+              {event.onSpotRegistrationOpen && (
+                <Link
+                  to={`/dashboard/on-spot-registration?eventId=${event.id}`}
+                  className="rounded-2xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 cursor-pointer"
+                  title="Register participants on-spot at the venue"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-amber-400" />
+                  <span>On-Spot Registration</span>
+                </Link>
+              )}
+
+              {/* On-Spot Toggle Control Button (Admin / Core) */}
+              {(canManageSettings || canEdit) && (
+                event.onSpotRegistrationOpen ? (
+                  <button
+                    onClick={() => setShowOnSpotModal('disable')}
+                    className="rounded-2xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors border-amber-500/40 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 cursor-pointer"
+                    title="Turn Off On-Spot Registration for this event"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-amber-400" />
+                    <span>On-Spot: ON</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowOnSpotModal('enable')}
+                    className="rounded-2xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 cursor-pointer"
+                    title="Turn On On-Spot Registration for this event"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-slate-400" />
+                    <span>On-Spot: OFF</span>
+                  </button>
+                )
+              )}
               {(canManageSettings || canEdit) && (
                 event.registrationOpen !== false ? (
                   <button
@@ -539,6 +603,16 @@ export default function EventDetailsPage() {
         loading={updatingRegStatus}
         onConfirm={() => handleToggleRegistration(showRegModal === 'open')}
         onClose={() => setShowRegModal(null)}
+      />
+
+      {/* Confirmation Modal for Header On-Spot Mode Toggle */}
+      <OnSpotConfirmModal
+        isOpen={Boolean(showOnSpotModal)}
+        type={showOnSpotModal || 'enable'}
+        eventTitle={event.title}
+        loading={updatingOnSpotStatus}
+        onConfirm={() => handleToggleOnSpot(showOnSpotModal === 'enable')}
+        onClose={() => setShowOnSpotModal(null)}
       />
 
     </div>

@@ -5,7 +5,7 @@ import {
   Settings, Shield, UserCheck, KeyRound, Menu, X, ClipboardList,
   Upload, Activity, FileCheck, Briefcase, Trophy, Archive, ImagePlus,
   ChevronRight, Zap, Database, Server, Globe, LifeBuoy, Handshake,
-  ClipboardCheck, Layers, Radio,
+  ClipboardCheck, Layers, Radio, UserPlus,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -38,6 +38,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/dashboard',                        label: 'Dashboard',             icon: LayoutDashboard, tab: 'dashboard',          group: 'main' },
   { to: '/dashboard/events',                 label: 'Events',                icon: Calendar,        tab: 'events',             group: 'main' },
   { to: '/dashboard/registrations',          label: 'Registrations',         icon: ClipboardCheck,  tab: 'registrations',      group: 'main' },
+  { to: '/dashboard/on-spot-registration',   label: 'On-Spot Desk',          icon: UserPlus,        tab: 'registrations',      group: 'main' },
   { to: '/dashboard/calendar',               label: 'Calendar',              icon: CalendarDays,    tab: 'calendar',           group: 'main' },
   { to: '/dashboard/agenda',                 label: 'Agenda',                icon: ClipboardList,   tab: 'agenda',             group: 'main' },
   { to: '/dashboard/tasks',                  label: 'Tasks',                 icon: ListTodo,        tab: 'tasks',              group: 'main' },

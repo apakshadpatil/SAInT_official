@@ -159,6 +159,21 @@ export async function setEventRegistrationStatus(id: string, open: boolean): Pro
   });
 }
 
+export async function setEventOnSpotStatus(id: string, enabled: boolean): Promise<void> {
+  const cleanData = removeUndefinedFields({
+    onSpotRegistrationOpen: enabled,
+    updatedAt: now(),
+  });
+  await updateDoc(doc(db, 'events', id), cleanData);
+  invalidateEventCaches(id);
+  trackDBOperation({
+    operation: 'update',
+    action: enabled ? 'enable_onspot_registration' : 'disable_onspot_registration',
+    resource: 'events',
+    documentCount: 1,
+  });
+}
+
 export async function deleteEvent(id: string) {
   try {
     const snap = await getDoc(doc(db, 'events', id));
@@ -340,12 +355,19 @@ export async function createTicket(
     paymentVerifiedAt?: string;
     paymentVerifiedBy?: string;
     customResponses?: Record<string, string>;
+    registrationType?: 'online' | 'onspot' | string;
+    registrationMode?: 'participant' | 'admin' | string;
   } = {}
 ): Promise<EventTicket> {
   const event = await getEvent(eventId);
   if (!event) throw new Error('Event not found');
   if (event.status !== 'published') throw new Error('Registration is not open for this event');
-  if (event.registrationOpen === false && options.registrationSource !== 'manual') {
+  if (
+    event.registrationOpen === false &&
+    options.registrationSource !== 'manual' &&
+    options.registrationMode !== 'admin' &&
+    options.registrationType !== 'onspot'
+  ) {
     throw new Error('Registration is currently closed for this event.');
   }
 
@@ -354,6 +376,12 @@ export async function createTicket(
   const qrPayload = buildQRPayload(eventId, ticketRef.id, ticketNumber);
   const createdAt = now();
   const registrationSource = options.registrationSource || 'manual';
+  const registrationType = options.registrationType || (options.registrationMode ? 'onspot' : 'online');
+  const registrationMode = options.registrationMode || (options.registrationSource === 'manual' ? 'admin' : 'participant');
+
+  if (registrationType === 'onspot' && !event.onSpotRegistrationOpen) {
+    throw new Error('On-Spot registration is currently closed for this event.');
+  }
 
   const rawTicket = {
     eventId,
@@ -380,6 +408,8 @@ export async function createTicket(
     ticketNumber,
     qrPayload,
     registrationSource,
+    registrationType,
+    registrationMode,
     checkedIn: false,
     createdAt,
   };
@@ -413,6 +443,8 @@ export async function createTicket(
     customResponses: options.customResponses,
     qrPayload,
     registrationSource,
+    registrationType,
+    registrationMode,
     checkedIn: false,
     createdAt,
   };
@@ -437,19 +469,37 @@ export async function registerParticipantForEvent(
     paymentScreenshotUrl?: string;
     paymentScreenshotPath?: string;
     paymentStatus?: 'pending' | 'verified' | 'rejected';
+    paymentVerifiedAt?: string;
+    paymentVerifiedBy?: string;
     customResponses?: Record<string, string>;
     registrationSource?: 'public' | 'manual';
+    registrationType?: 'online' | 'onspot' | string;
+    registrationMode?: 'participant' | 'admin' | string;
   }
 ) {
   const event = await getEvent(eventId);
   if (!event) throw new Error('Event not found');
-  if (event.registrationOpen === false && participantData.registrationSource !== 'manual') {
+  if (
+    event.registrationOpen === false &&
+    participantData.registrationSource !== 'manual' &&
+    participantData.registrationMode !== 'admin' &&
+    participantData.registrationType !== 'onspot'
+  ) {
     throw new Error('Registration is currently closed for this event.');
+  }
+
+  const effectiveRegistrationType = participantData.registrationType || (participantData.registrationMode ? 'onspot' : 'online');
+  const effectiveRegistrationMode = participantData.registrationMode || (participantData.registrationSource === 'manual' ? 'admin' : 'participant');
+
+  if (effectiveRegistrationType === 'onspot' && !event.onSpotRegistrationOpen) {
+    throw new Error('On-Spot registration is currently closed for this event.');
   }
 
   const ticket = await createTicket(eventId, participantData.name, participantData.email, {
     guestPhone: participantData.phone,
     registrationSource: participantData.registrationSource || 'public',
+    registrationType: effectiveRegistrationType,
+    registrationMode: effectiveRegistrationMode,
     college: participantData.college,
     department: participantData.department,
     year: participantData.year,
@@ -464,6 +514,8 @@ export async function registerParticipantForEvent(
     paymentScreenshotUrl: participantData.paymentScreenshotUrl,
     paymentScreenshotPath: participantData.paymentScreenshotPath,
     paymentStatus: participantData.paymentStatus,
+    paymentVerifiedAt: participantData.paymentVerifiedAt,
+    paymentVerifiedBy: participantData.paymentVerifiedBy,
     customResponses: participantData.customResponses,
   });
 
@@ -486,9 +538,14 @@ export async function registerParticipantForEvent(
     paymentScreenshotUrl: participantData.paymentScreenshotUrl,
     paymentScreenshotPath: participantData.paymentScreenshotPath,
     paymentStatus: participantData.paymentStatus,
+    paymentVerifiedAt: participantData.paymentVerifiedAt,
+    paymentVerifiedBy: participantData.paymentVerifiedBy,
     customResponses: participantData.customResponses || undefined,
     arrived: false,
     ticketId: ticket.id,
+    registrationSource: participantData.registrationSource || 'public',
+    registrationType: effectiveRegistrationType,
+    registrationMode: effectiveRegistrationMode,
     createdAt: ticket.createdAt,
   };
 
@@ -540,7 +597,11 @@ export async function registerParticipantForEvent(
           paymentScreenshotUrl: participantData.paymentScreenshotUrl,
           paymentScreenshotPath: participantData.paymentScreenshotPath,
           paymentStatus: participantData.paymentStatus,
+          paymentVerifiedAt: participantData.paymentVerifiedAt,
+          paymentVerifiedBy: participantData.paymentVerifiedBy,
           customResponses: participantData.customResponses,
+          registrationType: effectiveRegistrationType,
+          registrationMode: effectiveRegistrationMode,
           registeredAt: ticket.createdAt,
           arrived: false,
         };
@@ -610,6 +671,9 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
       arrived: Boolean(ticket.checkedIn),
       arrivedAt: ticket.checkedInAt,
       ticketId: ticket.id,
+      registrationSource: ticket.registrationSource,
+      registrationType: ticket.registrationType,
+      registrationMode: ticket.registrationMode,
       createdAt: ticket.createdAt,
     };
 
@@ -629,6 +693,8 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
         paymentScreenshotPath: ticket.paymentScreenshotPath || existing.paymentScreenshotPath,
         paymentVerifiedAt: ticket.paymentVerifiedAt || existing.paymentVerifiedAt,
         paymentVerifiedBy: ticket.paymentVerifiedBy || existing.paymentVerifiedBy,
+        registrationType: ticket.registrationType || existing.registrationType,
+        registrationMode: ticket.registrationMode || existing.registrationMode,
       });
     } else {
       participantMap.set(key, participant);
@@ -716,6 +782,8 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
         paymentVerifiedAt: ticket.paymentVerifiedAt || existing?.paymentVerifiedAt,
         paymentVerifiedBy: ticket.paymentVerifiedBy || existing?.paymentVerifiedBy,
         customResponses: existing?.customResponses || ticket.customResponses,
+        registrationType: ticket.registrationType || existing?.registrationType,
+        registrationMode: ticket.registrationMode || existing?.registrationMode,
         registeredAt: existing?.registeredAt || ticket.createdAt,
         arrived: existing?.arrived ?? Boolean(ticket.checkedIn),
         arrivedAt: existing?.arrivedAt || ticket.checkedInAt,
@@ -742,6 +810,146 @@ export function mergeEventWithTickets(event: EventRecord, tickets: EventTicket[]
     participantIds: mergedParticipantIds,
     teams: mergedTeams,
   };
+}
+
+export interface DuplicateCheckResult {
+  isDuplicate: boolean;
+  participant?: {
+    id: string;
+    ticketNumber?: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    teamName?: string;
+    paymentStatus?: string;
+    createdAt?: string;
+    registrationType?: string;
+    registrationMode?: string;
+  };
+  matchedOn?: 'phone' | 'email';
+}
+
+/**
+ * Checks if a participant with the given phone number or email is already registered for an event.
+ * Compares phone numbers using the last 10 digits to normalize formatting differences.
+ */
+export async function checkExistingRegistration(
+  eventId: string,
+  phone?: string,
+  email?: string
+): Promise<DuplicateCheckResult> {
+  if (!eventId) return { isDuplicate: false };
+
+  const normPhone = phone ? phone.replace(/\D/g, '').slice(-10) : '';
+  const normEmail = email ? email.trim().toLowerCase() : '';
+
+  if (!normPhone && !normEmail) return { isDuplicate: false };
+
+  // 1. Check parent event document participants
+  try {
+    const event = await getEvent(eventId);
+    if (event && Array.isArray(event.participants)) {
+      for (const p of event.participants) {
+        const pPhone = p.phone ? p.phone.replace(/\D/g, '').slice(-10) : '';
+        const pEmail = p.email ? p.email.trim().toLowerCase() : '';
+
+        if (normPhone && pPhone && normPhone === pPhone) {
+          return {
+            isDuplicate: true,
+            participant: {
+              id: p.ticketId || p.id,
+              ticketNumber: (p as any).ticketNumber || (p.ticketId ? `ST-${p.ticketId.slice(0, 8).toUpperCase()}` : p.id),
+              name: p.name,
+              email: p.email,
+              phone: p.phone,
+              teamName: p.teamName,
+              paymentStatus: p.paymentStatus,
+              createdAt: p.createdAt,
+              registrationType: p.registrationType,
+              registrationMode: p.registrationMode,
+            },
+            matchedOn: 'phone',
+          };
+        }
+
+        if (normEmail && pEmail && normEmail === pEmail) {
+          return {
+            isDuplicate: true,
+            participant: {
+              id: p.ticketId || p.id,
+              ticketNumber: (p as any).ticketNumber || (p.ticketId ? `ST-${p.ticketId.slice(0, 8).toUpperCase()}` : p.id),
+              name: p.name,
+              email: p.email,
+              phone: p.phone,
+              teamName: p.teamName,
+              paymentStatus: p.paymentStatus,
+              createdAt: p.createdAt,
+              registrationType: p.registrationType,
+              registrationMode: p.registrationMode,
+            },
+            matchedOn: 'email',
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[DuplicateCheck] Error reading parent event participants:', err);
+  }
+
+  // 2. If user is authenticated (admin or member), query tickets subcollection
+  if (auth.currentUser) {
+    try {
+      const ticketsRef = collection(db, 'events', eventId, 'tickets');
+      const snap = await getDocs(ticketsRef);
+      for (const d of snap.docs) {
+        const t = d.data() as EventTicket;
+        const tPhone = t.guestPhone ? t.guestPhone.replace(/\D/g, '').slice(-10) : '';
+        const tEmail = t.guestEmail ? t.guestEmail.trim().toLowerCase() : '';
+
+        if (normPhone && tPhone && normPhone === tPhone) {
+          return {
+            isDuplicate: true,
+            participant: {
+              id: d.id,
+              ticketNumber: t.ticketNumber || `ST-${d.id.slice(0, 8).toUpperCase()}`,
+              name: t.guestName,
+              email: t.guestEmail,
+              phone: t.guestPhone,
+              teamName: t.teamName,
+              paymentStatus: t.paymentStatus,
+              createdAt: t.createdAt,
+              registrationType: t.registrationType,
+              registrationMode: t.registrationMode,
+            },
+            matchedOn: 'phone',
+          };
+        }
+
+        if (normEmail && tEmail && normEmail === tEmail) {
+          return {
+            isDuplicate: true,
+            participant: {
+              id: d.id,
+              ticketNumber: t.ticketNumber || `ST-${d.id.slice(0, 8).toUpperCase()}`,
+              name: t.guestName,
+              email: t.guestEmail,
+              phone: t.guestPhone,
+              teamName: t.teamName,
+              paymentStatus: t.paymentStatus,
+              createdAt: t.createdAt,
+              registrationType: t.registrationType,
+              registrationMode: t.registrationMode,
+            },
+            matchedOn: 'email',
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[DuplicateCheck] Non-fatal: could not query tickets subcollection:', e);
+    }
+  }
+
+  return { isDuplicate: false };
 }
 
 export async function addParticipant(eventId: string, userId: string) {

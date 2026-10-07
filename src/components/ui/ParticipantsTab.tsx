@@ -25,6 +25,7 @@ import {
   Maximize2,
   Layers,
   ChevronDown,
+  QrCode,
 } from 'lucide-react';
 import {
   updateParticipantArrivalStatus,
@@ -630,7 +631,7 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
 
   const exportParticipantCsv = () => {
     const rows = [
-      ['Name', 'Email', 'College', 'Department', 'Domain', ...customFieldLabels, 'Arrived', 'Arrival Time', 'Allocated Lab', 'Allocated Classroom'],
+      ['Name', 'Email', 'College', 'Department', 'Domain', ...customFieldLabels, 'Channel', 'Mode', 'Arrived', 'Arrival Time', 'Allocated Lab', 'Allocated Classroom'],
       ...(participants.map((participant) => [
         participant.name,
         participant.email,
@@ -638,6 +639,8 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
         participant.department || '',
         participant.domain || '',
         ...(event.customFields || []).map((f) => participant.customResponses?.[f.id] || ''),
+        participant.registrationType === 'onspot' ? 'On-Spot' : 'Online',
+        participant.registrationMode || '',
         participant.arrived ? 'Arrived' : 'Pending',
         participant.arrivedAt || '',
         participant.allocatedLab || '',
@@ -697,6 +700,17 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
             <Download className="w-4 h-4 text-blue-400" />
             All Tickets
           </button>
+
+          {event.onSpotRegistrationOpen && (
+            <a
+              href={`/dashboard/on-spot-registration?eventId=${event.id}`}
+              className="rounded-2xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 cursor-pointer shadow-xs"
+              title="Open On-Spot Registration desk for this event"
+            >
+              <QrCode className="w-4 h-4 text-amber-400" />
+              <span>On-Spot Desk</span>
+            </a>
+          )}
 
           {canEdit && (
             <button
@@ -972,6 +986,18 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
                           {participant.tierName && (
                             <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
                               {participant.tierName}
+                            </span>
+                          )}
+                          {participant.registrationType === 'onspot' && (
+                            <span
+                              className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                                participant.registrationMode === 'admin'
+                                  ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                                  : 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+                              }`}
+                              title={`On-Spot Registration (${participant.registrationMode === 'admin' ? 'Registered by Admin' : 'Registered by Participant'})`}
+                            >
+                              On-Spot{participant.registrationMode ? ` · ${participant.registrationMode === 'admin' ? 'Admin' : 'Self'}` : ''}
                             </span>
                           )}
                         </div>
@@ -1498,7 +1524,7 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
                       type="text"
                       value={college}
                       onChange={(e) => setCollege(e.target.value)}
-                      placeholder="e.g. JSPM RSCOE"
+                      placeholder="JSPM RSCOE"
                       className="input-field w-full text-xs"
                     />
                   </div>

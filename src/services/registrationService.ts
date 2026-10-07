@@ -51,6 +51,10 @@ export interface UnifiedRegistrationItem {
   // Timestamps
   createdAt: string; // ISO timestamp
   customResponses?: Record<string, string>;
+
+  // Registration source & origin tracking
+  registrationType?: 'online' | 'onspot' | string;
+  registrationMode?: 'participant' | 'admin' | string;
 }
 
 export interface EventRegistrationSummary {
@@ -339,6 +343,8 @@ export function buildUnifiedRegistrations(
         arrivedAt: ticket.checkedInAt,
         createdAt: ticket.createdAt || ev.createdAt || '',
         customResponses: ticket.customResponses,
+        registrationType: ticket.registrationType || ((ticket as any).registrationMode ? 'onspot' : 'online'),
+        registrationMode: ticket.registrationMode || (ticket.registrationSource === 'manual' ? 'admin' : 'participant'),
       });
     });
 
@@ -387,6 +393,8 @@ export function buildUnifiedRegistrations(
         arrivedAt: t.arrivedAt,
         createdAt: t.registeredAt || (t as any).createdAt || ev.createdAt || '',
         customResponses: t.customResponses,
+        registrationType: t.registrationType || ((t as any).registrationMode ? 'onspot' : 'online'),
+        registrationMode: t.registrationMode || ((t as any).registrationSource === 'manual' ? 'admin' : 'participant'),
       });
     });
 
@@ -433,6 +441,8 @@ export function buildUnifiedRegistrations(
           arrivedAt: p.arrivedAt,
           createdAt: p.createdAt || ev.createdAt || '',
           customResponses: p.customResponses,
+          registrationType: p.registrationType || ((p as any).registrationMode ? 'onspot' : 'online'),
+          registrationMode: p.registrationMode || ((p as any).registrationSource === 'manual' ? 'admin' : 'participant'),
         });
       });
     }
@@ -873,7 +883,9 @@ export function exportRegistrationsToCSV(
 
   const headers = [
     'Registration ID',
-    'Registration Type',
+    'Participation Format',
+    'Registration Channel',
+    'Registration Mode',
     'Event Name',
     'Event Date',
     'Participant / Lead Name',
@@ -906,6 +918,8 @@ export function exportRegistrationsToCSV(
     rows.push([
       r.ticketNumber || r.id,
       r.formatLabel || (r.type === 'team' ? 'Team' : 'Solo'),
+      r.registrationType === 'onspot' ? 'On-Spot' : 'Online',
+      r.registrationMode === 'admin' ? 'Admin' : 'Participant',
       r.eventName,
       r.eventDate,
       r.name,

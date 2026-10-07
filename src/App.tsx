@@ -13,6 +13,7 @@ const ActivitiesPage = lazy(() => import('./pages/public/ActivitiesPage'));
 const ApplyPage = lazy(() => import('./pages/public/ApplyPage'));
 const AuthPage = lazy(() => import('./pages/public/AuthPage'));
 const EventRegisterPage = lazy(() => import('./pages/public/EventRegisterPage'));
+const OnSpotRegisterPage = lazy(() => import('./pages/public/OnSpotRegisterPage'));
 const PublicEventDetailsPage = lazy(() => import('./pages/public/PublicEventDetailsPage'));
 const AboutPage = lazy(() => import('./pages/public/AboutPage'));
 const PublicEventsPage = lazy(() => import('./pages/public/PublicEventsPage'));
@@ -33,6 +34,7 @@ const DashboardHome = lazy(() => import('./pages/dashboard/DashboardHome'));
 const ProfilePage = lazy(() => import('./pages/dashboard/ProfilePage'));
 const EventsPage = lazy(() => import('./pages/dashboard/EventsPage'));
 const RegistrationsPage = lazy(() => import('./pages/dashboard/RegistrationsPage'));
+const AdminOnSpotPage = lazy(() => import('./pages/dashboard/AdminOnSpotPage'));
 const EventDetailsPage = lazy(() => import('./pages/dashboard/EventDetailsPage'));
 const CalendarPage = lazy(() => import('./pages/dashboard/CalendarPage'));
 const AgendaPage = lazy(() => import('./pages/dashboard/AgendaPage'));
@@ -102,6 +104,9 @@ export default function App() {
                 <Route path="/support" element={<PublicSupportPage />} />
                 <Route path="/events/:eventId" element={<PublicEventDetailsPage />} />
                 <Route path="/events/:eventId/register" element={<EventRegisterPage />} />
+                <Route path="/events/:eventId/on-spot" element={<OnSpotRegisterPage />} />
+                <Route path="/on-spot" element={<OnSpotRegisterPage />} />
+                <Route path="/on-spot/:eventId" element={<OnSpotRegisterPage />} />
               </Route>
 
               {/* Authentication Pages (Standalone) */}
@@ -157,6 +162,7 @@ export default function App() {
                 <Route path="profile" element={<ProfilePage />} />
                 <Route path="events" element={<EventsPage />} />
                 <Route path="registrations" element={<RegistrationsPage />} />
+                <Route path="on-spot-registration" element={<AdminOnSpotPage />} />
                 <Route path="events/:eventId" element={<EventDetailsPage />} />
                 <Route path="calendar" element={<CalendarPage />} />
                 <Route path="agenda" element={<AgendaPage />} />

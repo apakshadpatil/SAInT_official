@@ -1263,13 +1263,42 @@ main > *,
 }
 
 /* QR Scanner */
+.qr-reader {
+  width: 100% !important;
+  border: none !important;
+  background: transparent !important;
+}
+
 .qr-reader video {
   width: 100% !important;
-  border-radius: 4px;
+  height: 100% !important;
+  max-height: 520px;
+  object-fit: cover !important;
+  border-radius: 1rem;
+  display: block;
 }
 
 .qr-reader img {
   display: none !important;
+}
+
+@keyframes laserSweep {
+  0% {
+    top: 6%;
+    opacity: 0.85;
+  }
+  50% {
+    top: 92%;
+    opacity: 1;
+  }
+  100% {
+    top: 6%;
+    opacity: 0.85;
+  }
+}
+
+.animate-laser {
+  animation: laserSweep 2.2s ease-in-out infinite;
 }
 
 /* Auth page */

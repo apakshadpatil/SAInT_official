@@ -1756,7 +1756,7 @@ export default function TeamRegistrationTab({
                               type="text"
                               value={mem.college || ''}
                               onChange={(e) => handleMemberChange(idx, 'college', e.target.value)}
-                              placeholder="College Name"
+                              placeholder="JSPM RSCOE"
                               className="input-field text-xs !py-1.5"
                             />
                             <input

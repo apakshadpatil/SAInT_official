@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import type { EventRecord, EventTicket } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { CheckCircle, AlertCircle, QrCode } from 'lucide-react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { CheckCircle, AlertCircle, QrCode, ShieldAlert, RefreshCw } from 'lucide-react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { checkInEventTicket, subscribeEventTickets } from '../../services/eventService';
 
 interface ScanTicketTabProps {
@@ -24,9 +24,12 @@ export default function ScanTicketTab({ event, canEdit }: ScanTicketTabProps) {
   const { profile } = useAuth();
   const { showToast } = useToast();
   const [scanning, setScanning] = useState(false);
+  const [scannerStarting, setScannerStarting] = useState(false);
+  const [scannerError, setScannerError] = useState('');
+  const [isPermissionBlocked, setIsPermissionBlocked] = useState(false);
   const [tickets, setTickets] = useState<EventTicket[]>([]);
   const [scanLogs, setScanLogs] = useState<ScannedTicketLog[]>([]);
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
   const processingRef = useRef(false);
   const [manualInput, setManualInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -38,17 +41,50 @@ export default function ScanTicketTab({ event, canEdit }: ScanTicketTabProps) {
     return unsub;
   }, [event.id]);
 
+  const stopScanning = useCallback(async () => {
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
+        }
+      } catch (err) {
+        console.warn('Error stopping scanner:', err);
+      }
+      try {
+        scannerRef.current.clear();
+      } catch (err) {
+        console.warn('Error clearing scanner:', err);
+      }
+      scannerRef.current = null;
+    }
+
+    // Stop hardware tracks
+    try {
+      const container = document.getElementById('qr-reader');
+      if (container) {
+        const videos = container.querySelectorAll('video');
+        videos.forEach((video) => {
+          if (video.srcObject instanceof MediaStream) {
+            video.srcObject.getTracks().forEach((track) => {
+              try {
+                track.stop();
+              } catch {}
+            });
+            video.srcObject = null;
+          }
+        });
+      }
+    } catch {}
+
+    setScanning(false);
+    setScannerStarting(false);
+  }, []);
+
   useEffect(() => {
     return () => {
-      if (scannerRef.current && scanning) {
-        try {
-          scannerRef.current.clear();
-        } catch (err) {
-          console.error('Error stopping scanner:', err);
-        }
-      }
+      void stopScanning();
     };
-  }, [scanning]);
+  }, [stopScanning]);
 
   const processScanPayload = useCallback(
     async (decodedText: string) => {
@@ -100,42 +136,114 @@ export default function ScanTicketTab({ event, canEdit }: ScanTicketTabProps) {
     [event.id, profile, showToast]
   );
 
-  const startScanning = () => {
+  const startScanning = async () => {
+    setScanning(true);
+    setScannerStarting(true);
+    setScannerError('');
+    setIsPermissionBlocked(false);
+
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      setScannerError('Camera access requires HTTPS connection.');
+      setScanning(false);
+      setScannerStarting(false);
+      return;
+    }
+
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setScannerError('Camera access is not supported on this browser or connection.');
+      setScanning(false);
+      setScannerStarting(false);
+      return;
+    }
+
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    let container = document.getElementById('qr-reader');
+    let waitCount = 0;
+    while (!container && waitCount < 10) {
+      await new Promise((r) => setTimeout(r, 60));
+      container = document.getElementById('qr-reader');
+      waitCount++;
+    }
+
+    if (!container) {
+      setScannerError('Camera preview container not found in DOM.');
+      setScanning(false);
+      setScannerStarting(false);
+      return;
+    }
+
+    await stopScanning();
     setScanning(true);
 
-    setTimeout(() => {
-      const scanner = new Html5QrcodeScanner(
-        'qr-reader',
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.33,
-        },
-        false
-      );
+    const scanner = new Html5Qrcode('qr-reader', {
+      verbose: false,
+      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+    });
+    scannerRef.current = scanner;
 
-      scannerRef.current = scanner;
+    const qrboxFunc = (viewfinderWidth: number, viewfinderHeight: number) => {
+      const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+      const edge = Math.max(180, Math.min(Math.floor(minEdge * 0.72), 280));
+      return { width: edge, height: edge };
+    };
 
-      scanner.render(
+    const config = { fps: 12, qrbox: qrboxFunc };
+
+    try {
+      await scanner.start(
+        { facingMode: 'environment' },
+        config,
         (decodedText) => {
           void processScanPayload(decodedText);
         },
-        () => {
-          // Ignore scanning loop frames
-        }
+        () => undefined
       );
-    }, 100);
-  };
+      setScannerStarting(false);
+    } catch (err1) {
+      console.warn('[ScanTicketTab] facingMode: environment failed, checking fallback:', err1);
+      const errName = (err1 as Error)?.name || '';
+      const errMsg = (err1 as Error)?.message || String(err1);
+      const isPerm = errName === 'NotAllowedError' || /permission|denied|not allowed/i.test(errMsg);
 
-  const stopScanning = async () => {
-    if (scannerRef.current) {
+      if (isPerm) {
+        setIsPermissionBlocked(true);
+        setScannerError('Camera permission is blocked. Please allow camera access in browser settings.');
+        await stopScanning();
+        return;
+      }
+
+      // Try camera enumeration fallback
       try {
-        await scannerRef.current.clear();
-      } catch (err) {
-        console.error('Error stopping scanner:', err);
+        const devices = await Html5Qrcode.getCameras();
+        if (devices && devices.length > 0) {
+          const rearDev =
+            devices.find((d) => /back|rear|environment|main|0/i.test(d.label)) || devices[devices.length - 1];
+          await scanner.start(
+            rearDev.id,
+            config,
+            (decodedText) => {
+              void processScanPayload(decodedText);
+            },
+            () => undefined
+          );
+          setScannerStarting(false);
+        } else {
+          await scanner.start(
+            { facingMode: 'user' },
+            config,
+            (decodedText) => {
+              void processScanPayload(decodedText);
+            },
+            () => undefined
+          );
+          setScannerStarting(false);
+        }
+      } catch (fallbackErr) {
+        const msg = (fallbackErr as Error)?.message || 'Failed to start device camera.';
+        setScannerError(msg);
+        await stopScanning();
       }
     }
-    setScanning(false);
   };
 
   const handleManualScan = async (e?: React.FormEvent) => {
@@ -212,22 +320,53 @@ export default function ScanTicketTab({ event, canEdit }: ScanTicketTabProps) {
           Live Ticket Scanner
         </h4>
         <p className="text-xs" style={{ color: 'var(--dash-muted)' }}>
-          Use camera scanner or manual input to verify participant tickets and record entry in real time.
+          Use phone camera scanner or manual input to verify participant tickets and record entry in real time.
         </p>
 
-        {!scanning ? (
+        {isPermissionBlocked ? (
+          <div className="rounded-2xl p-4 text-left bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-3">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <h5 className="font-bold text-sm text-amber-300">Camera permission is blocked</h5>
+                <p className="text-xs text-amber-200/90 mt-1">
+                  Camera access is required to scan tickets. Please allow camera access in browser settings and try again.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={startScanning}
+              className="btn-primary !py-2 !px-4 text-xs font-semibold"
+            >
+              Retry Camera Access
+            </button>
+          </div>
+        ) : scannerError ? (
+          <div className="rounded-2xl p-4 text-left bg-red-500/10 border border-red-500/30 text-red-200 space-y-2">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-200">{scannerError}</p>
+            </div>
+            <button
+              onClick={startScanning}
+              className="btn-primary !py-2 !px-4 text-xs font-semibold"
+            >
+              Retry Camera
+            </button>
+          </div>
+        ) : !scanning ? (
           <button
             onClick={startScanning}
-            disabled={!canEdit}
+            disabled={!canEdit || scannerStarting}
             className="btn-primary w-full flex items-center justify-center gap-2 !py-3 font-semibold"
           >
-            <QrCode className="w-5 h-5" />
-            Start Camera Scanner
+            {scannerStarting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <QrCode className="w-5 h-5" />}
+            {scannerStarting ? 'Opening Camera…' : 'Start Camera Scanner'}
           </button>
         ) : (
           <button
             onClick={stopScanning}
-            className="btn-secondary w-full !py-3 font-semibold"
+            className="btn-secondary w-full !py-3 font-semibold text-rose-300 border-rose-500/30"
           >
             Stop Camera Scanner
           </button>
@@ -236,10 +375,21 @@ export default function ScanTicketTab({ event, canEdit }: ScanTicketTabProps) {
 
       {/* QR Scanner Container */}
       {scanning && (
-        <div className="rounded-2xl border p-6 space-y-4" style={{ borderColor: 'var(--dash-border)' }}>
-          <div id="qr-reader" className="rounded-xl overflow-hidden min-h-[300px]" />
+        <div className="rounded-2xl border p-4 sm:p-6 space-y-4" style={{ borderColor: 'var(--dash-border)' }}>
+          <div className="relative w-full max-w-sm mx-auto aspect-square rounded-xl overflow-hidden bg-black">
+            <div id="qr-reader" className="qr-reader w-full h-full" />
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+              <div className="w-48 h-48 border border-white/20 rounded-2xl relative">
+                <span className="absolute -top-1 -left-1 w-5 h-5 border-t-2 border-l-2 border-emerald-400 rounded-tl-md" />
+                <span className="absolute -top-1 -right-1 w-5 h-5 border-t-2 border-r-2 border-emerald-400 rounded-tr-md" />
+                <span className="absolute -bottom-1 -left-1 w-5 h-5 border-b-2 border-l-2 border-emerald-400 rounded-bl-md" />
+                <span className="absolute -bottom-1 -right-1 w-5 h-5 border-b-2 border-r-2 border-emerald-400 rounded-br-md" />
+                <div className="absolute inset-x-2 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_8px_#10b981] animate-laser" />
+              </div>
+            </div>
+          </div>
           <p className="text-xs text-center" style={{ color: 'var(--dash-muted)' }}>
-            Point camera at attendee&apos;s ticket QR code
+            Point rear camera at attendee&apos;s ticket QR code
           </p>
         </div>
       )}

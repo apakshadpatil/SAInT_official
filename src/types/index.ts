@@ -321,6 +321,8 @@ export interface EventRecord {
   eventCoordinatorContacts?: EventCoordinatorContact[];
   // Registration Status Control
   registrationOpen?: boolean;
+  // On-Spot Registration Control (per-event admin toggle)
+  onSpotRegistrationOpen?: boolean;
 }
 
 export interface EventCoordinatorContact {
@@ -340,6 +342,18 @@ export function isEventRegistrationOpen(event: Partial<EventRecord> | null | und
     return false;
   }
   return event.registrationOpen !== false;
+}
+
+/**
+ * Checks whether on-spot registration is enabled by an admin for this individual event.
+ * Defaults to false (OFF) if onSpotRegistrationOpen is undefined/missing.
+ */
+export function isOnSpotRegistrationOpen(event: Partial<EventRecord> | null | undefined): boolean {
+  if (!event) return false;
+  if (event.status === 'cancelled' || event.status === 'completed' || event.status === 'draft') {
+    return false;
+  }
+  return Boolean(event.onSpotRegistrationOpen);
 }
 
 /**
@@ -443,6 +457,8 @@ export interface EventTeam {
   batchId?: string;
   batchName?: string;
   notes?: string;
+  registrationType?: 'online' | 'onspot' | string;
+  registrationMode?: 'participant' | 'admin' | string;
 }
 
 export interface EventTicket {
@@ -471,6 +487,8 @@ export interface EventTicket {
   customResponses?: Record<string, string>;
   qrPayload: string;
   registrationSource: 'public' | 'manual';
+  registrationType?: 'online' | 'onspot' | string;
+  registrationMode?: 'participant' | 'admin' | string;
   /** Set when a participant account claims this ticket. */
   participantUid?: string;
   checkedIn: boolean;
@@ -518,6 +536,9 @@ export interface EventParticipant {
   accessUpdatedBy?: string;
   certificateUrl?: string;
   certificateSent?: boolean;
+  registrationType?: 'online' | 'onspot' | string;
+  registrationMode?: 'participant' | 'admin' | string;
+  registrationSource?: 'public' | 'manual';
   createdAt: string;
 }
 

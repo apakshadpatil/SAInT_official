@@ -20,6 +20,8 @@ import {
   Phone,
   User,
   Lock,
+  QrCode,
+  ArrowRight,
 } from 'lucide-react';
 import { getEvent, subscribeEventById } from '../../services/eventService';
 import type { EventRecord } from '../../types';
@@ -402,7 +404,18 @@ export default function PublicEventDetailsPage() {
             <span>Back to All Events</span>
           </Link>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {event.onSpotRegistrationOpen && (
+              <Link
+                to={`/events/${event.id}/on-spot`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 transition-all cursor-pointer shadow-xs"
+                title="On-Spot Registration at the venue"
+              >
+                <QrCode className="w-3.5 h-3.5 text-amber-400" />
+                <span>On-Spot Registration</span>
+              </Link>
+            )}
+
             <button
               type="button"
               onClick={handleAddToCalendar}
@@ -581,6 +594,42 @@ export default function PublicEventDetailsPage() {
                 </div>
               </div>
             </div>
+
+            {/* Quick Hero Registration Row */}
+            {event.onSpotRegistrationOpen ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-white/10 mt-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-300">Venue Registration</span>
+                  <span className="text-[11px] text-amber-300 font-bold bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    ⚡ On-Spot Mode
+                  </span>
+                </div>
+                <div>
+                  <Link
+                    to={`/events/${event.id}/on-spot`}
+                    className="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center gap-2 transition-all shadow-md cursor-pointer border border-amber-500/40 bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:brightness-110 active:scale-95"
+                  >
+                    <QrCode className="w-4 h-4" />
+                    <span>On-Spot Registration</span>
+                  </Link>
+                </div>
+              </div>
+            ) : isRegistrationOpen ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-white/10 mt-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-300">Registration is open</span>
+                </div>
+                <div>
+                  <Link
+                    to={event.registrationUrl ? event.registrationUrl : `/events/${event.id}/register`}
+                    className="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-md cursor-pointer bg-blue-600 hover:bg-blue-500 text-white"
+                  >
+                    <Ticket className="w-4 h-4" />
+                    <span>Register Now</span>
+                  </Link>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -733,82 +782,64 @@ export default function PublicEventDetailsPage() {
                 </div>
               </div>
 
-              {/* Primary Register CTA Button (Requirement #4) */}
-              {isRegistrationOpen ? (
-                event.registrationUrl ? (
-                  <a
-                    href={event.registrationUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-3.5 px-6 rounded-2xl font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                    style={
-                      doomsdayMode
-                        ? {
-                            background: 'linear-gradient(135deg, #10b981, #059669)',
-                            color: '#000000',
-                            boxShadow: '0 8px 25px rgba(16,185,129,0.4)',
-                          }
-                        : {
-                            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                            color: '#ffffff',
-                            boxShadow: '0 8px 25px rgba(37,99,235,0.4)',
-                          }
-                    }
-                  >
-                    <ExternalLink className="w-5 h-5" />
-                    <span>Register Now</span>
-                  </a>
-                ) : (
+              {/* Registration Actions: On-Spot vs Standard */}
+              <div className="space-y-3">
+                {event.onSpotRegistrationOpen ? (
+                  /* When On-Spot is ON: Participant sees On-Spot Registration instead of normal registration */
                   <Link
-                    to={`/events/${event.id}/register`}
-                    className="w-full py-3.5 px-6 rounded-2xl font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                    style={
-                      doomsdayMode
-                        ? {
-                            background: 'linear-gradient(135deg, #10b981, #059669)',
-                            color: '#000000',
-                            boxShadow: '0 8px 25px rgba(16,185,129,0.4)',
-                          }
-                        : {
-                            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                            color: '#ffffff',
-                            boxShadow: '0 8px 25px rgba(37,99,235,0.4)',
-                          }
-                    }
-                  >
-                    <Ticket className="w-5 h-5" />
-                    <span>Register Now</span>
-                  </Link>
-                )
-              ) : (
-                <div className="space-y-3">
-                  <div
-                    className="w-full py-4 px-5 rounded-2xl border text-center space-y-1.5 shadow-lg"
+                    to={`/events/${event.id}/on-spot`}
+                    id="on-spot-registration-btn"
+                    className="w-full py-4 px-5 rounded-2xl font-black text-base flex items-center justify-between gap-3 transition-all shadow-xl hover:scale-[1.01] active:scale-[0.99] cursor-pointer border border-amber-500/50 text-white group"
                     style={{
-                      background: 'rgba(239, 68, 68, 0.08)',
-                      borderColor: 'rgba(239, 68, 68, 0.3)',
+                      background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                      boxShadow: '0 8px 25px rgba(245, 158, 11, 0.35)',
                     }}
+                    title="On-Spot Registration"
                   >
-                    <div className="flex items-center justify-center gap-2 text-red-400 font-black text-sm uppercase tracking-wider">
-                      <Lock className="w-4 h-4" />
-                      <span>Registration Closed</span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-white/20 text-white flex items-center justify-center shrink-0">
+                        <QrCode className="w-5 h-5" />
+                      </div>
+                      <div className="text-left min-w-0">
+                        <span className="font-extrabold text-base text-white block">On-Spot Registration</span>
+                        <p className="text-[11px] font-medium text-amber-100/90 leading-tight mt-0.5 truncate">
+                          Direct venue registration
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-300">
-                      {isCompleted
-                        ? 'This event has concluded.'
-                        : 'Registrations for this event are currently closed.'}
+                    <ArrowRight className="w-4 h-4 shrink-0 text-white group-hover:translate-x-1 transition-transform" />
+                  </Link>
+                ) : isRegistrationOpen ? (
+                  /* When On-Spot is OFF: Standard registration option */
+                  event.registrationUrl ? (
+                    <a
+                      href={event.registrationUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3.5 px-4 rounded-2xl font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-xl hover:scale-[1.01] active:scale-[0.99] bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white cursor-pointer"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Register Now</span>
+                    </a>
+                  ) : (
+                    <Link
+                      to={`/events/${event.id}/register`}
+                      id="online-registration-btn"
+                      className="w-full py-3.5 px-4 rounded-2xl font-black text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-xl hover:scale-[1.01] active:scale-[0.99] bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white cursor-pointer"
+                    >
+                      <Ticket className="w-4 h-4" />
+                      <span>Register Now</span>
+                    </Link>
+                  )
+                ) : (
+                  <div className="p-4 rounded-2xl border border-red-500/20 bg-red-500/10 text-center space-y-1">
+                    <span className="text-red-400 font-bold text-sm block">Registration Closed</span>
+                    <p className="text-xs text-slate-400">
+                      Registrations are currently closed for this event.
                     </p>
                   </div>
-                  <button
-                    disabled
-                    aria-disabled="true"
-                    className="w-full py-3.5 px-6 rounded-2xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-not-allowed bg-slate-800/80 text-slate-500 border border-slate-700/80 select-none opacity-80"
-                  >
-                    <Lock className="w-4 h-4" />
-                    <span>Registration Closed</span>
-                  </button>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* External Links: WhatsApp, Rulebook */}
               <div className="space-y-2 pt-2">
@@ -893,6 +924,32 @@ export default function PublicEventDetailsPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* ── MOBILE STICKY FLOATING ACTION BAR ────────────────────────────── */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 p-3 bg-slate-950/95 backdrop-blur-md border-t border-white/10 flex items-center gap-2 shadow-2xl">
+        {event.onSpotRegistrationOpen ? (
+          <Link
+            to={`/events/${event.id}/on-spot`}
+            className="flex-1 py-3 px-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 border border-amber-500/50 bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-lg text-center"
+          >
+            <QrCode className="w-4 h-4" />
+            <span>On-Spot Registration</span>
+          </Link>
+        ) : isRegistrationOpen ? (
+          <Link
+            to={event.registrationUrl ? event.registrationUrl : `/events/${event.id}/register`}
+            className="flex-1 py-3 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border border-blue-500/40 bg-blue-600 text-white shadow-lg text-center"
+          >
+            <Ticket className="w-4 h-4" />
+            <span>Register Now</span>
+          </Link>
+        ) : (
+          <div className="flex-1 py-3 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 border border-red-500/30 bg-red-500/10 text-red-300 text-center">
+            <Lock className="w-4 h-4" />
+            <span>Registration Closed</span>
+          </div>
+        )}
       </div>
     </div>
   );
