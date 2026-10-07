@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   Lock,
   Upload,
+  MessageCircle,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -213,6 +214,13 @@ export default function OnSpotRegistrationForm({
       tiers,
     };
   }, [event]);
+
+  // Sanitized WhatsApp Group URL for the selected event
+  const whatsappGroupUrl = useMemo(() => {
+    const raw = event?.whatsappGroupUrl?.trim();
+    if (!raw) return '';
+    return raw.startsWith('http://') || raw.startsWith('https://') ? raw : `https://${raw}`;
+  }, [event?.whatsappGroupUrl]);
 
   // Adjust participationType and selectedTeamSize when capabilities change
   useEffect(() => {
@@ -714,6 +722,39 @@ export default function OnSpotRegistrationForm({
               </button>
             )}
           </div>
+
+          {/* Event WhatsApp Group Link */}
+          {whatsappGroupUrl && (
+            <div
+              className="rounded-2xl border border-emerald-500/35 p-4 sm:p-5 text-left shadow-xl"
+              style={{
+                background: 'linear-gradient(145deg, rgba(6, 78, 59, 0.25) 0%, rgba(2, 44, 34, 0.35) 100%)',
+              }}
+            >
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30 shadow-inner">
+                    <MessageCircle className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-sm sm:text-base font-bold text-white">Join the Event WhatsApp Group</h4>
+                    <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                      Stay updated with event announcements and important information.
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href={whatsappGroupUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-1.5 transition-all shrink-0 shadow-lg shadow-emerald-600/20 cursor-pointer"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Join WhatsApp Group</span>
+                </a>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Venue QR Modal for Admin */}
@@ -1539,6 +1580,39 @@ export default function OnSpotRegistrationForm({
               </button>
             </div>
           </div>
+
+          {/* Event WhatsApp Group Section */}
+          {whatsappGroupUrl && (
+            <div
+              className="rounded-2xl sm:rounded-3xl border border-emerald-500/35 p-4 sm:p-5 shadow-xl text-left"
+              style={{
+                background: 'linear-gradient(145deg, rgba(6, 78, 59, 0.25) 0%, rgba(2, 44, 34, 0.35) 100%)',
+              }}
+            >
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30 shadow-inner">
+                    <MessageCircle className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-sm sm:text-base font-bold text-white">Join the Event WhatsApp Group</h4>
+                    <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                      Stay updated with event announcements and important information.
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href={whatsappGroupUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-1.5 transition-all shrink-0 shadow-lg shadow-emerald-600/20 cursor-pointer"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Join WhatsApp Group</span>
+                </a>
+              </div>
+            </div>
+          )}
         </form>
       )}
 
