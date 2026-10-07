@@ -21,6 +21,8 @@ import {
   QrCode,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { canAccessOnSpotRegistration } from '../../utils/permissions';
 import {
   getUnifiedRegistrations,
   subscribeUnifiedRegistrations,
@@ -41,6 +43,7 @@ import { StatGridSkeleton, DataStateWrapper } from '../../components/ui/skeleton
 export default function RegistrationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { showToast } = useToast();
+  const { profile } = useAuth();
 
   // Data state
   const [loading, setLoading] = useState(true);
@@ -394,19 +397,21 @@ export default function RegistrationsPage() {
           </button>
 
           {/* On-Spot Registration Quick Action */}
-          <Link
-            to="/dashboard/on-spot-registration"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer shadow-xs hover:opacity-95"
-            style={{
-              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.2))',
-              borderColor: 'rgba(245, 158, 11, 0.4)',
-              color: '#fbbf24',
-            }}
-            title="Open On-Spot Event Registration Desk"
-          >
-            <QrCode className="w-3.5 h-3.5 text-amber-400" />
-            <span>On-Spot Desk</span>
-          </Link>
+          {canAccessOnSpotRegistration(profile) && (
+            <Link
+              to="/dashboard/on-spot-registration"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer shadow-xs hover:opacity-95"
+              style={{
+                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.2))',
+                borderColor: 'rgba(245, 158, 11, 0.4)',
+                color: '#fbbf24',
+              }}
+              title="Open On-Spot Event Registration Desk"
+            >
+              <QrCode className="w-3.5 h-3.5 text-amber-400" />
+              <span>On-Spot Desk</span>
+            </Link>
+          )}
 
           {/* Export Dropdown / Buttons */}
           <div className="flex items-center gap-1.5">

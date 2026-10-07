@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { CheckCircle, AlertCircle, QrCode, ShieldAlert, RefreshCw } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { checkInEventTicket, subscribeEventTickets } from '../../services/eventService';
+import { canAccessTicketScanner } from '../../utils/permissions';
 
 interface ScanTicketTabProps {
   event: EventRecord;
@@ -23,6 +24,17 @@ interface ScannedTicketLog {
 export default function ScanTicketTab({ event, canEdit }: ScanTicketTabProps) {
   const { profile } = useAuth();
   const { showToast } = useToast();
+
+  if (!canAccessTicketScanner(profile)) {
+    return (
+      <div className="dash-card text-center py-12">
+        <ShieldAlert className="w-12 h-12 text-red-400 mx-auto mb-3" />
+        <p className="text-sm font-semibold" style={{ color: 'var(--dash-text)' }}>Access Restricted</p>
+        <p className="text-xs text-slate-500 mt-1">Ticket scanning is available only to authorized members.</p>
+      </div>
+    );
+  }
+
   const [scanning, setScanning] = useState(false);
   const [scannerStarting, setScannerStarting] = useState(false);
   const [scannerError, setScannerError] = useState('');

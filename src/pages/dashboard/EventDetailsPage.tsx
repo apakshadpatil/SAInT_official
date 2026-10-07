@@ -4,7 +4,14 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { subscribeEventById, subscribeEventTickets, mergeEventWithTickets, updateEvent, deleteEvent, setEventOnSpotStatus } from '../../services/eventService';
 import type { EventRecord, EventTicket } from '../../types';
-import { isSuperAdmin, isCoreMember, canAccessEventSettings, canDeleteEvent } from '../../utils/permissions';
+import {
+  isSuperAdmin,
+  isCoreMember,
+  canAccessEventSettings,
+  canDeleteEvent,
+  canAccessTicketScanner,
+  canAccessOnSpotRegistration,
+} from '../../utils/permissions';
 import { ArrowLeft, Ticket, QrCode, Image as ImageIcon, Users, MapPin, Settings, Trash2, Edit2, BarChart3, Layers, Sparkles, CalendarDays, Clock3, BadgeCheck, FormInput, Award, Users2, ClipboardCheck, ExternalLink, Palette, LayoutList, Lock, Unlock } from 'lucide-react';
 import { isValidRegistrationUrl } from '../../utils/urlValidation';
 import TicketingTab from '../../components/ui/TicketingTab';
@@ -58,6 +65,8 @@ export default function EventDetailsPage() {
   const canEdit = isSuperAdmin(profile) || isCoreMember(profile);
   const canManageSettings = canAccessEventSettings(profile);
   const canDelete = canDeleteEvent(profile);
+  const canScanTickets = canAccessTicketScanner(profile);
+  const canAccessOnSpot = canAccessOnSpotRegistration(profile);
 
   useEffect(() => {
     if (!eventId) {
@@ -211,7 +220,7 @@ export default function EventDetailsPage() {
       { id: 'branding' as TabType, label: 'Portal Branding', icon: Palette },
     ] : []),
     { id: 'ticketing', label: 'Ticketing', icon: Ticket },
-    { id: 'scan', label: 'Scan Ticket', icon: QrCode },
+    ...(canScanTickets ? [{ id: 'scan' as TabType, label: 'Scan Ticket', icon: QrCode }] : []),
     { id: 'design', label: 'Ticket Design', icon: ImageIcon },
     { id: 'form', label: 'Form Builder', icon: FormInput },
     { id: 'rules', label: 'Rules & Rulebook', icon: ClipboardCheck },
@@ -330,8 +339,8 @@ export default function EventDetailsPage() {
                 <span>{event.registrationUrl ? 'External Registration' : 'Registration'}</span>
               </a>
 
-              {/* On-Spot Desk Button - ONLY visible when On-Spot Registration is ON */}
-              {event.onSpotRegistrationOpen && (
+              {/* On-Spot Desk Button - ONLY visible when On-Spot Registration is ON and user has access */}
+              {event.onSpotRegistrationOpen && canAccessOnSpot && (
                 <Link
                   to={`/dashboard/on-spot-registration?eventId=${event.id}`}
                   className="rounded-2xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 cursor-pointer"
@@ -518,7 +527,7 @@ export default function EventDetailsPage() {
           />
         )}
 
-        {activeTab === 'scan' && (
+        {activeTab === 'scan' && canScanTickets && (
           <ScanTicketTab event={event} canEdit={canEdit} />
         )}
 

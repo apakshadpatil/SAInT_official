@@ -162,13 +162,27 @@ export default function App() {
                 <Route path="profile" element={<ProfilePage />} />
                 <Route path="events" element={<EventsPage />} />
                 <Route path="registrations" element={<RegistrationsPage />} />
-                <Route path="on-spot-registration" element={<AdminOnSpotPage />} />
+                <Route
+                  path="on-spot-registration"
+                  element={
+                    <ProtectedRoute requiredPermission="onSpotRegistration" allowedRoles={['superadmin', 'core', 'member']}>
+                      <AdminOnSpotPage />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route path="events/:eventId" element={<EventDetailsPage />} />
                 <Route path="calendar" element={<CalendarPage />} />
                 <Route path="agenda" element={<AgendaPage />} />
                 <Route path="tasks" element={<TasksPage />} />
                 <Route path="explore" element={<ExplorePage />} />
-                <Route path="qr-scanner" element={<QRScannerPage />} />
+                <Route
+                  path="qr-scanner"
+                  element={
+                    <ProtectedRoute requiredPermission="qrScanner" allowedRoles={['superadmin', 'core', 'member']}>
+                      <QRScannerPage />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route path="sponsors" element={<SponsorsPage />} />
                 <Route path="analytics" element={<AnalyticsPage />} />
                 <Route

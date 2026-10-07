@@ -19,6 +19,7 @@ import { getPendingUsers } from '../../services/authService';
 import { trackVisitorPageView } from '../../services/visitorTrackingService';
 import {
   hasTabAccess, hasFinanceAccess, isCoreMember, isSuperAdmin, getRoleBadge,
+  canAccessOnSpotRegistration, canAccessTicketScanner,
 } from '../../utils/permissions';
 import type { SidebarPermissions } from '../../types';
 
@@ -38,7 +39,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/dashboard',                        label: 'Dashboard',             icon: LayoutDashboard, tab: 'dashboard',          group: 'main' },
   { to: '/dashboard/events',                 label: 'Events',                icon: Calendar,        tab: 'events',             group: 'main' },
   { to: '/dashboard/registrations',          label: 'Registrations',         icon: ClipboardCheck,  tab: 'registrations',      group: 'main' },
-  { to: '/dashboard/on-spot-registration',   label: 'On-Spot Desk',          icon: UserPlus,        tab: 'registrations',      group: 'main' },
+  { to: '/dashboard/on-spot-registration',   label: 'On-Spot Desk',          icon: UserPlus,        tab: 'onSpotRegistration', group: 'main' },
   { to: '/dashboard/calendar',               label: 'Calendar',              icon: CalendarDays,    tab: 'calendar',           group: 'main' },
   { to: '/dashboard/agenda',                 label: 'Agenda',                icon: ClipboardList,   tab: 'agenda',             group: 'main' },
   { to: '/dashboard/tasks',                  label: 'Tasks',                 icon: ListTodo,        tab: 'tasks',              group: 'main' },
@@ -388,6 +389,13 @@ export default function DashboardLayout() {
     if (item.financeOnly && !hasFinanceAccess(profile)) return false;
     // coreOnly items require core membership
     if (item.coreOnly && !isCoreMember(profile)) return false;
+    // Features accessible ONLY to Super Admin and Club Members
+    if (item.tab === 'onSpotRegistration') {
+      return canAccessOnSpotRegistration(profile);
+    }
+    if (item.tab === 'qrScanner') {
+      return canAccessTicketScanner(profile);
+    }
     // Check explicit tab permission grants
     if (hasTabAccess(profile, item.tab)) return true;
     // Core-member tabs visible to all core members

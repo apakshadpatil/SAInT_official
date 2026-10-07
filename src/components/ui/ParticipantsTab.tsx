@@ -36,6 +36,7 @@ import {
 import { downloadTicketImage } from '../../utils/ticketDownload';
 import { uploadFileToSupabase } from '../../utils/supabase';
 import { logActivity } from '../../services/activityService';
+import { canAccessOnSpotRegistration } from '../../utils/permissions';
 
 /**
  * Derives the actual registration/team size for a participant record.
@@ -701,7 +702,7 @@ export default function ParticipantsTab({ event, canEdit, canDelete, onParticipa
             All Tickets
           </button>
 
-          {event.onSpotRegistrationOpen && (
+          {event.onSpotRegistrationOpen && canAccessOnSpotRegistration(profile) && (
             <a
               href={`/dashboard/on-spot-registration?eventId=${event.id}`}
               className="rounded-2xl border px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 cursor-pointer shadow-xs"

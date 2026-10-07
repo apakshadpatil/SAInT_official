@@ -1,10 +1,17 @@
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, Navigate } from 'react-router-dom';
 import { ArrowLeft, ClipboardCheck, Calendar } from 'lucide-react';
 import OnSpotRegistrationForm from '../../components/registration/OnSpotRegistrationForm';
+import { useAuth } from '../../contexts/AuthContext';
+import { canAccessOnSpotRegistration } from '../../utils/permissions';
 
 export default function AdminOnSpotPage() {
+  const { profile } = useAuth();
   const [searchParams] = useSearchParams();
   const eventId = searchParams.get('eventId') || searchParams.get('event') || undefined;
+
+  if (!canAccessOnSpotRegistration(profile)) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   return (
     <div className="space-y-6">

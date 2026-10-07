@@ -1,15 +1,21 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { hasTabAccess } from '../utils/permissions';
-import type { SidebarPermissions } from '../types';
+import { hasTabAccess, isSuperAdmin } from '../utils/permissions';
+import type { SidebarPermissions, UserRole } from '../types';
 
 interface Props {
   children: React.ReactNode;
   requireApproved?: boolean;
   requiredPermission?: keyof SidebarPermissions;
+  allowedRoles?: UserRole[];
 }
 
-export default function ProtectedRoute({ children, requireApproved = true, requiredPermission }: Props) {
+export default function ProtectedRoute({
+  children,
+  requireApproved = true,
+  requiredPermission,
+  allowedRoles,
+}: Props) {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
 
@@ -35,6 +41,15 @@ export default function ProtectedRoute({ children, requireApproved = true, requi
 
   if (requireApproved && profile?.status === 'rejected') {
     return <Navigate to="/login" replace />;
+  }
+
+  if (allowedRoles && profile) {
+    const isAllowed =
+      (allowedRoles.includes('superadmin') && isSuperAdmin(profile)) ||
+      (profile.status === 'approved' && allowedRoles.includes(profile.role));
+    if (!isAllowed) {
+      return <Navigate to="/dashboard" replace />;
+    }
   }
 
   if (requiredPermission && !hasTabAccess(profile, requiredPermission)) {

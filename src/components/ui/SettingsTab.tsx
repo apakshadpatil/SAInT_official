@@ -3,7 +3,7 @@ import type { EventRecord, TicketTier, RegistrationFieldsConfig, EventCoordinato
 import { getEventCoordinators } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { canAccessEventSettings } from '../../utils/permissions';
+import { canAccessEventSettings, canAccessOnSpotRegistration } from '../../utils/permissions';
 import {
   Archive,
   Send,
@@ -849,14 +849,16 @@ export default function SettingsTab({
           <div className="flex flex-wrap items-center gap-2 shrink-0 sm:self-center">
             {isOnSpotOpen && (
               <>
-                <a
-                  href={`/dashboard/on-spot-registration?eventId=${event.id}`}
-                  className="rounded-xl border px-3 py-2 text-xs font-bold flex items-center gap-1.5 border-amber-500/40 bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-all cursor-pointer"
-                  title="Open Admin On-Spot Desk for this event"
-                >
-                  <QrCode className="w-3.5 h-3.5" />
-                  <span>On-Spot Desk</span>
-                </a>
+                {canAccessOnSpotRegistration(profile) && (
+                  <a
+                    href={`/dashboard/on-spot-registration?eventId=${event.id}`}
+                    className="rounded-xl border px-3 py-2 text-xs font-bold flex items-center gap-1.5 border-amber-500/40 bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-all cursor-pointer"
+                    title="Open Admin On-Spot Desk for this event"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>On-Spot Desk</span>
+                  </a>
+                )}
                 <a
                   href={`/events/${event.id}/on-spot`}
                   target="_blank"

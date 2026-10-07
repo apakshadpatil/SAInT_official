@@ -43,6 +43,7 @@ export interface SidebarPermissions {
   gallery?: boolean;
   support?: boolean;
   eventSettings?: boolean;
+  onSpotRegistration?: boolean;
 }
 export interface UserProfile {
   uid: string;
@@ -789,6 +790,7 @@ export const DEFAULT_MEMBER_PERMISSIONS: SidebarPermissions = {
   tasks: true,
   explore: true,
   qrScanner: true,
+  onSpotRegistration: true,
   sponsors: true,
   profile: true,
   supportTickets: true,
@@ -823,6 +825,7 @@ export const DEFAULT_PARTICIPANT_PERMISSIONS: SidebarPermissions = {
   tasks: false,
   explore: false,
   qrScanner: false,
+  onSpotRegistration: false,
   sponsors: false,
   profile: false,
   supportTickets: false,
@@ -851,6 +854,8 @@ export const DEFAULT_PARTICIPANT_PERMISSIONS: SidebarPermissions = {
 
 export const DEFAULT_CORE_PERMISSIONS: SidebarPermissions = {
   ...DEFAULT_MEMBER_PERMISSIONS,
+  qrScanner: true,
+  onSpotRegistration: true,
   supportTickets: true,
   analytics: true,
   teams: true,
@@ -875,6 +880,7 @@ export const DEFAULT_SUPERADMIN_PERMISSIONS: SidebarPermissions = {
   tasks: true,
   explore: true,
   qrScanner: true,
+  onSpotRegistration: true,
   sponsors: true,
   profile: true,
   supportTickets: true,

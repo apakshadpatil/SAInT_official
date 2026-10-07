@@ -44,6 +44,29 @@ export function canDeleteEvent(profile: UserProfile | null): boolean {
   return isSuperAdmin(profile) || isCoreMember(profile);
 }
 
+export function isClubMember(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  return profile.status === 'approved' && profile.role === 'member';
+}
+
+export function canAccessOnSpotRegistration(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  if (isSuperAdmin(profile)) return true;
+  if (profile.status === 'approved' && (profile.role === 'member' || profile.role === 'core')) {
+    return profile.permissions?.onSpotRegistration ?? true;
+  }
+  return false;
+}
+
+export function canAccessTicketScanner(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  if (isSuperAdmin(profile)) return true;
+  if (profile.status === 'approved' && (profile.role === 'member' || profile.role === 'core')) {
+    return profile.permissions?.qrScanner ?? true;
+  }
+  return false;
+}
+
 export function canAssignTasks(profile: UserProfile | null): boolean {
   return isCoreMember(profile);
 }
@@ -51,7 +74,13 @@ export function canAssignTasks(profile: UserProfile | null): boolean {
 export function hasTabAccess(profile: UserProfile | null, tab: keyof SidebarPermissions): boolean {
   if (!profile) return false;
   if (isSuperAdmin(profile)) return true;
-  return profile.permissions[tab] ?? false;
+  if (tab === 'onSpotRegistration') {
+    return canAccessOnSpotRegistration(profile);
+  }
+  if (tab === 'qrScanner') {
+    return canAccessTicketScanner(profile);
+  }
+  return profile.permissions?.[tab] ?? false;
 }
 
 export const ROLE_LABELS: Record<string, string> = {

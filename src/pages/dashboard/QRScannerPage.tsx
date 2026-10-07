@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { Navigate } from 'react-router-dom';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import {
   AlertCircle,
@@ -24,6 +25,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { checkInByQRPayload, checkInByTicketNumber, getEvents, subscribeEvents } from '../../services/eventService';
 import type { EventRecord } from '../../types';
 import { parseQRPayload } from '../../utils/qrScan';
+import { canAccessTicketScanner } from '../../utils/permissions';
 
 interface ScanLog {
   ticketNumber: string;
@@ -87,6 +89,10 @@ function playScanSound(type: 'success' | 'warning' | 'error') {
 export default function QRScannerPage() {
   const { profile } = useAuth();
   const { showToast } = useToast();
+
+  if (!canAccessTicketScanner(profile)) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>('');
